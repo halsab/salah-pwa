@@ -8,7 +8,12 @@ import {
 } from 'react'
 
 import { prayerRepository } from './data/prayerRepository'
-import { addDays, formatDateLabel, getMoscowDate } from './domain/date'
+import {
+  addDays,
+  formatCompactDateLabel,
+  formatDateLabel,
+  getMoscowDate,
+} from './domain/date'
 import { findNearestLocation } from './domain/location'
 import { findNextPrayer, formatRemainingTime } from './domain/nextPrayer'
 import type { PrayerDay, PrayerKey, PrayerLocation } from './domain/types'
@@ -118,6 +123,7 @@ function LocationDialog({
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
     if (!open) return
@@ -128,13 +134,39 @@ function LocationDialog({
     requestAnimationFrame(() => searchRef.current?.focus())
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        onClose()
+        return
+      }
+
+      if (event.key !== 'Tab' || !dialogRef.current) return
+
+      const focusableElements = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements.at(-1)
+      if (!firstElement || !lastElement) return
+      const moveFocus = (element: HTMLElement) => {
+        event.preventDefault()
+        requestAnimationFrame(() => element.focus())
+      }
+
+      if (!dialogRef.current.contains(document.activeElement)) {
+        moveFocus(event.shiftKey ? lastElement : firstElement)
+      } else if (event.shiftKey && document.activeElement === firstElement) {
+        moveFocus(lastElement)
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        moveFocus(firstElement)
+      }
     }
-    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown, true)
 
     return () => {
       document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keydown', handleKeyDown, true)
     }
   }, [onClose, open])
 
@@ -164,6 +196,7 @@ function LocationDialog({
   return (
     <div className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section
+        ref={dialogRef}
         aria-labelledby="location-dialog-title"
         aria-modal="true"
         className="location-dialog"
@@ -204,7 +237,7 @@ function LocationDialog({
             <li key={location.id}>
               <button
                 className="location-option"
-                data-selected={location.id === selectedId || undefined}
+                aria-current={location.id === selectedId ? 'location' : undefined}
                 type="button"
                 onClick={() => onSelect(location.id)}
               >
@@ -243,6 +276,8 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [tomorrow, setTomorrow] = useState<PrayerDay | undefined>()
   const [loading, setLoading] = useState(true)
   const [scheduleLoading, setScheduleLoading] = useState(false)
+  const [scheduleError, setScheduleError] = useState<string | null>(null)
+  const [scheduleRetryCount, setScheduleRetryCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
@@ -283,21 +318,31 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     if (!meta) return
     let active = true
     setScheduleLoading(true)
+    setScheduleError(null)
 
     void Promise.all([
       services.getDay(locationId, selectedDate),
       services.getDay(locationId, addDays(selectedDate, 1)),
-    ]).then(([loadedDay, loadedTomorrow]) => {
-      if (!active) return
-      setDay(loadedDay ?? null)
-      setTomorrow(loadedTomorrow)
-      setScheduleLoading(false)
-    })
+    ])
+      .then(([loadedDay, loadedTomorrow]) => {
+        if (!active) return
+        setDay(loadedDay ?? null)
+        setTomorrow(loadedTomorrow)
+      })
+      .catch(() => {
+        if (!active) return
+        setDay(null)
+        setTomorrow(undefined)
+        setScheduleError('Не удалось загрузить расписание. Проверьте соединение и попробуйте ещё раз.')
+      })
+      .finally(() => {
+        if (active) setScheduleLoading(false)
+      })
 
     return () => {
       active = false
     }
-  }, [locationId, meta, selectedDate, services])
+  }, [locationId, meta, scheduleRetryCount, selectedDate, services])
 
   const today = getMoscowDate(currentTime)
   const selectedLocation = meta?.locations.find(({ id }) => id === locationId)
@@ -399,7 +444,10 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
               </button>
 
               <label className="date-picker">
-                <span>{formatDateLabel(selectedDate)}</span>
+                <span className="date-label-full">{formatDateLabel(selectedDate)}</span>
+                <span className="date-label-compact" aria-hidden="true">
+                  {formatCompactDateLabel(selectedDate)}
+                </span>
                 <input
                   aria-label="Выбрать дату"
                   type="date"
@@ -431,7 +479,17 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
 
         <div className="content-grid" data-loading={scheduleLoading || undefined}>
           <section className="next-prayer-panel" aria-label="Следующий намаз">
-            {selectedDate === today ? (
+            {scheduleError ? (
+              <div className="no-next-prayer">
+                <ClockIcon />
+                <p>Расписание временно недоступно</p>
+              </div>
+            ) : scheduleLoading && !day ? (
+              <div className="no-next-prayer" aria-live="polite">
+                <ClockIcon />
+                <p>Загружаем расписание…</p>
+              </div>
+            ) : selectedDate === today ? (
               nextPrayer ? (
                 <>
                   <p className="next-label">До следующего намаза</p>
@@ -462,7 +520,18 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
           </section>
 
           <section className="schedule-panel" aria-busy={scheduleLoading}>
-            {day ? (
+            {scheduleError ? (
+              <div className="missing-schedule schedule-error">
+                <p role="alert">{scheduleError}</p>
+                <button
+                  className="primary-button"
+                  type="button"
+                  onClick={() => setScheduleRetryCount((count) => count + 1)}
+                >
+                  Повторить
+                </button>
+              </div>
+            ) : day ? (
               <PrayerSchedule
                 day={day}
                 activePrayer={nextPrayer?.date === day.date ? nextPrayer.key : undefined}

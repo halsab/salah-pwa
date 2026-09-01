@@ -149,6 +149,19 @@ describe('Salah', () => {
     await waitFor(() => expect(locationButton).toHaveFocus())
   })
 
+  it('объявляет выбранный населённый пункт в диалоге', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Выбор населённого пункта' })
+    const selectedLocation = within(dialog).getByRole('button', { name: 'Казань' })
+    const lastLocation = within(dialog).getByRole('button', { name: 'Набережные Челны' })
+
+    expect(selectedLocation).toHaveAttribute('aria-current', 'location')
+    expect(lastLocation).not.toHaveAttribute('aria-current')
+  })
+
   it('локально выбирает ближайший пункт по геолокации', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
@@ -183,5 +196,30 @@ describe('Salah', () => {
       'Не удалось открыть расписание',
     )
     await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(1))
+  })
+
+  it('позволяет повторить загрузку расписания после ошибки', async () => {
+    const baseServices = createServices()
+    let shouldFail = true
+    const getDay = vi.fn((locationId: string, date: string) => {
+      if (shouldFail) return Promise.reject(new Error('offline'))
+      return baseServices.getDay(locationId, date)
+    })
+    const services = createServices({ getDay })
+    const user = userEvent.setup()
+    render(<App services={services} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Не удалось загрузить расписание',
+    )
+    expect(screen.getByText('Расписание временно недоступно')).toBeVisible()
+    expect(screen.queryByText('Следующее расписание ещё не опубликовано')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Времена намаза' })).not.toBeInTheDocument()
+
+    shouldFail = false
+    await user.click(screen.getByRole('button', { name: 'Повторить' }))
+
+    expect(await screen.findByRole('list', { name: 'Времена намаза' })).toBeVisible()
+    expect(getDay).toHaveBeenCalledTimes(4)
   })
 })

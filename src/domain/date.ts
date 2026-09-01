@@ -1,4 +1,19 @@
 const MOSCOW_TIME_ZONE = 'Europe/Moscow'
+const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'UTC',
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+})
+const COMPACT_DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
+  timeZone: 'UTC',
+  day: 'numeric',
+  month: 'long',
+})
+
+function toUtcDate(date: string): Date {
+  return new Date(`${date}T12:00:00.000Z`)
+}
 
 export function getMoscowDate(now: Date): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -19,10 +34,9 @@ export function addDays(date: string, amount: number): string {
 }
 
 export function formatDateLabel(date: string): string {
-  return new Intl.DateTimeFormat('ru-RU', {
-    timeZone: 'UTC',
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(new Date(`${date}T12:00:00.000Z`))
+  return DATE_LABEL_FORMATTER.format(toUtcDate(date))
+}
+
+export function formatCompactDateLabel(date: string): string {
+  return COMPACT_DATE_LABEL_FORMATTER.format(toUtcDate(date))
 }

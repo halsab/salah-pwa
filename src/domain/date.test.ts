@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { addDays, formatDateLabel, getMoscowDate } from './date'
+import { addDays, formatCompactDateLabel, formatDateLabel, getMoscowDate } from './date'
 
 describe('getMoscowDate', () => {
   it('использует календарный день Татарстана, а не часовой пояс устройства', () => {
@@ -18,5 +18,9 @@ describe('addDays', () => {
 describe('formatDateLabel', () => {
   it('возвращает спокойную русскую подпись без лишней пунктуации', () => {
     expect(formatDateLabel('2026-09-01')).toBe('вторник, 1 сентября')
+  })
+
+  it('возвращает короткую подпись для тесной мобильной строки', () => {
+    expect(formatCompactDateLabel('2026-09-01')).toBe('1 сентября')
   })
 })
