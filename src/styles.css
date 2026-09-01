@@ -1,6 +1,6 @@
 :root {
   color-scheme: light dark;
-  font-family: 'Nunito Variable', system-ui, sans-serif;
+  font-family: 'Neucha', cursive;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --page: #293a94;
@@ -41,7 +41,9 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
 }
 
@@ -127,7 +129,6 @@ button:disabled {
 
 .brand {
   margin: 0;
-  font-family: 'Neucha', cursive;
   font-size: clamp(3.75rem, 7vw, 5.7rem);
   font-weight: 400;
   line-height: 0.95;
@@ -245,7 +246,6 @@ button:disabled {
   place-items: center;
   overflow: hidden;
   border-radius: 14px;
-  font-family: 'Neucha', cursive;
   font-size: clamp(1.15rem, 2.5vw, 1.4rem);
   text-align: center;
 }
@@ -293,14 +293,12 @@ button:disabled {
 .next-label {
   margin: 0;
   color: var(--ink-soft);
-  font-family: 'Neucha', cursive;
   font-size: clamp(1.55rem, 3.5vw, 2.05rem);
 }
 
 .next-label::before,
 .next-label::after {
   color: var(--accent);
-  font-family: 'Nunito Variable', sans-serif;
   font-size: 1.25em;
   font-weight: 900;
 }
@@ -316,7 +314,6 @@ button:disabled {
 .next-name {
   margin: 8px 0 16px;
   color: var(--ink);
-  font-family: 'Neucha', cursive;
   font-size: clamp(3.8rem, 8vw, 6.6rem);
   line-height: 0.98;
   text-wrap: balance;
@@ -354,7 +351,6 @@ button:disabled {
   justify-items: center;
   gap: 16px;
   color: var(--ink-soft);
-  font-family: 'Neucha', cursive;
   font-size: 1.8rem;
 }
 
@@ -415,7 +411,6 @@ button:disabled {
 }
 
 .prayer-name {
-  font-family: 'Neucha', cursive;
   font-size: clamp(1.25rem, 2.2vw, 1.55rem);
   line-height: 1.05;
 }
@@ -501,7 +496,6 @@ button:disabled {
 .privacy-note {
   margin: 0;
   color: #fff7e5;
-  font-family: 'Neucha', cursive;
   font-size: 0.92rem;
   text-align: center;
 }
@@ -526,7 +520,6 @@ button:disabled {
 .error-frame p {
   max-width: 460px;
   margin: 0;
-  font-family: 'Neucha', cursive;
   font-size: 1.5rem;
 }
 
@@ -547,7 +540,6 @@ button:disabled {
   border-radius: 42% 58% 48% 52%;
   color: var(--paper-strong);
   background: var(--danger);
-  font-family: 'Neucha', cursive;
   font-size: 2.5rem;
 }
 
@@ -571,7 +563,6 @@ button:disabled {
 .missing-schedule p {
   max-width: 340px;
   margin: 0;
-  font-family: 'Neucha', cursive;
   font-size: 1.6rem;
 }
 
@@ -629,7 +620,6 @@ button:disabled {
 }
 
 .dialog-header h2 {
-  font-family: 'Neucha', cursive;
   font-size: 2rem;
   font-weight: 400;
   line-height: 1.05;

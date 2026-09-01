@@ -1,5 +1,29 @@
 import { expect, test } from '@playwright/test'
 
+test('весь интерфейс использует рукописный шрифт', async ({ page }) => {
+  await page.goto('./')
+  await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
+
+  const bodyFont = await page.locator('body').evaluate((element) =>
+    getComputedStyle(element).fontFamily,
+  )
+  const buttonFont = await page.getByRole('button', { name: /Казань/ }).evaluate((element) =>
+    getComputedStyle(element).fontFamily,
+  )
+  const decorationFont = await page.locator('.next-label').evaluate((element) =>
+    getComputedStyle(element, '::before').fontFamily,
+  )
+
+  await page.getByRole('button', { name: /Казань/ }).click()
+  const inputFont = await page.getByRole('searchbox').evaluate((element) =>
+    getComputedStyle(element).fontFamily,
+  )
+
+  for (const fontFamily of [bodyFont, buttonFont, decorationFont, inputFont]) {
+    expect(fontFamily).toContain('Neucha')
+  }
+})
+
 test('после первого запуска расписание полностью открывается без сети', async ({
   context,
   page,
