@@ -11,12 +11,12 @@ import {
 } from './database'
 
 const dataset: PrayerDataset = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   source: {
     name: 'ДУМ Республики Татарстан',
     url: 'https://dumrt.ru/ru/help-info/prayertime/',
     updatedAt: '2025-12-27T10:49:04.000Z',
-    year: 2026,
+    years: [2026],
   },
   locations: [
     { id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 },
@@ -47,7 +47,7 @@ describe('database', () => {
 
     expect(await getPrayerDay('kazan', '2026-09-01')).toEqual(dataset.days[0])
     expect(await getDatasetMeta()).toEqual({
-      schemaVersion: 1,
+      schemaVersion: dataset.schemaVersion,
       source: dataset.source,
       locations: dataset.locations,
     })

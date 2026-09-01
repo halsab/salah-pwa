@@ -247,6 +247,12 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const automaticLocationAttempted = useRef(false)
+  const locationButtonRef = useRef<HTMLButtonElement>(null)
+
+  const closeLocationDialog = useCallback(() => {
+    setLocationDialogOpen(false)
+    requestAnimationFrame(() => locationButtonRef.current?.focus())
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -301,11 +307,11 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const selectLocation = useCallback(
     (nextLocationId: string) => {
       setLocationId(nextLocationId)
-      setLocationDialogOpen(false)
+      closeLocationDialog()
       pulseHaptic()
       void services.saveLocation(nextLocationId)
     },
-    [services],
+    [closeLocationDialog, services],
   )
 
   const locateAutomatically = useCallback(async () => {
@@ -348,8 +354,8 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     )
   }
 
-  const minDate = `${meta.source.year}-01-01`
-  const maxDate = `${meta.source.year}-12-31`
+  const minDate = `${meta.source.years[0]}-01-01`
+  const maxDate = `${meta.source.years.at(-1)}-12-31`
 
   const changeDate = (date: string) => {
     setSelectedDate(date)
@@ -370,6 +376,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
 
           <div className="control-row">
             <button
+              ref={locationButtonRef}
               className="location-control"
               type="button"
               onClick={() => setLocationDialogOpen(true)}
@@ -492,7 +499,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         locations={meta.locations}
         selectedId={locationId}
         open={locationDialogOpen}
-        onClose={() => setLocationDialogOpen(false)}
+        onClose={closeLocationDialog}
         onSelect={selectLocation}
         onLocate={locateAutomatically}
       />

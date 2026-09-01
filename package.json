@@ -9,6 +9,7 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
+    "smoke:offline": "playwright test tests/offline.spec.ts",
     "data:update": "tsx scripts/update-prayer-data.ts",
     "preview": "vite preview"
   },

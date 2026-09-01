@@ -15,8 +15,10 @@ function isPrayerDataset(value: unknown): value is PrayerDataset {
   const dataset = value as Partial<PrayerDataset>
 
   return (
-    dataset.schemaVersion === 1 &&
-    typeof dataset.source?.year === 'number' &&
+    dataset.schemaVersion === 2 &&
+    Array.isArray(dataset.source?.years) &&
+    dataset.source.years.length > 0 &&
+    dataset.source.years.every((year) => typeof year === 'number') &&
     typeof dataset.source.updatedAt === 'string' &&
     Array.isArray(dataset.locations) &&
     dataset.locations.length > 0 &&
@@ -47,6 +49,22 @@ function toMeta(dataset: PrayerDataset): DatasetMeta {
   }
 }
 
+export function shouldReplaceDataset(
+  cachedMeta: DatasetMeta | undefined,
+  dataset: PrayerDataset,
+): boolean {
+  const cachedYears = (cachedMeta?.source as Partial<PrayerDataset['source']> | undefined)
+    ?.years
+
+  return (
+    !cachedMeta ||
+    cachedMeta.schemaVersion !== dataset.schemaVersion ||
+    cachedMeta.source.updatedAt !== dataset.source.updatedAt ||
+    !Array.isArray(cachedYears) ||
+    cachedYears.join(',') !== dataset.source.years.join(',')
+  )
+}
+
 export async function initializePrayerRepository(): Promise<{
   meta: DatasetMeta
   locationId: string
@@ -56,12 +74,7 @@ export async function initializePrayerRepository(): Promise<{
 
   try {
     const bundled = await fetchBundledDataset()
-    if (
-      !cachedMeta ||
-      cachedMeta.schemaVersion !== bundled.schemaVersion ||
-      cachedMeta.source.updatedAt !== bundled.source.updatedAt ||
-      cachedMeta.source.year !== bundled.source.year
-    ) {
+    if (shouldReplaceDataset(cachedMeta, bundled)) {
       await replaceDataset(bundled)
     }
     meta = toMeta(bundled)

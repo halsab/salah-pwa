@@ -39,12 +39,12 @@ function createServices(
   return {
     initialize: vi.fn().mockResolvedValue({
       meta: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         source: {
           name: 'ДУМ Республики Татарстан',
           url: 'https://dumrt.ru/ru/help-info/prayertime/',
           updatedAt: '2025-12-27T10:49:04.000Z',
-          year: 2026,
+          years: [2026],
         },
         locations: [
           { id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 },
@@ -118,6 +118,35 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(screen.getByText('Аср · 16:37')).toBeVisible()
     expect(services.saveLocation).toHaveBeenCalledWith('naberezhnye-chelny')
+  })
+
+  it('не сбрасывает поиск при секундном обновлении таймера', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.type(screen.getByRole('searchbox'), 'челны')
+    expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Казань' })).not.toBeInTheDocument()
+
+    await new Promise((resolve) => setTimeout(resolve, 1_100))
+
+    expect(screen.getByRole('searchbox')).toHaveValue('челны')
+    expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
+  })
+
+  it('закрывает выбор населённого пункта с клавиатуры и возвращает фокус', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    const locationButton = await screen.findByRole('button', { name: /Казань/ })
+    await user.click(locationButton)
+    await waitFor(() => expect(screen.getByRole('searchbox')).toHaveFocus())
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(locationButton).toHaveFocus())
   })
 
   it('локально выбирает ближайший пункт по геолокации', async () => {

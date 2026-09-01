@@ -5,8 +5,12 @@ import { fileURLToPath } from 'node:url'
 import { parseDumRtCsv, validateSchedule } from '../src/data/parseDumRtCsv'
 import type { PrayerDataset, PrayerDay } from '../src/domain/types'
 import { DUM_RT_LOCATIONS } from './dumRtLocations'
+import { selectCompleteDatasetYears } from './selectDatasetYear'
 
-const YEAR = Number(process.env.PRAYER_DATA_YEAR ?? new Date().getUTCFullYear())
+const requestedYear = process.env.PRAYER_DATA_YEAR
+  ? Number(process.env.PRAYER_DATA_YEAR)
+  : undefined
+const currentYear = new Date().getUTCFullYear()
 const SOURCE_PAGE = 'https://dumrt.ru/ru/help-info/prayertime/'
 const SOURCE_BASE = 'https://dumrt.ru/netcat_files/391/638/'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -22,30 +26,38 @@ async function downloadLocation(
     throw new Error(`${location.name}: источник ответил ${response.status}`)
   }
 
-  const allDays = parseDumRtCsv(await response.text(), location.id)
-  const days = allDays.filter((day) => day.date.startsWith(`${YEAR}-`))
-  validateSchedule(days, YEAR)
-
   return {
-    days,
-    updatedAt: response.headers.get('last-modified') ?? `${YEAR}-01-01T00:00:00.000Z`,
+    days: parseDumRtCsv(await response.text(), location.id),
+    updatedAt: response.headers.get('last-modified') ?? '1970-01-01T00:00:00.000Z',
   }
 }
 
 async function main(): Promise<void> {
   const downloaded = await Promise.all(DUM_RT_LOCATIONS.map(downloadLocation))
+  const years = requestedYear === undefined
+    ? selectCompleteDatasetYears(downloaded.map(({ days }) => days), currentYear)
+    : [requestedYear]
+
+  const schedules = downloaded.map(({ days, updatedAt }) => {
+    const selectedDays = years.flatMap((year) => {
+      const yearDays = days.filter((day) => day.date.startsWith(`${year}-`))
+      validateSchedule(yearDays, year)
+      return yearDays
+    })
+    return { days: selectedDays, updatedAt }
+  })
   const latestUpdate = downloaded
     .map(({ updatedAt }) => new Date(updatedAt).getTime())
     .filter(Number.isFinite)
     .reduce((latest, current) => Math.max(latest, current), 0)
 
   const dataset: PrayerDataset = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     source: {
       name: 'ДУМ Республики Татарстан',
       url: SOURCE_PAGE,
       updatedAt: new Date(latestUpdate).toISOString(),
-      year: YEAR,
+      years,
     },
     locations: DUM_RT_LOCATIONS.map(({ id, name, latitude, longitude }) => ({
       id,
@@ -53,7 +65,7 @@ async function main(): Promise<void> {
       latitude,
       longitude,
     })),
-    days: downloaded.flatMap(({ days }) => days),
+    days: schedules.flatMap(({ days }) => days),
   }
 
   const outputDirectory = path.join(root, 'public', 'data')

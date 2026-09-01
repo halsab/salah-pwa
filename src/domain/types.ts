@@ -41,7 +41,7 @@ export interface PrayerDataset {
     name: string
     url: string
     updatedAt: string
-    year: number
+    years: number[]
   }
   locations: PrayerLocation[]
   days: PrayerDay[]
