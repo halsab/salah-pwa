@@ -9,7 +9,7 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 2
+const DATABASE_VERSION = 3
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -63,6 +63,9 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       }
       if (oldVersion < 2) {
         // Новые типизированные настройки добавляются в существующее schemaless-хранилище.
+      }
+      if (oldVersion < 3) {
+        // Запись координат расширена названием и источником без изменения структуры хранилища.
       }
     },
   })

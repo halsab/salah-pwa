@@ -65,7 +65,11 @@ describe('database', () => {
       longitude: 37.6173,
       accuracy: 18,
       timestamp: 1_788_265_600_000,
-    }
+      name: 'Москва, Россия',
+      cityId: 524901,
+      nameSource: 'geonames',
+      source: 'gps',
+    } as const
     const calculationSettings = {
       profile: 'turkey',
       asrMethod: 'standard',

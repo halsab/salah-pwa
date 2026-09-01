@@ -59,6 +59,10 @@ export interface SavedCoordinates {
   longitude: number
   accuracy: number | null
   timestamp: number
+  name?: string
+  cityId?: number
+  nameSource?: 'geonames' | 'nominatim'
+  source?: 'gps' | 'preset'
 }
 
 export interface CalculatedPrayerEntry {

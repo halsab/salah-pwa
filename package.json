@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "smoke:offline": "playwright test tests/offline.spec.ts",
     "data:update": "tsx scripts/update-prayer-data.ts",
+    "data:update:cities": "tsx scripts/update-city-data.ts",
     "preview": "vite preview"
   },
   "dependencies": {

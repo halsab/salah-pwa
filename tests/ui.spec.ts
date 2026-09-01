@@ -42,6 +42,7 @@ test.describe('мобильная компоновка', () => {
     await page.getByRole('button', { name: /Казань/ }).click()
 
     const searchBox = page.getByRole('searchbox')
+    await searchBox.fill('Казань')
     const firstOption = page.getByRole('dialog').getByRole('button', { name: 'Казань' })
     const [searchBounds, optionBounds] = await Promise.all([
       searchBox.locator('..').boundingBox(),
@@ -64,7 +65,7 @@ test.describe('мобильная компоновка', () => {
 
     const dialog = page.getByRole('dialog')
     const closeButton = dialog.getByRole('button', { name: 'Закрыть' })
-    const lastOption = dialog.getByRole('button').last()
+    const lastOption = dialog.locator('.country-group summary').last()
     await closeButton.focus()
     await page.keyboard.press('Shift+Tab')
     await expect(lastOption).toBeFocused()

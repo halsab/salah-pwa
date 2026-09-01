@@ -133,7 +133,13 @@ function isSavedCoordinates(value: unknown): value is SavedCoordinates {
     Number.isFinite(coordinates.latitude) &&
     Number.isFinite(coordinates.longitude) &&
     (coordinates.accuracy === null || Number.isFinite(coordinates.accuracy)) &&
-    Number.isFinite(coordinates.timestamp)
+    Number.isFinite(coordinates.timestamp) &&
+    (coordinates.name === undefined || typeof coordinates.name === 'string') &&
+    (coordinates.cityId === undefined || Number.isInteger(coordinates.cityId)) &&
+    (coordinates.nameSource === undefined ||
+      ['geonames', 'nominatim'].includes(coordinates.nameSource)) &&
+    (coordinates.source === undefined ||
+      ['gps', 'preset'].includes(coordinates.source))
   )
 }
 
