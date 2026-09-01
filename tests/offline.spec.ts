@@ -62,7 +62,11 @@ test('сохранённое GPS-расписание вне Татарстан�
 
   await expect(page.getByRole('button', { name: /Moscow, Россия/i })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
-  await expect(page.getByText('Фаджр')).toBeVisible()
+  await expect(
+    page
+      .getByRole('list', { name: 'Времена намаза' })
+      .getByText('Фаджр', { exact: true }),
+  ).toBeVisible()
   await expect(page.getByText(/Рассчитано на устройстве · ДУМ РТ/)).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
@@ -73,7 +77,11 @@ test('сохранённое GPS-расписание вне Татарстан�
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('button', { name: /Moscow, Россия/i })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
-    await expect(page.getByText('Фаджр')).toBeVisible()
+    await expect(
+      page
+        .getByRole('list', { name: 'Времена намаза' })
+        .getByText('Фаджр', { exact: true }),
+    ).toBeVisible()
     await expect(page.getByText(/Рассчитано на устройстве · ДУМ РТ/)).toBeVisible()
   } finally {
     await context.setOffline(false)
