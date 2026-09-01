@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { App, type AppServices } from './App'
+import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
 import type { PrayerDay } from './domain/types'
 
 const kazanToday: PrayerDay = {
@@ -57,6 +58,9 @@ function createServices(
         ],
       },
       locationId: 'kazan',
+      locationMode: 'official',
+      calculatedLocation: null,
+      calculationSettings: DEFAULT_CALCULATION_SETTINGS,
     }),
     getDay: vi
       .fn()
@@ -65,9 +69,16 @@ function createServices(
           days.find((day) => day.locationId === locationId && day.date === date),
         ),
       ),
-    saveLocation: vi.fn().mockResolvedValue(undefined),
+    saveOfficialLocation: vi.fn().mockResolvedValue(undefined),
+    saveCalculatedLocation: vi.fn().mockResolvedValue(undefined),
+    saveCalculationSettings: vi.fn().mockResolvedValue(undefined),
     getPermission: vi.fn().mockResolvedValue('prompt'),
-    getPosition: vi.fn().mockResolvedValue({ latitude: 55.742, longitude: 52.3992 }),
+    getPosition: vi.fn().mockResolvedValue({
+      latitude: 55.742,
+      longitude: 52.3992,
+      accuracy: 500,
+      timestamp: 1_788_265_600_000,
+    }),
     now: () => new Date('2026-09-01T10:00:00.000Z'),
     ...overrides,
   }
@@ -111,13 +122,13 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
-    const dialog = screen.getByRole('dialog', { name: 'Выбор населённого пункта' })
+    const dialog = screen.getByRole('dialog', { name: 'Выбор местоположения' })
     await user.type(within(dialog).getByRole('searchbox'), 'челны')
     await user.click(within(dialog).getByRole('button', { name: 'Набережные Челны' }))
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(screen.getByText('Аср · 16:37')).toBeVisible()
-    expect(services.saveLocation).toHaveBeenCalledWith('naberezhnye-chelny')
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny')
   })
 
   it('не сбрасывает поиск при секундном обновлении таймера', async () => {
@@ -154,7 +165,7 @@ describe('Salah', () => {
     render(<App services={createServices()} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
-    const dialog = screen.getByRole('dialog', { name: 'Выбор населённого пункта' })
+    const dialog = screen.getByRole('dialog', { name: 'Выбор местоположения' })
     const selectedLocation = within(dialog).getByRole('button', { name: 'Казань' })
     const lastLocation = within(dialog).getByRole('button', { name: 'Набережные Челны' })
 
@@ -164,26 +175,86 @@ describe('Salah', () => {
 
   it('локально выбирает ближайший пункт по геолокации', async () => {
     const user = userEvent.setup()
-    render(<App services={createServices()} />)
+    const services = createServices()
+    render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(services.getPosition).toHaveBeenCalledTimes(1)
+    expect(services.getPosition).toHaveBeenCalledWith('coarse')
   })
 
-  it('не подставляет далёкий город и оставляет ручной выбор', async () => {
+  it('вне Татарстана уточняет координаты и показывает семь рассчитанных времён', async () => {
     const user = userEvent.setup()
+    const coarse = {
+      latitude: 55.75,
+      longitude: 37.62,
+      accuracy: 900,
+      timestamp: 100,
+    }
+    const precise = { ...coarse, latitude: 55.7558, longitude: 37.6173, accuracy: 12, timestamp: 200 }
     const services = createServices({
-      getPosition: vi.fn().mockResolvedValue({ latitude: 55.7558, longitude: 37.6173 }),
+      getPosition: vi.fn()
+        .mockResolvedValueOnce(coarse)
+        .mockResolvedValueOnce(precise),
     })
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
-    expect(await screen.findByText(/Выберите населённый пункт вручную/i)).toBeVisible()
-    expect(screen.getByRole('dialog', { name: 'Выбор населённого пункта' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /текущее/i })).toBeVisible()
+    const schedule = screen.getByRole('list', { name: 'Времена намаза' })
+    expect(within(schedule).getAllByRole('listitem')).toHaveLength(7)
+    expect(within(schedule).getByText('Фаджр')).toBeVisible()
+    expect(within(schedule).queryByText(/сухура/i)).not.toBeInTheDocument()
+    expect(within(schedule).queryByText(/в мечетях/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/Рассчитано на устройстве · ДУМ РТ/i)).toBeVisible()
+    expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
+    expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(precise)
+  })
+
+  it('считает по грубым координатам, если точное определение не удалось', async () => {
+    const user = userEvent.setup()
+    const coarse = {
+      latitude: 55.75,
+      longitude: 37.62,
+      accuracy: 1_200,
+      timestamp: 100,
+    }
+    const services = createServices({
+      getPosition: vi.fn()
+        .mockResolvedValueOnce(coarse)
+        .mockRejectedValueOnce(new Error('timeout')),
+    })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
+
+    expect(await screen.findByText('Фаджр')).toBeVisible()
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(coarse)
+  })
+
+  it('сохраняет Аср, профиль и северное правило независимо', async () => {
+    const user = userEvent.setup()
+    const services = createServices()
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Настройки расчёта' }))
+    const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    await user.selectOptions(within(dialog).getByLabelText('Аср'), 'standard')
+    await user.selectOptions(within(dialog).getByLabelText('Профиль'), 'turkey')
+    await user.selectOptions(within(dialog).getByLabelText('Северные правила'), 'seventhOfNight')
+
+    expect(services.saveCalculationSettings).toHaveBeenLastCalledWith({
+      asrMethod: 'standard',
+      profile: 'turkey',
+      highLatitudeRule: 'seventhOfNight',
+    })
   })
 
   it('показывает восстановимую ошибку загрузки', async () => {

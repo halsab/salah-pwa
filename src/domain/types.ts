@@ -10,10 +10,29 @@ export type PrayerKey =
   | 'maghrib'
   | 'isha'
 
+export type CalculatedPrayerKey =
+  | 'fajr'
+  | 'sunrise'
+  | 'zenith'
+  | 'dhuhr'
+  | 'asr'
+  | 'maghrib'
+  | 'isha'
+
+export type SchedulePrayerKey = PrayerKey | 'fajr'
+
 export type SalahPrayerKey = Extract<
   PrayerKey,
   'fajrJamaat' | 'dhuhr' | 'asr' | 'maghrib' | 'isha'
 >
+
+export type ScheduleSalahPrayerKey =
+  | 'fajr'
+  | 'fajrJamaat'
+  | 'dhuhr'
+  | 'asr'
+  | 'maghrib'
+  | 'isha'
 
 export interface PrayerDay {
   locationId: string
@@ -33,6 +52,23 @@ export interface PrayerLocation {
   name: string
   latitude: number
   longitude: number
+}
+
+export interface SavedCoordinates {
+  latitude: number
+  longitude: number
+  accuracy: number | null
+  timestamp: number
+}
+
+export interface CalculatedPrayerEntry {
+  time: PrayerTime
+  instant: number
+  estimated: boolean
+}
+
+export type CalculatedPrayerEntries = {
+  [Key in CalculatedPrayerKey]: CalculatedPrayerEntry
 }
 
 export interface PrayerDataset {

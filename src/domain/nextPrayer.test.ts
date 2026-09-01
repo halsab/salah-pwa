@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { PrayerDay } from './types'
 import { findNextPrayer, formatRemainingTime } from './nextPrayer'
+import { calculatePrayerSchedule } from './prayerCalculation'
 
 const today: PrayerDay = {
   locationId: 'kazan',
@@ -53,6 +54,24 @@ describe('findNextPrayer', () => {
     expect(
       findNextPrayer(new Date('2026-09-01T18:00:00.000Z'), today),
     ).toBeNull()
+  })
+
+  it('в рассчитанном режиме использует Фаджр, а не время джамаата', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 55.7558, longitude: 37.6173 },
+      '2026-09-01',
+    )
+    const next = findNextPrayer(
+      new Date(schedule.entries.fajr.instant - 1_000),
+      schedule,
+    )
+
+    expect(next).toMatchObject({
+      key: 'fajr',
+      label: 'Фаджр',
+      time: schedule.entries.fajr.time,
+      remainingSeconds: 1,
+    })
   })
 })
 

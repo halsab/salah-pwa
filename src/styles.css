@@ -49,7 +49,8 @@ textarea {
 
 button,
 a,
-input {
+input,
+select {
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -60,6 +61,11 @@ button {
 button:focus-visible,
 a:focus-visible,
 input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+select:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 3px;
 }
@@ -160,6 +166,19 @@ button:disabled {
   align-items: center;
   gap: 26px;
   margin-top: 22px;
+}
+
+.location-tools {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.settings-button {
+  min-height: 58px;
+  background: transparent;
 }
 
 .location-control,
@@ -463,6 +482,26 @@ button:disabled {
   font-size: 13px;
 }
 
+.prayer-row[data-estimated='true'] {
+  grid-template-columns: 32px minmax(148px, auto) minmax(12px, 1fr) auto 28px;
+}
+
+.estimated-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed currentColor;
+  border-radius: 50%;
+  color: var(--ink-soft);
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.prayer-row[data-active='true'] .estimated-mark {
+  color: var(--accent-ink);
+}
+
 .source-note {
   min-height: 60px;
   display: grid;
@@ -475,6 +514,13 @@ button:disabled {
   border-radius: 15px;
   color: var(--ink-soft);
   font-size: 0.9rem;
+}
+
+.calculation-note {
+  margin: 5px 4px 0;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+  line-height: 1.2;
 }
 
 .source-note svg {
@@ -759,6 +805,43 @@ button:disabled {
   text-align: center;
 }
 
+.settings-dialog {
+  max-width: 540px;
+  grid-template-rows: auto auto auto auto auto auto;
+}
+
+.setting-field {
+  min-height: 72px;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.72fr) minmax(190px, 1.28fr);
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 1.15rem;
+}
+
+.setting-field > span {
+  font-weight: 800;
+}
+
+.setting-field select {
+  width: 100%;
+  min-height: 48px;
+  padding: 8px 38px 8px 12px;
+  border: 2px solid var(--outline);
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--paper-strong);
+}
+
+.settings-hint {
+  margin: 2px 4px 0;
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .icon-button:not(:disabled):hover,
   .today-button:hover,
@@ -828,8 +911,6 @@ button:disabled {
   }
 
   .location-control {
-    grid-column: 2;
-    grid-row: 1;
     min-height: 48px;
     grid-template-columns: 24px minmax(0, 1fr) 17px;
     gap: 8px;
@@ -837,6 +918,23 @@ button:disabled {
     border-radius: 13px;
     box-shadow: 2px 2px 0 var(--outline);
     font-size: 1rem;
+  }
+
+  .location-tools {
+    grid-column: 2;
+    grid-row: 1;
+    grid-template-columns: minmax(0, 1fr) 46px;
+    gap: 6px;
+  }
+
+  .location-tools .location-control {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .settings-button {
+    min-height: 48px;
+    padding: 9px;
   }
 
   .location-control svg {
@@ -979,6 +1077,10 @@ button:disabled {
     grid-template-columns: 29px minmax(114px, auto) minmax(7px, 1fr) auto 28px;
   }
 
+  .prayer-row[data-estimated='true'] {
+    grid-template-columns: 29px minmax(114px, auto) minmax(7px, 1fr) auto 28px;
+  }
+
   .schedule-icon {
     width: 27px;
     height: 27px;
@@ -1014,6 +1116,19 @@ button:disabled {
     border-radius: 26px 26px 0 0;
     box-shadow: 0 -5px 0 rgb(16 19 44 / 35%);
     animation: drawer-in 500ms var(--ease-drawer) both;
+  }
+
+
+  .settings-dialog {
+    max-height: min(78dvh, 620px);
+  }
+
+  .setting-field {
+    min-height: 68px;
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 10px;
+    padding-inline: 5px;
+    font-size: 1.05rem;
   }
 
   .dialog-handle {
@@ -1057,6 +1172,10 @@ button:disabled {
     grid-template-columns: 27px minmax(105px, auto) minmax(3px, 1fr) auto 26px;
   }
 
+  .prayer-row[data-estimated='true'] {
+    grid-template-columns: 27px minmax(105px, auto) minmax(3px, 1fr) auto 26px;
+  }
+
   .prayer-name {
     font-size: 1.06rem;
   }
@@ -1093,7 +1212,8 @@ button:disabled {
   }
 
   .app-frame,
-  .location-dialog {
+  .location-dialog,
+  .settings-dialog {
     background-blend-mode: soft-light;
   }
 

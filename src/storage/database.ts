@@ -1,11 +1,30 @@
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
-import type { PrayerDataset, PrayerDay, PrayerLocation } from '../domain/types'
+import type { CalculationSettings } from '../domain/prayerCalculation'
+import type {
+  PrayerDataset,
+  PrayerDay,
+  PrayerLocation,
+  SavedCoordinates,
+} from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 1
+const DATABASE_VERSION = 2
 
-type SettingKey = 'locationId'
+export type LocationMode = 'official' | 'calculated'
+
+interface SettingValueMap {
+  locationId: string
+  locationMode: LocationMode
+  calculatedLocation: SavedCoordinates
+  calculationSettings: CalculationSettings
+}
+
+export type SettingKey = keyof SettingValueMap
+
+type SettingRecord = {
+  [Key in SettingKey]: { key: Key; value: SettingValueMap[Key] }
+}[SettingKey]
 
 interface PrayerDayRecord extends PrayerDay {
   key: string
@@ -28,7 +47,7 @@ interface SalahDatabase extends DBSchema {
   }
   settings: {
     key: SettingKey
-    value: { key: SettingKey; value: string }
+    value: SettingRecord
   }
 }
 
@@ -41,6 +60,9 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
         database.createObjectStore('days', { keyPath: 'key' })
         database.createObjectStore('meta')
         database.createObjectStore('settings', { keyPath: 'key' })
+      }
+      if (oldVersion < 2) {
+        // Новые типизированные настройки добавляются в существующее schemaless-хранилище.
       }
     },
   })
@@ -88,12 +110,19 @@ export async function getDatasetMeta(): Promise<DatasetMeta | undefined> {
   return (await getDatabase()).get('meta', 'current')
 }
 
-export async function setSetting(key: SettingKey, value: string): Promise<void> {
-  await (await getDatabase()).put('settings', { key, value })
+export async function setSetting<Key extends SettingKey>(
+  key: Key,
+  value: SettingValueMap[Key],
+): Promise<void> {
+  await (await getDatabase()).put('settings', { key, value } as SettingRecord)
 }
 
-export async function getSetting(key: SettingKey): Promise<string | undefined> {
-  return (await (await getDatabase()).get('settings', key))?.value
+export async function getSetting<Key extends SettingKey>(
+  key: Key,
+): Promise<SettingValueMap[Key] | undefined> {
+  return (await (await getDatabase()).get('settings', key))?.value as
+    | SettingValueMap[Key]
+    | undefined
 }
 
 export async function deleteSalahDatabase(): Promise<void> {

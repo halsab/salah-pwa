@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type ChangeEvent,
+  type RefObject,
 } from 'react'
 
 import { prayerRepository } from './data/prayerRepository'
@@ -12,19 +13,36 @@ import {
   addDays,
   formatCompactDateLabel,
   formatDateLabel,
-  getMoscowDate,
+  getSystemDate,
 } from './domain/date'
 import { findNearestLocation } from './domain/location'
 import { findNextPrayer, formatRemainingTime } from './domain/nextPrayer'
-import type { PrayerDay, PrayerKey, PrayerLocation } from './domain/types'
+import {
+  CALCULATION_PROFILES,
+  DEFAULT_CALCULATION_SETTINGS,
+  calculatePrayerSchedule,
+  type CalculationProfileId,
+  type CalculationSettings,
+  type CalculatedPrayerSchedule,
+  type HighLatitudeMethod,
+} from './domain/prayerCalculation'
+import type {
+  CalculatedPrayerKey,
+  PrayerDay,
+  PrayerKey,
+  PrayerLocation,
+  SavedCoordinates,
+  SchedulePrayerKey,
+} from './domain/types'
 import {
   getCurrentPosition,
   getGeolocationPermission,
   pulseHaptic,
   type Coordinates,
   type GeolocationPermission,
+  type PositionAccuracy,
 } from './platform/browser'
-import type { DatasetMeta } from './storage/database'
+import type { DatasetMeta, LocationMode } from './storage/database'
 import {
   CheckIcon,
   ChevronIcon,
@@ -34,17 +52,28 @@ import {
   LocationIcon,
   MoonIcon,
   SearchIcon,
+  SettingsIcon,
   SunIcon,
   SunriseIcon,
   SunsetIcon,
 } from './ui/Icons'
 
+interface InitializedAppState {
+  meta: DatasetMeta
+  locationId: string
+  locationMode: LocationMode
+  calculatedLocation: SavedCoordinates | null
+  calculationSettings: CalculationSettings
+}
+
 export interface AppServices {
-  initialize: () => Promise<{ meta: DatasetMeta; locationId: string }>
+  initialize: () => Promise<InitializedAppState>
   getDay: (locationId: string, date: string) => Promise<PrayerDay | undefined>
-  saveLocation: (locationId: string) => Promise<void>
+  saveOfficialLocation: (locationId: string) => Promise<void>
+  saveCalculatedLocation: (coordinates: SavedCoordinates) => Promise<void>
+  saveCalculationSettings: (settings: CalculationSettings) => Promise<void>
   getPermission: () => Promise<GeolocationPermission>
-  getPosition: () => Promise<Coordinates>
+  getPosition: (accuracy: PositionAccuracy) => Promise<Coordinates>
   now: () => Date
 }
 
@@ -57,10 +86,13 @@ const defaultServices: AppServices = {
 
 const MAX_AUTOMATIC_DISTANCE_KM = 80
 
-const PRAYER_ROWS: ReadonlyArray<{
+type DisplaySchedule = PrayerDay | CalculatedPrayerSchedule
+type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
+
+const OFFICIAL_PRAYER_ROWS: ReadonlyArray<{
   key: PrayerKey
   label: string
-  icon: 'moon' | 'sunrise' | 'sun' | 'sunset'
+  icon: ScheduleIconKind
 }> = [
   { key: 'suhurEnd', label: 'Завершение сухура', icon: 'moon' },
   { key: 'fajrJamaat', label: 'Утренний намаз в мечетях', icon: 'sunrise' },
@@ -72,7 +104,21 @@ const PRAYER_ROWS: ReadonlyArray<{
   { key: 'isha', label: 'Иша', icon: 'moon' },
 ]
 
-function ScheduleIcon({ kind }: { kind: (typeof PRAYER_ROWS)[number]['icon'] }) {
+const CALCULATED_PRAYER_ROWS: ReadonlyArray<{
+  key: CalculatedPrayerKey
+  label: string
+  icon: ScheduleIconKind
+}> = [
+  { key: 'fajr', label: 'Фаджр', icon: 'moon' },
+  { key: 'sunrise', label: 'Восход', icon: 'sunrise' },
+  { key: 'zenith', label: 'Зенит', icon: 'sun' },
+  { key: 'dhuhr', label: 'Зухр', icon: 'sun' },
+  { key: 'asr', label: 'Аср', icon: 'sunset' },
+  { key: 'maghrib', label: 'Магриб', icon: 'sunset' },
+  { key: 'isha', label: 'Иша', icon: 'moon' },
+]
+
+function ScheduleIcon({ kind }: { kind: ScheduleIconKind }) {
   const props = { className: 'schedule-icon' }
   if (kind === 'moon') return <MoonIcon {...props} />
   if (kind === 'sun') return <SunIcon {...props} />
@@ -80,31 +126,112 @@ function ScheduleIcon({ kind }: { kind: (typeof PRAYER_ROWS)[number]['icon'] }) 
   return <SunriseIcon {...props} />
 }
 
-function PrayerSchedule({ day, activePrayer }: { day: PrayerDay; activePrayer: PrayerKey | undefined }) {
+function PrayerSchedule({
+  schedule,
+  activePrayer,
+}: {
+  schedule: DisplaySchedule
+  activePrayer: SchedulePrayerKey | undefined
+}) {
+  const calculated = 'entries' in schedule
+  const rows = calculated ? CALCULATED_PRAYER_ROWS : OFFICIAL_PRAYER_ROWS
+
   return (
     <ol className="prayer-list" aria-label="Времена намаза">
-      {PRAYER_ROWS.map(({ key, label, icon }) => (
-        <li className="prayer-row" data-active={key === activePrayer || undefined} key={key}>
-          <ScheduleIcon kind={icon} />
-          <span className="prayer-name">{label}</span>
-          <span className="prayer-dots" aria-hidden="true" />
-          <time className="prayer-time" dateTime={`${day.date}T${day[key]}:00+03:00`}>
-            {day[key]}
-          </time>
-          {key === activePrayer ? (
-            <span className="active-mark" aria-label="Следующий намаз">
-              ✦
-            </span>
-          ) : null}
-        </li>
-      ))}
+      {rows.map(({ key, label, icon }) => {
+        const entry = calculated
+          ? (schedule as CalculatedPrayerSchedule).entries[key as CalculatedPrayerKey]
+          : null
+        const time = entry?.time ?? (schedule as PrayerDay)[key as PrayerKey]
+        const dateTime = entry
+          ? new Date(entry.instant).toISOString()
+          : `${schedule.date}T${time}:00+03:00`
+        const estimated = entry?.estimated ?? false
+
+        return (
+          <li
+            className="prayer-row"
+            data-active={key === activePrayer || undefined}
+            data-estimated={estimated || undefined}
+            key={key}
+          >
+            <ScheduleIcon kind={icon} />
+            <span className="prayer-name">{label}</span>
+            <span className="prayer-dots" aria-hidden="true" />
+            <time className="prayer-time" dateTime={dateTime}>
+              {time}
+            </time>
+            {estimated ? (
+              <span className="estimated-mark" aria-label="Время определено по северному правилу">
+                ≈
+              </span>
+            ) : key === activePrayer ? (
+              <span className="active-mark" aria-label="Следующий намаз">
+                ✦
+              </span>
+            ) : null}
+          </li>
+        )
+      })}
     </ol>
   )
 }
 
+function useModalDialog(
+  open: boolean,
+  onClose: () => void,
+  initialFocusRef?: RefObject<HTMLElement | null>,
+) {
+  const dialogRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    requestAnimationFrame(() => initialFocusRef?.current?.focus())
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose()
+        return
+      }
+      if (event.key !== 'Tab' || !dialogRef.current) return
+
+      const focusableElements = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      )
+      const firstElement = focusableElements[0]
+      const lastElement = focusableElements.at(-1)
+      if (!firstElement || !lastElement) return
+
+      const moveFocus = (element: HTMLElement) => {
+        event.preventDefault()
+        requestAnimationFrame(() => element.focus())
+      }
+      if (!dialogRef.current.contains(document.activeElement)) {
+        moveFocus(event.shiftKey ? lastElement : firstElement)
+      } else if (event.shiftKey && document.activeElement === firstElement) {
+        moveFocus(lastElement)
+      } else if (!event.shiftKey && document.activeElement === lastElement) {
+        moveFocus(firstElement)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [initialFocusRef, onClose, open])
+
+  return dialogRef
+}
+
 interface LocationDialogProps {
   locations: PrayerLocation[]
-  selectedId: string
+  selectedId: string | null
   open: boolean
   onClose: () => void
   onSelect: (locationId: string) => void
@@ -123,52 +250,13 @@ function LocationDialog({
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-  const dialogRef = useRef<HTMLElement>(null)
+  const dialogRef = useModalDialog(open, onClose, searchRef)
 
   useEffect(() => {
     if (!open) return
     setSearch('')
     setLocationError(null)
-    const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-    requestAnimationFrame(() => searchRef.current?.focus())
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        onClose()
-        return
-      }
-
-      if (event.key !== 'Tab' || !dialogRef.current) return
-
-      const focusableElements = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
-        ),
-      )
-      const firstElement = focusableElements[0]
-      const lastElement = focusableElements.at(-1)
-      if (!firstElement || !lastElement) return
-      const moveFocus = (element: HTMLElement) => {
-        event.preventDefault()
-        requestAnimationFrame(() => element.focus())
-      }
-
-      if (!dialogRef.current.contains(document.activeElement)) {
-        moveFocus(event.shiftKey ? lastElement : firstElement)
-      } else if (event.shiftKey && document.activeElement === firstElement) {
-        moveFocus(lastElement)
-      } else if (!event.shiftKey && document.activeElement === lastElement) {
-        moveFocus(firstElement)
-      }
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', handleKeyDown, true)
-    }
-  }, [onClose, open])
+  }, [open])
 
   const filteredLocations = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('ru-RU')
@@ -205,8 +293,8 @@ function LocationDialog({
         <div className="dialog-handle" aria-hidden="true" />
         <header className="dialog-header">
           <div>
-            <p className="dialog-kicker">Расписание ДУМ РТ</p>
-            <h2 id="location-dialog-title">Выбор населённого пункта</h2>
+            <p className="dialog-kicker">Официально в РТ · расчёт вне РТ</p>
+            <h2 id="location-dialog-title">Выбор местоположения</h2>
           </div>
           <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
             <CloseIcon />
@@ -255,6 +343,90 @@ function LocationDialog({
   )
 }
 
+interface SettingsDialogProps {
+  open: boolean
+  settings: CalculationSettings
+  onClose: () => void
+  onChange: (settings: CalculationSettings) => void
+}
+
+function SettingsDialog({ open, settings, onClose, onChange }: SettingsDialogProps) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useModalDialog(open, onClose, closeRef)
+  if (!open) return null
+
+  const update = <Key extends keyof CalculationSettings>(
+    key: Key,
+    value: CalculationSettings[Key],
+  ) => onChange({ ...settings, [key]: value })
+
+  return (
+    <div className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section
+        ref={dialogRef}
+        aria-labelledby="settings-dialog-title"
+        aria-modal="true"
+        className="location-dialog settings-dialog"
+        role="dialog"
+      >
+        <div className="dialog-handle" aria-hidden="true" />
+        <header className="dialog-header">
+          <div>
+            <p className="dialog-kicker">Автономный расчёт</p>
+            <h2 id="settings-dialog-title">Настройки расчёта</h2>
+          </div>
+          <button ref={closeRef} className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </header>
+
+        <label className="setting-field">
+          <span>Аср</span>
+          <select
+            aria-label="Аср"
+            value={settings.asrMethod}
+            onChange={(event) => update('asrMethod', event.target.value as CalculationSettings['asrMethod'])}
+          >
+            <option value="hanafi">Ханафитский</option>
+            <option value="standard">Стандартный</option>
+          </select>
+        </label>
+
+        <label className="setting-field">
+          <span>Профиль</span>
+          <select
+            aria-label="Профиль"
+            value={settings.profile}
+            onChange={(event) => update('profile', event.target.value as CalculationProfileId)}
+          >
+            {CALCULATION_PROFILES.map((profile) => (
+              <option key={profile.id} value={profile.id}>{profile.label}</option>
+            ))}
+          </select>
+        </label>
+
+        <label className="setting-field">
+          <span>Северные правила</span>
+          <select
+            aria-label="Северные правила"
+            value={settings.highLatitudeRule}
+            onChange={(event) => update('highLatitudeRule', event.target.value as HighLatitudeMethod)}
+          >
+            <option value="dumRt">ДУМ РТ · 120/90 мин</option>
+            <option value="seventhOfNight">1/7 ночи</option>
+            <option value="twilightAngle">Доля ночи по углу</option>
+            <option value="nearestDay">Ближайший день</option>
+          </select>
+        </label>
+
+        <p className="settings-hint">
+          Настройки применяются к расчёту вне зоны официального расписания.
+        </p>
+      </section>
+    </div>
+  )
+}
+
 function LoadingScreen() {
   return (
     <main className="page-shell loading-page">
@@ -267,46 +439,55 @@ function LoadingScreen() {
   )
 }
 
+function calculationProfileLabel(profileId: CalculationProfileId): string {
+  return CALCULATION_PROFILES.find(({ id }) => id === profileId)?.label ?? 'ДУМ РТ'
+}
+
 export function App({ services = defaultServices }: { services?: AppServices }) {
   const [meta, setMeta] = useState<DatasetMeta | null>(null)
   const [locationId, setLocationId] = useState('kazan')
-  const [selectedDate, setSelectedDate] = useState(() => getMoscowDate(services.now()))
+  const [locationMode, setLocationMode] = useState<LocationMode>('official')
+  const [calculatedLocation, setCalculatedLocation] = useState<SavedCoordinates | null>(null)
+  const [calculationSettings, setCalculationSettings] = useState<CalculationSettings>(DEFAULT_CALCULATION_SETTINGS)
+  const [selectedDate, setSelectedDate] = useState(() => getSystemDate(services.now()))
   const [currentTime, setCurrentTime] = useState(() => services.now())
-  const [day, setDay] = useState<PrayerDay | null>(null)
-  const [tomorrow, setTomorrow] = useState<PrayerDay | undefined>()
+  const [schedule, setSchedule] = useState<DisplaySchedule | null>(null)
+  const [tomorrow, setTomorrow] = useState<DisplaySchedule | undefined>()
   const [loading, setLoading] = useState(true)
   const [scheduleLoading, setScheduleLoading] = useState(false)
   const [scheduleError, setScheduleError] = useState<string | null>(null)
   const [scheduleRetryCount, setScheduleRetryCount] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const automaticLocationAttempted = useRef(false)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
+  const settingsButtonRef = useRef<HTMLButtonElement>(null)
 
   const closeLocationDialog = useCallback(() => {
     setLocationDialogOpen(false)
     requestAnimationFrame(() => locationButtonRef.current?.focus())
+  }, [])
+  const closeSettingsDialog = useCallback(() => {
+    setSettingsDialogOpen(false)
+    requestAnimationFrame(() => settingsButtonRef.current?.focus())
   }, [])
 
   useEffect(() => {
     let active = true
     setLoading(true)
     setError(null)
-
-    void services
-      .initialize()
-      .then(({ meta: loadedMeta, locationId: loadedLocationId }) => {
-        if (!active) return
-        setMeta(loadedMeta)
-        setLocationId(loadedLocationId)
-      })
-      .catch(() => active && setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.'))
+    void services.initialize().then((state) => {
+      if (!active) return
+      setMeta(state.meta)
+      setLocationId(state.locationId)
+      setLocationMode(state.locationMode)
+      setCalculatedLocation(state.calculatedLocation)
+      setCalculationSettings(state.calculationSettings)
+    }).catch(() => active && setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.'))
       .finally(() => active && setLoading(false))
-
-    return () => {
-      active = false
-    }
+    return () => { active = false }
   }, [retryCount, services])
 
   useEffect(() => {
@@ -320,59 +501,101 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     setScheduleLoading(true)
     setScheduleError(null)
 
-    void Promise.all([
-      services.getDay(locationId, selectedDate),
-      services.getDay(locationId, addDays(selectedDate, 1)),
-    ])
-      .then(([loadedDay, loadedTomorrow]) => {
-        if (!active) return
-        setDay(loadedDay ?? null)
-        setTomorrow(loadedTomorrow)
-      })
-      .catch(() => {
-        if (!active) return
-        setDay(null)
-        setTomorrow(undefined)
-        setScheduleError('Не удалось загрузить расписание. Проверьте соединение и попробуйте ещё раз.')
-      })
-      .finally(() => {
-        if (active) setScheduleLoading(false)
-      })
-
-    return () => {
-      active = false
+    const loadSchedules = async (): Promise<[DisplaySchedule | null, DisplaySchedule | undefined]> => {
+      if (locationMode === 'calculated' && calculatedLocation) {
+        return [
+          calculatePrayerSchedule(calculatedLocation, selectedDate, calculationSettings),
+          calculatePrayerSchedule(calculatedLocation, addDays(selectedDate, 1), calculationSettings),
+        ]
+      }
+      const [officialDay, officialTomorrow] = await Promise.all([
+        services.getDay(locationId, selectedDate),
+        services.getDay(locationId, addDays(selectedDate, 1)),
+      ])
+      return [officialDay ?? null, officialTomorrow]
     }
-  }, [locationId, meta, scheduleRetryCount, selectedDate, services])
 
-  const today = getMoscowDate(currentTime)
+    void loadSchedules().then(([loadedSchedule, loadedTomorrow]) => {
+      if (!active) return
+      setSchedule(loadedSchedule)
+      setTomorrow(loadedTomorrow)
+    }).catch(() => {
+      if (!active) return
+      setSchedule(null)
+      setTomorrow(undefined)
+      setScheduleError('Не удалось загрузить расписание. Попробуйте ещё раз.')
+    }).finally(() => {
+      if (active) setScheduleLoading(false)
+    })
+    return () => { active = false }
+  }, [
+    calculatedLocation,
+    calculationSettings.asrMethod,
+    calculationSettings.highLatitudeRule,
+    calculationSettings.profile,
+    locationId,
+    locationMode,
+    meta,
+    scheduleRetryCount,
+    selectedDate,
+    services,
+  ])
+
+  const today = getSystemDate(currentTime)
   const selectedLocation = meta?.locations.find(({ id }) => id === locationId)
-  const nextPrayer =
-    selectedDate === today && day ? findNextPrayer(currentTime, day, tomorrow) : null
+  const nextPrayer = selectedDate === today && schedule
+    ? findNextPrayer(currentTime, schedule, tomorrow)
+    : null
 
-  const selectLocation = useCallback(
-    (nextLocationId: string) => {
-      setLocationId(nextLocationId)
-      closeLocationDialog()
-      pulseHaptic()
-      void services.saveLocation(nextLocationId)
-    },
-    [closeLocationDialog, services],
-  )
+  const selectOfficialLocation = useCallback((nextLocationId: string) => {
+    setLocationId(nextLocationId)
+    setLocationMode('official')
+    closeLocationDialog()
+    pulseHaptic()
+    void services.saveOfficialLocation(nextLocationId)
+  }, [closeLocationDialog, services])
+
+  const selectCalculatedLocation = useCallback((coordinates: Coordinates) => {
+    setCalculatedLocation(coordinates)
+    setLocationMode('calculated')
+    closeLocationDialog()
+    pulseHaptic()
+    void services.saveCalculatedLocation(coordinates)
+  }, [closeLocationDialog, services])
 
   const locateAutomatically = useCallback(async () => {
     if (!meta) return
-    const position = await services.getPosition()
-    const nearest = findNearestLocation(
-      position.latitude,
-      position.longitude,
+    const coarse = await services.getPosition('coarse')
+    const coarseOfficial = findNearestLocation(
+      coarse.latitude,
+      coarse.longitude,
       meta.locations,
       MAX_AUTOMATIC_DISTANCE_KM,
     )
-    if (!nearest) {
-      throw new Error('Вы находитесь далеко от Татарстана. Выберите населённый пункт вручную.')
+    if (coarseOfficial) {
+      selectOfficialLocation(coarseOfficial.id)
+      return
     }
-    selectLocation(nearest.id)
-  }, [meta, selectLocation, services])
+
+    let bestPosition = coarse
+    try {
+      const precise = await services.getPosition('precise')
+      bestPosition = precise
+      const preciseOfficial = findNearestLocation(
+        precise.latitude,
+        precise.longitude,
+        meta.locations,
+        MAX_AUTOMATIC_DISTANCE_KM,
+      )
+      if (preciseOfficial) {
+        selectOfficialLocation(preciseOfficial.id)
+        return
+      }
+    } catch {
+      // Грубых координат достаточно для резервного автономного расчёта.
+    }
+    selectCalculatedLocation(bestPosition)
+  }, [meta, selectCalculatedLocation, selectOfficialLocation, services])
 
   useEffect(() => {
     if (!meta || automaticLocationAttempted.current) return
@@ -399,17 +622,22 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     )
   }
 
-  const minDate = `${meta.source.years[0]}-01-01`
-  const maxDate = `${meta.source.years.at(-1)}-12-31`
-
+  const officialMode = locationMode === 'official'
+  const minDate = officialMode ? `${meta.source.years[0]}-01-01` : undefined
+  const maxDate = officialMode ? `${meta.source.years.at(-1)}-12-31` : undefined
   const changeDate = (date: string) => {
     setSelectedDate(date)
     pulseHaptic()
   }
-
   const onDateInput = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.value) changeDate(event.target.value)
   }
+  const updateCalculationSettings = (settings: CalculationSettings) => {
+    setCalculationSettings(settings)
+    void services.saveCalculationSettings(settings)
+  }
+  const calculatedSchedule = schedule && 'entries' in schedule ? schedule : null
+  const profileLabel = calculationProfileLabel(calculationSettings.profile)
 
   return (
     <main className="page-shell">
@@ -420,24 +648,37 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
           <span className="spark spark-right" aria-hidden="true">✧</span>
 
           <div className="control-row">
-            <button
-              ref={locationButtonRef}
-              className="location-control"
-              type="button"
-              onClick={() => setLocationDialogOpen(true)}
-              aria-label={`Населённый пункт: ${selectedLocation?.name ?? 'не выбран'}`}
-            >
-              <LocationIcon />
-              <span>{selectedLocation?.name ?? 'Выберите населённый пункт'}</span>
-              <ChevronIcon className="location-chevron" />
-            </button>
+            <div className="location-tools">
+              <button
+                ref={locationButtonRef}
+                className="location-control"
+                type="button"
+                onClick={() => setLocationDialogOpen(true)}
+                aria-label={officialMode
+                  ? `Населённый пункт: ${selectedLocation?.name ?? 'не выбран'}`
+                  : 'Местоположение: текущее'}
+              >
+                <LocationIcon />
+                <span>{officialMode ? selectedLocation?.name ?? 'Выберите населённый пункт' : 'Текущее местоположение'}</span>
+                <ChevronIcon className="location-chevron" />
+              </button>
+              <button
+                ref={settingsButtonRef}
+                className="icon-button settings-button"
+                type="button"
+                aria-label="Настройки расчёта"
+                onClick={() => setSettingsDialogOpen(true)}
+              >
+                <SettingsIcon />
+              </button>
+            </div>
 
             <div className="date-controls">
               <button
                 className="icon-button date-arrow"
                 type="button"
                 aria-label="Предыдущий день"
-                disabled={selectedDate <= minDate}
+                disabled={Boolean(minDate && selectedDate <= minDate)}
                 onClick={() => changeDate(addDays(selectedDate, -1))}
               >
                 <ChevronIcon direction="left" />
@@ -445,9 +686,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
 
               <label className="date-picker">
                 <span className="date-label-full">{formatDateLabel(selectedDate)}</span>
-                <span className="date-label-compact" aria-hidden="true">
-                  {formatCompactDateLabel(selectedDate)}
-                </span>
+                <span className="date-label-compact" aria-hidden="true">{formatCompactDateLabel(selectedDate)}</span>
                 <input
                   aria-label="Выбрать дату"
                   type="date"
@@ -462,16 +701,14 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 className="icon-button date-arrow"
                 type="button"
                 aria-label="Следующий день"
-                disabled={selectedDate >= maxDate}
+                disabled={Boolean(maxDate && selectedDate >= maxDate)}
                 onClick={() => changeDate(addDays(selectedDate, 1))}
               >
                 <ChevronIcon />
               </button>
 
               {selectedDate !== today ? (
-                <button className="today-button" type="button" onClick={() => changeDate(today)}>
-                  Сегодня
-                </button>
+                <button className="today-button" type="button" onClick={() => changeDate(today)}>Сегодня</button>
               ) : null}
             </div>
           </div>
@@ -480,15 +717,9 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         <div className="content-grid" data-loading={scheduleLoading || undefined}>
           <section className="next-prayer-panel" aria-label="Следующий намаз">
             {scheduleError ? (
-              <div className="no-next-prayer">
-                <ClockIcon />
-                <p>Расписание временно недоступно</p>
-              </div>
-            ) : scheduleLoading && !day ? (
-              <div className="no-next-prayer" aria-live="polite">
-                <ClockIcon />
-                <p>Загружаем расписание…</p>
-              </div>
+              <div className="no-next-prayer"><ClockIcon /><p>Расписание временно недоступно</p></div>
+            ) : scheduleLoading && !schedule ? (
+              <div className="no-next-prayer" aria-live="polite"><ClockIcon /><p>Загружаем расписание…</p></div>
             ) : selectedDate === today ? (
               nextPrayer ? (
                 <>
@@ -507,14 +738,12 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
               ) : (
                 <div className="no-next-prayer">
                   <MoonIcon />
-                  <p>Следующее расписание ещё не опубликовано</p>
+                  <p>{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующий намаз не найден'}</p>
                 </div>
               )
             ) : (
               <div className="selected-date-summary">
-                <SunIcon />
-                <p>Расписание на</p>
-                <strong>{formatDateLabel(selectedDate)}</strong>
+                <SunIcon /><p>Расписание на</p><strong>{formatDateLabel(selectedDate)}</strong>
               </div>
             )}
           </section>
@@ -523,41 +752,40 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
             {scheduleError ? (
               <div className="missing-schedule schedule-error">
                 <p role="alert">{scheduleError}</p>
-                <button
-                  className="primary-button"
-                  type="button"
-                  onClick={() => setScheduleRetryCount((count) => count + 1)}
-                >
-                  Повторить
-                </button>
+                <button className="primary-button" type="button" onClick={() => setScheduleRetryCount((count) => count + 1)}>Повторить</button>
               </div>
-            ) : day ? (
-              <PrayerSchedule
-                day={day}
-                activePrayer={nextPrayer?.date === day.date ? nextPrayer.key : undefined}
-              />
+            ) : schedule ? (
+              <PrayerSchedule schedule={schedule} activePrayer={nextPrayer?.date === schedule.date ? nextPrayer.key : undefined} />
             ) : scheduleLoading ? (
               <div className="schedule-skeleton" aria-label="Загружаем расписание" />
             ) : (
               <div className="missing-schedule">
                 <p>Расписание на эту дату ещё не опубликовано.</p>
                 {selectedDate !== today ? (
-                  <button className="primary-button" type="button" onClick={() => changeDate(today)}>
-                    Сегодня
-                  </button>
+                  <button className="primary-button" type="button" onClick={() => changeDate(today)}>Сегодня</button>
                 ) : null}
               </div>
             )}
 
-            <footer className="source-note">
-              <CheckIcon />
-              <span>
-                По данным{' '}
-                <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a>
-                {' '}· Доступно офлайн
-              </span>
-              <span className="source-spark" aria-hidden="true">✦</span>
-            </footer>
+            <div>
+              {calculatedSchedule?.estimatedPrayers.some((key) => key === 'fajr' || key === 'isha') ? (
+                <p className="calculation-note">Фаджр и/или Иша определены по правилу северных широт.</p>
+              ) : null}
+              {calculatedSchedule?.polarResolutionApplied ? (
+                <p className="calculation-note">Солнечный цикл восстановлен по ближайшей подходящей широте или дню.</p>
+              ) : null}
+              <footer className="source-note">
+                <CheckIcon />
+                {officialMode ? (
+                  <span>
+                    По данным <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a> · Доступно офлайн
+                  </span>
+                ) : (
+                  <span>Рассчитано на устройстве · {profileLabel} · Доступно офлайн</span>
+                )}
+                <span className="source-spark" aria-hidden="true">✦</span>
+              </footer>
+            </div>
           </section>
         </div>
       </section>
@@ -566,11 +794,17 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
 
       <LocationDialog
         locations={meta.locations}
-        selectedId={locationId}
+        selectedId={officialMode ? locationId : null}
         open={locationDialogOpen}
         onClose={closeLocationDialog}
-        onSelect={selectLocation}
+        onSelect={selectOfficialLocation}
         onLocate={locateAutomatically}
+      />
+      <SettingsDialog
+        open={settingsDialogOpen}
+        settings={calculationSettings}
+        onClose={closeSettingsDialog}
+        onChange={updateCalculationSettings}
       />
     </main>
   )

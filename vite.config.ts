@@ -12,7 +12,7 @@ export default defineConfig({
       manifest: {
         name: 'Salah — времена намаза',
         short_name: 'Salah',
-        description: 'Официальные времена намаза ДУМ РТ — всегда под рукой и без интернета.',
+        description: 'Официальные времена ДУМ РТ и автономный расчёт намаза по GPS — без интернета.',
         lang: 'ru',
         display: 'standalone',
         orientation: 'portrait-primary',

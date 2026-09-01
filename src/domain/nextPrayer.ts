@@ -1,4 +1,10 @@
-import type { PrayerDay, PrayerTime, SalahPrayerKey } from './types'
+import type { CalculatedPrayerSchedule } from './prayerCalculation'
+import type {
+  PrayerDay,
+  PrayerTime,
+  SalahPrayerKey,
+  ScheduleSalahPrayerKey,
+} from './types'
 
 const MOSCOW_UTC_OFFSET = '+03:00'
 
@@ -13,8 +19,21 @@ const SALAH_PRAYERS: ReadonlyArray<{
   { key: 'isha', label: 'Иша' },
 ]
 
+const CALCULATED_SALAH_PRAYERS: ReadonlyArray<{
+  key: Exclude<ScheduleSalahPrayerKey, 'fajrJamaat'>
+  label: string
+}> = [
+  { key: 'fajr', label: 'Фаджр' },
+  { key: 'dhuhr', label: 'Зухр' },
+  { key: 'asr', label: 'Аср' },
+  { key: 'maghrib', label: 'Магриб' },
+  { key: 'isha', label: 'Иша' },
+]
+
+type PrayerSchedule = PrayerDay | CalculatedPrayerSchedule
+
 export interface NextPrayer {
-  key: SalahPrayerKey
+  key: ScheduleSalahPrayerKey
   label: string
   date: string
   time: PrayerTime
@@ -26,7 +45,7 @@ function prayerInstant(date: string, time: PrayerTime): Date {
   return new Date(`${date}T${time}:00${MOSCOW_UTC_OFFSET}`)
 }
 
-function nextInDay(now: Date, day: PrayerDay): NextPrayer | null {
+function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {
   for (const prayer of SALAH_PRAYERS) {
     const time = day[prayer.key]
     const instant = prayerInstant(day.date, time)
@@ -46,10 +65,38 @@ function nextInDay(now: Date, day: PrayerDay): NextPrayer | null {
   return null
 }
 
+function nextInCalculatedDay(
+  now: Date,
+  day: CalculatedPrayerSchedule,
+): NextPrayer | null {
+  for (const prayer of CALCULATED_SALAH_PRAYERS) {
+    const entry = day.entries[prayer.key]
+    if (entry.instant >= now.getTime()) {
+      return {
+        ...prayer,
+        date: day.date,
+        time: entry.time,
+        remainingSeconds: Math.max(
+          0,
+          Math.ceil((entry.instant - now.getTime()) / 1_000),
+        ),
+      }
+    }
+  }
+
+  return null
+}
+
+function nextInDay(now: Date, day: PrayerSchedule): NextPrayer | null {
+  return 'entries' in day
+    ? nextInCalculatedDay(now, day)
+    : nextInOfficialDay(now, day)
+}
+
 export function findNextPrayer(
   now: Date,
-  today: PrayerDay,
-  tomorrow?: PrayerDay,
+  today: PrayerSchedule,
+  tomorrow?: PrayerSchedule,
 ): NextPrayer | null {
   return nextInDay(now, today) ?? (tomorrow ? nextInDay(now, tomorrow) : null)
 }

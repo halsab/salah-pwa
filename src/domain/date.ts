@@ -1,4 +1,3 @@
-const MOSCOW_TIME_ZONE = 'Europe/Moscow'
 const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
   timeZone: 'UTC',
   weekday: 'long',
@@ -15,16 +14,11 @@ function toUtcDate(date: string): Date {
   return new Date(`${date}T12:00:00.000Z`)
 }
 
-export function getMoscowDate(now: Date): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: MOSCOW_TIME_ZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now)
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
-
-  return `${values.year}-${values.month}-${values.day}`
+export function getSystemDate(now: Date): string {
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function addDays(date: string, amount: number): string {

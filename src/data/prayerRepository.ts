@@ -1,4 +1,8 @@
-import type { PrayerDataset } from '../domain/types'
+import {
+  DEFAULT_CALCULATION_SETTINGS,
+  type CalculationSettings,
+} from '../domain/prayerCalculation'
+import type { PrayerDataset, SavedCoordinates } from '../domain/types'
 import {
   getDatasetMeta,
   getPrayerDay,
@@ -6,6 +10,7 @@ import {
   replaceDataset,
   setSetting,
   type DatasetMeta,
+  type LocationMode,
 } from '../storage/database'
 
 const DATA_URL = `${import.meta.env.BASE_URL}data/prayer-times-current.json`
@@ -68,6 +73,9 @@ export function shouldReplaceDataset(
 export async function initializePrayerRepository(): Promise<{
   meta: DatasetMeta
   locationId: string
+  locationMode: LocationMode
+  calculatedLocation: SavedCoordinates | null
+  calculationSettings: CalculationSettings
 }> {
   const cachedMeta = await getDatasetMeta()
   let meta = cachedMeta
@@ -86,7 +94,13 @@ export async function initializePrayerRepository(): Promise<{
     throw new Error('Расписание ещё не загружено')
   }
 
-  const storedLocationId = await getSetting('locationId')
+  const [storedLocationId, storedMode, storedCoordinates, storedSettings] =
+    await Promise.all([
+      getSetting('locationId'),
+      getSetting('locationMode'),
+      getSetting('calculatedLocation'),
+      getSetting('calculationSettings'),
+    ])
   const locationId = meta.locations.some(({ id }) => id === storedLocationId)
     ? storedLocationId ?? 'kazan'
     : meta.locations.find(({ id }) => id === 'kazan')?.id ?? meta.locations[0]?.id
@@ -95,11 +109,63 @@ export async function initializePrayerRepository(): Promise<{
     throw new Error('В расписании нет населённых пунктов')
   }
 
-  return { meta, locationId }
+  const calculatedLocation = isSavedCoordinates(storedCoordinates)
+    ? storedCoordinates
+    : null
+  const locationMode =
+    storedMode === 'calculated' && calculatedLocation ? 'calculated' : 'official'
+
+  return {
+    meta,
+    locationId,
+    locationMode,
+    calculatedLocation,
+    calculationSettings: isCalculationSettings(storedSettings)
+      ? storedSettings
+      : DEFAULT_CALCULATION_SETTINGS,
+  }
+}
+
+function isSavedCoordinates(value: unknown): value is SavedCoordinates {
+  if (!value || typeof value !== 'object') return false
+  const coordinates = value as Partial<SavedCoordinates>
+  return (
+    Number.isFinite(coordinates.latitude) &&
+    Number.isFinite(coordinates.longitude) &&
+    (coordinates.accuracy === null || Number.isFinite(coordinates.accuracy)) &&
+    Number.isFinite(coordinates.timestamp)
+  )
+}
+
+function isCalculationSettings(value: unknown): value is CalculationSettings {
+  if (!value || typeof value !== 'object') return false
+  const settings = value as Partial<CalculationSettings>
+  return (
+    ['dumRt', 'turkey', 'muslimWorldLeague', 'karachi', 'northAmerica', 'ummAlQura'].includes(
+      settings.profile ?? '',
+    ) &&
+    ['hanafi', 'standard'].includes(settings.asrMethod ?? '') &&
+    ['dumRt', 'seventhOfNight', 'twilightAngle', 'nearestDay'].includes(
+      settings.highLatitudeRule ?? '',
+    )
+  )
 }
 
 export const prayerRepository = {
   initialize: initializePrayerRepository,
   getDay: getPrayerDay,
-  saveLocation: (locationId: string) => setSetting('locationId', locationId),
+  saveOfficialLocation: async (locationId: string) => {
+    await Promise.all([
+      setSetting('locationId', locationId),
+      setSetting('locationMode', 'official'),
+    ])
+  },
+  saveCalculatedLocation: async (coordinates: SavedCoordinates) => {
+    await Promise.all([
+      setSetting('calculatedLocation', coordinates),
+      setSetting('locationMode', 'calculated'),
+    ])
+  },
+  saveCalculationSettings: (settings: CalculationSettings) =>
+    setSetting('calculationSettings', settings),
 }

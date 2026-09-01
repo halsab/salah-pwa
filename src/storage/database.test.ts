@@ -58,4 +58,26 @@ describe('database', () => {
 
     expect(await getSetting('locationId')).toBe('kazan')
   })
+
+  it('хранит режим, GPS-координаты и независимые настройки расчёта', async () => {
+    const coordinates = {
+      latitude: 55.7558,
+      longitude: 37.6173,
+      accuracy: 18,
+      timestamp: 1_788_265_600_000,
+    }
+    const calculationSettings = {
+      profile: 'turkey',
+      asrMethod: 'standard',
+      highLatitudeRule: 'seventhOfNight',
+    } as const
+
+    await setSetting('locationMode', 'calculated')
+    await setSetting('calculatedLocation', coordinates)
+    await setSetting('calculationSettings', calculationSettings)
+
+    expect(await getSetting('locationMode')).toBe('calculated')
+    expect(await getSetting('calculatedLocation')).toEqual(coordinates)
+    expect(await getSetting('calculationSettings')).toEqual(calculationSettings)
+  })
 })

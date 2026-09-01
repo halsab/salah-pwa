@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { addDays, formatCompactDateLabel, formatDateLabel, getMoscowDate } from './date'
+import { addDays, formatCompactDateLabel, formatDateLabel, getSystemDate } from './date'
 
-describe('getMoscowDate', () => {
-  it('использует календарный день Татарстана, а не часовой пояс устройства', () => {
-    expect(getMoscowDate(new Date('2026-08-31T21:30:00.000Z'))).toBe('2026-09-01')
+describe('getSystemDate', () => {
+  it('использует календарный день системного часового пояса', () => {
+    expect(getSystemDate(new Date(2026, 8, 1, 0, 30))).toBe('2026-09-01')
   })
 })
 
