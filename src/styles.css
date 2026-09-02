@@ -352,7 +352,7 @@ button:disabled {
   max-width: 100%;
   margin: 8px 0 16px;
   color: var(--ink);
-  font-size: clamp(3.8rem, 8vw, 6.6rem);
+  font-size: clamp(3rem, 5.5vw, 5rem);
   line-height: 0.98;
   text-wrap: balance;
 }
@@ -364,8 +364,8 @@ button:disabled {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 28px;
-  padding: 18px 30px;
+  gap: clamp(14px, 2vw, 24px);
+  padding: 18px clamp(18px, 2.4vw, 28px);
   border: 2px solid var(--outline);
   border-radius: 22px;
   background: rgb(255 255 255 / 18%);
@@ -389,7 +389,7 @@ button:disabled {
 
 .countdown-value {
   font-family: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'Roboto Mono', monospace;
-  font-size: clamp(2.35rem, 5.5vw, 4rem);
+  font-size: clamp(2.25rem, 4.2vw, 3.25rem);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.035em;
   line-height: 1;
@@ -769,16 +769,11 @@ button:disabled {
   font-weight: 800;
 }
 
-.location-disclosure,
 .location-attribution {
   margin: 0;
   color: var(--ink-soft);
   font-size: 0.78rem;
   line-height: 1.25;
-}
-
-.location-disclosure {
-  padding-inline: 3px;
 }
 
 .location-attribution {
@@ -1009,6 +1004,13 @@ button:disabled {
   .auto-location-button:hover,
   .primary-button:hover {
     transform: translateY(-2px);
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .location-control:focus-visible,
+  .setting-field select:focus-visible {
+    outline: none;
   }
 }
 
@@ -1329,6 +1331,10 @@ button:disabled {
     padding-inline: 10px;
   }
 
+  .current-prayer {
+    padding-left: 4px;
+  }
+
   .current-label {
     font-size: 0.92rem;
   }
@@ -1374,6 +1380,7 @@ button:disabled {
   }
 
   .prayer-name {
+    max-width: 8.25rem;
     font-size: 1.06rem;
   }
 

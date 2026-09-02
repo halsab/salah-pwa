@@ -427,27 +427,22 @@ function LocationDialog({
           </button>
 
           {calculatedLocation ? (
-            <>
-              <button
-                className="reverse-location-button"
-                type="button"
-                onClick={() => void runLocationAction(onReverse, setResolving)}
-                disabled={
-                  locating ||
-                  resolving ||
-                  calculatedLocation.nameSource === 'nominatim'
-                }
-              >
-                {resolving
-                  ? 'Уточняем…'
-                  : calculatedLocation.nameSource === 'nominatim'
-                    ? 'Название уточнено онлайн'
-                    : 'Уточнить название онлайн'}
-              </button>
-              <p className="location-disclosure">
-                Только по этой кнопке приблизительные координаты передаются OpenStreetMap.
-              </p>
-            </>
+            <button
+              className="reverse-location-button"
+              type="button"
+              onClick={() => void runLocationAction(onReverse, setResolving)}
+              disabled={
+                locating ||
+                resolving ||
+                calculatedLocation.nameSource === 'nominatim'
+              }
+            >
+              {resolving
+                ? 'Уточняем…'
+                : calculatedLocation.nameSource === 'nominatim'
+                  ? 'Название уточнено онлайн'
+                  : 'Уточнить название онлайн'}
+            </button>
           ) : null}
           {locationError ? <p className="location-error" role="alert">{locationError}</p> : null}
         </div>

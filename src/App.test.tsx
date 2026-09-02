@@ -347,6 +347,7 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', { name: /Moscow, Россия/ })).toBeVisible()
     expect(services.resolvePlaceName).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: /Moscow, Россия/ }))
+    expect(screen.queryByText(/приблизительные координаты передаются OpenStreetMap/i)).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Уточнить название онлайн' }))
 
     expect(services.resolvePlaceName).toHaveBeenCalledWith(calculatedLocation)

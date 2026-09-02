@@ -104,6 +104,24 @@ test.describe('мобильная компоновка', () => {
 })
 
 test.describe('адаптивность', () => {
+  test('вмещает текущий намаз и таймер в две колонки на 988 px', async ({ page }) => {
+    await page.setViewportSize({ width: 988, height: 1324 })
+    await page.goto('./')
+
+    const currentFitsOneLine = await page.locator('.next-name').evaluate((element) => {
+      const styles = getComputedStyle(element)
+      return element.getBoundingClientRect().height <= Number.parseFloat(styles.lineHeight) * 1.2
+    })
+    const countdownFitsContainer = await page.locator('.countdown').evaluate((element) => {
+      const container = element.getBoundingClientRect()
+      const value = element.querySelector('.countdown-value')!.getBoundingClientRect()
+      return value.left >= container.left && value.right <= container.right
+    })
+
+    expect(currentFitsOneLine).toBe(true)
+    expect(countdownFitsContainer).toBe(true)
+  })
+
   test('не создаёт горизонтальное переполнение на экране 319 px', async ({ page }) => {
     await page.setViewportSize({ width: 319, height: 1324 })
     await page.goto('./')
@@ -120,6 +138,21 @@ test.describe('адаптивность', () => {
       )
       expect(boxes.every(({ left, right }) => left >= 0 && right <= 319)).toBe(true)
     }
+
+    const longRow = page.getByRole('listitem').filter({ hasText: 'Утренний намаз' })
+    await expect(longRow.locator('.prayer-dots')).toHaveCSS('width', /(?:2[2-9]|[3-9]\d|\d{3,})px/)
+  })
+
+  test('оставляет внутренний отступ у текущего намаза на 380 px', async ({ page }) => {
+    await page.setViewportSize({ width: 380, height: 1324 })
+    await page.goto('./')
+
+    const inset = await page.locator('.next-name').evaluate((element) => {
+      const panel = element.closest('.next-prayer-panel')!.getBoundingClientRect()
+      return element.getBoundingClientRect().left - panel.left
+    })
+
+    expect(inset).toBeGreaterThanOrEqual(14)
   })
 
   test('открывает нативный календарь по клику на дату', async ({ page }) => {
@@ -136,5 +169,24 @@ test.describe('адаптивность', () => {
     await page.getByLabel('Выбрать дату').click()
 
     await expect(page.locator('html')).toHaveAttribute('data-date-picker-opened', 'true')
+  })
+})
+
+test.describe('сенсорное управление', () => {
+  test.use({ viewport: { width: 380, height: 1324 }, hasTouch: true })
+
+  test('не оставляет обводку на экшенах после тапа', async ({ page }) => {
+    await page.goto('./')
+
+    const locationButton = page.getByRole('button', { name: /Казань/ })
+    await locationButton.tap()
+    await locationButton.focus()
+    await expect(locationButton).toHaveCSS('outline-style', 'none')
+
+    await page.getByRole('dialog').getByRole('button', { name: 'Закрыть' }).tap()
+    await page.getByRole('button', { name: 'Настройки автономного расчёта' }).tap()
+    const asrSelect = page.getByLabel('Аср')
+    await asrSelect.focus()
+    await expect(asrSelect).toHaveCSS('outline-style', 'none')
   })
 })
