@@ -493,7 +493,6 @@ button:disabled {
 
 .prayer-row[data-active='true'] {
   z-index: 1;
-  grid-template-columns: 32px minmax(0, auto) minmax(16px, 1fr) auto 28px;
   margin: 2px 0;
   border: 2px solid var(--outline);
   border-radius: 13px;
@@ -505,18 +504,6 @@ button:disabled {
 
 .prayer-row[data-active='true'] + .prayer-row {
   border-top-color: transparent;
-}
-
-.active-mark {
-  position: static;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  color: #fff7df;
-  background: var(--indigo-strong);
-  font-size: 13px;
 }
 
 .prayer-row[data-estimated='true'] {
@@ -837,12 +824,15 @@ button:disabled {
 }
 
 .search-control input {
+  appearance: none;
   min-width: 0;
   height: 46px;
+  padding: 0;
   border: 0;
   outline: 0;
   color: var(--ink);
   background: transparent;
+  line-height: 46px;
   touch-action: manipulation;
 }
 
@@ -1310,10 +1300,6 @@ button:disabled {
     padding: 8px 9px;
   }
 
-  .prayer-row[data-active='true'] {
-    grid-template-columns: 29px minmax(0, auto) minmax(16px, 1fr) auto 28px;
-  }
-
   .prayer-row[data-estimated='true'] {
     grid-template-columns: 29px minmax(0, auto) minmax(16px, 1fr) auto 28px;
   }
@@ -1353,6 +1339,13 @@ button:disabled {
     animation: drawer-in 500ms var(--ease-drawer) both;
   }
 
+  .location-dialog > .location-results {
+    margin-right: calc(-1 * max(16px, env(safe-area-inset-right)));
+    margin-left: calc(-1 * max(16px, env(safe-area-inset-left)));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+
 
   .settings-dialog {
     max-height: min(
@@ -1365,13 +1358,21 @@ button:disabled {
     padding-bottom: calc(var(--dialog-keyboard-inset, 0px) + 12px);
   }
 
-  .dialog-layer.location-search-layer[data-keyboard-open='true'] {
-    height: var(--dialog-viewport-height, 100dvh);
+  .location-search-layer[data-keyboard-open='true'] .location-search-dialog {
+    height: min(
+      calc(var(--dialog-viewport-height, 100dvh) + var(--dialog-keyboard-inset, 0px) - max(8px, env(safe-area-inset-top))),
+      calc(820px + var(--dialog-keyboard-inset, 0px))
+    );
+    max-height: min(
+      calc(var(--dialog-viewport-height, 100dvh) + var(--dialog-keyboard-inset, 0px) - max(8px, env(safe-area-inset-top))),
+      calc(820px + var(--dialog-keyboard-inset, 0px))
+    );
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
-  .location-search-layer[data-keyboard-open='true'] .location-search-dialog {
-    max-height: calc(var(--dialog-viewport-height, 100dvh) - max(8px, env(safe-area-inset-top)));
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  .location-search-layer[data-keyboard-open='true'] .location-results {
+    padding-bottom: calc(var(--dialog-keyboard-inset, 0px) + 12px);
+    scroll-padding-bottom: calc(var(--dialog-keyboard-inset, 0px) + 12px);
   }
 
   .setting-field {
@@ -1450,10 +1451,6 @@ button:disabled {
     grid-template-columns: 27px minmax(0, auto) minmax(14px, 1fr) auto 0;
     gap: 7px;
     padding-inline: 6px;
-  }
-
-  .prayer-row[data-active='true'] {
-    grid-template-columns: 27px minmax(0, auto) minmax(14px, 1fr) auto 26px;
   }
 
   .prayer-row[data-estimated='true'] {

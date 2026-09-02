@@ -49,15 +49,61 @@ test.describe('мобильная компоновка', () => {
       page.locator('.location-search-header').boundingBox(),
       countryTab.boundingBox(),
     ])
+    const inputMetrics = await searchBox.evaluate((element) => {
+      const styles = getComputedStyle(element)
+      return {
+        height: element.getBoundingClientRect().height,
+        lineHeight: Number.parseFloat(styles.lineHeight),
+        paddingBottom: Number.parseFloat(styles.paddingBottom),
+        paddingTop: Number.parseFloat(styles.paddingTop),
+      }
+    })
 
     expect(searchBounds).not.toBeNull()
     expect(tabBounds).not.toBeNull()
+    expect(Math.abs(inputMetrics.height - inputMetrics.lineHeight)).toBeLessThanOrEqual(1)
+    expect(inputMetrics.paddingTop).toBe(0)
+    expect(inputMetrics.paddingBottom).toBe(0)
     expect(Math.abs(tabBounds!.x - searchBounds!.x)).toBeLessThanOrEqual(1)
     expect(
       Math.abs(
         tabBounds!.x + tabBounds!.width - (searchBounds!.x + searchBounds!.width),
       ),
     ).toBeLessThanOrEqual(1)
+  })
+
+  test('растягивает скролл до краёв экрана и сохраняет отступы контента', async ({ page }) => {
+    await page.setViewportSize({ width: 319, height: 1324 })
+    await page.goto('./')
+    await page.getByRole('button', { name: /Казань/ }).click()
+
+    const getLayout = () => page.locator('.location-results').evaluate((element) => {
+      const scrollBounds = element.getBoundingClientRect()
+      const contentBounds = element.querySelector('.country-group')!.getBoundingClientRect()
+      const styles = getComputedStyle(element)
+      return {
+        contentLeft: contentBounds.left,
+        contentRight: contentBounds.right,
+        paddingLeft: Number.parseFloat(styles.paddingLeft),
+        scrollLeft: scrollBounds.left,
+        scrollRight: scrollBounds.right,
+      }
+    })
+
+    const browseLayout = await getLayout()
+    expect(browseLayout.scrollLeft).toBeLessThanOrEqual(1)
+    expect(browseLayout.scrollRight).toBeGreaterThanOrEqual(318)
+    expect(browseLayout.paddingLeft).toBeGreaterThanOrEqual(16)
+    expect(browseLayout.contentLeft).toBeGreaterThanOrEqual(16)
+    expect(browseLayout.contentRight).toBeLessThanOrEqual(303)
+
+    await page.getByRole('button', { name: 'Найти город или район' }).click()
+    const searchLayout = await getLayout()
+    expect(searchLayout.scrollLeft).toBeLessThanOrEqual(1)
+    expect(searchLayout.scrollRight).toBeGreaterThanOrEqual(318)
+    expect(searchLayout.paddingLeft).toBeGreaterThanOrEqual(16)
+    expect(searchLayout.contentLeft).toBeGreaterThanOrEqual(16)
+    expect(searchLayout.contentRight).toBeLessThanOrEqual(303)
   })
 
   test('оставляет результаты видимыми над клавиатурой', async ({ page }) => {
@@ -92,14 +138,22 @@ test.describe('мобильная компоновка', () => {
     await expect(page.getByRole('button', { name: 'Определить автоматически' })).toHaveCount(0)
 
     const result = page.getByRole('dialog').getByRole('button', { name: 'Казань' })
-    const [layerBounds, dialogBounds, resultBounds] = await Promise.all([
+    const [layerBounds, dialogBounds, resultBounds, resultsLayout] = await Promise.all([
       layer.boundingBox(),
       page.getByRole('dialog').boundingBox(),
       result.boundingBox(),
+      page.locator('.location-results').evaluate((element) => ({
+        clientHeight: element.clientHeight,
+        paddingBottom: Number.parseFloat(getComputedStyle(element).paddingBottom),
+        scrollHeight: element.scrollHeight,
+      })),
     ])
 
-    expect(layerBounds!.height).toBeLessThanOrEqual(394)
+    expect(layerBounds!.height).toBeGreaterThanOrEqual(851)
     expect(Math.abs(dialogBounds!.y + dialogBounds!.height - (layerBounds!.y + layerBounds!.height))).toBeLessThanOrEqual(1)
+    expect(dialogBounds!.y + dialogBounds!.height).toBeGreaterThan(800)
+    expect(resultsLayout.paddingBottom).toBeGreaterThanOrEqual(459)
+    expect(resultsLayout.scrollHeight).toBeGreaterThan(resultsLayout.clientHeight)
     expect(resultBounds).not.toBeNull()
     expect(resultBounds!.y).toBeGreaterThanOrEqual(0)
     expect(resultBounds!.y + resultBounds!.height).toBeLessThanOrEqual(393)

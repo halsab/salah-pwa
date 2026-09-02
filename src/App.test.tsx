@@ -155,6 +155,7 @@ describe('Salah', () => {
     expect(within(schedule).getByText('20:33')).toBeVisible()
     expect(within(schedule).getByText('Зухр').closest('li')).toHaveAttribute('data-active', 'true')
     expect(within(schedule).getByText('Аср').closest('li')).not.toHaveAttribute('data-active')
+    expect(within(schedule).queryByLabelText('Текущий намаз')).not.toBeInTheDocument()
     expect(document.querySelector('.source-note')).toHaveTextContent(/Официальное расписание ДУМ РТ/i)
     expect(screen.queryByText(/Координаты и выбранный город/i)).not.toBeInTheDocument()
   })
@@ -202,7 +203,7 @@ describe('Salah', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Найти город или район' }))
 
     const searchDialog = screen.getByRole('dialog', { name: 'Поиск населённого пункта' })
-    await waitFor(() => expect(within(searchDialog).getByRole('searchbox')).toHaveFocus())
+    expect(within(searchDialog).getByRole('searchbox')).toHaveFocus()
     expect(within(searchDialog).queryByText('Выбор местоположения')).not.toBeInTheDocument()
     expect(within(searchDialog).queryByRole('button', { name: 'Определить автоматически' })).not.toBeInTheDocument()
     expect(within(searchDialog).queryByText(/GeoNames/)).not.toBeInTheDocument()

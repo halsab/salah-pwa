@@ -9,6 +9,7 @@ import {
   type ChangeEvent,
   type RefObject,
 } from 'react'
+import { flushSync } from 'react-dom'
 
 import { cityCatalogService } from './data/cityCatalogClient'
 import type { CityCatalog, CityCatalogService } from './data/cityCatalog'
@@ -179,10 +180,6 @@ function PrayerSchedule({
             {estimated ? (
               <span className="estimated-mark" aria-label="Время определено по северному правилу">
                 ≈
-              </span>
-            ) : key === activePrayer ? (
-              <span className="active-mark" aria-label="Текущий намаз">
-                ✦
               </span>
             ) : null}
           </li>
@@ -665,8 +662,8 @@ const LocationDialog = memo(function LocationDialog({
   }
 
   const openSearch = () => {
-    setSearchMode(true)
-    requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }))
+    flushSync(() => setSearchMode(true))
+    searchRef.current?.focus({ preventScroll: true })
   }
 
   return (
