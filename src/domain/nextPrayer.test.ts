@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { PrayerDay } from './types'
-import { findNextPrayer, formatRemainingTime } from './nextPrayer'
+import { findCurrentPrayer, findNextPrayer, formatRemainingTime } from './nextPrayer'
 import { calculatePrayerSchedule } from './prayerCalculation'
 
 const today: PrayerDay = {
@@ -72,6 +72,46 @@ describe('findNextPrayer', () => {
       time: schedule.entries.fajr.time,
       remainingSeconds: 1,
     })
+  })
+
+  it('в момент наступления намаза переключает таймер на следующий', () => {
+    const next = findNextPrayer(
+      new Date('2026-09-01T13:24:00.000Z'),
+      today,
+      tomorrow,
+    )
+
+    expect(next).toMatchObject({ key: 'maghrib', time: '18:39' })
+  })
+})
+
+describe('findCurrentPrayer', () => {
+  it('возвращает последний уже наступивший намаз, а не следующий', () => {
+    const current = findCurrentPrayer(
+      new Date('2026-09-01T10:00:00.000Z'),
+      today,
+    )
+
+    expect(current).toMatchObject({ key: 'dhuhr', label: 'Зухр', time: '12:00' })
+  })
+
+  it('в момент наступления намаза сразу считает его текущим', () => {
+    const current = findCurrentPrayer(
+      new Date('2026-09-01T13:24:00.000Z'),
+      today,
+    )
+
+    expect(current).toMatchObject({ key: 'asr', time: '16:24' })
+  })
+
+  it('до первого намаза использует последний намаз предыдущего дня', () => {
+    const current = findCurrentPrayer(
+      new Date('2026-09-01T00:00:00.000Z'),
+      today,
+      { ...today, date: '2026-08-31' },
+    )
+
+    expect(current).toMatchObject({ key: 'isha', date: '2026-08-31', time: '20:33' })
   })
 })
 

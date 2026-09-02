@@ -24,11 +24,12 @@ import {
   formatCityLabel,
   getCountryGroups,
   getCountryName,
+  groupCitiesByCountry,
   searchCities,
   type City,
   type CityDataset,
 } from './domain/cities'
-import { findNextPrayer, formatRemainingTime } from './domain/nextPrayer'
+import { findCurrentPrayer, findNextPrayer, formatRemainingTime } from './domain/nextPrayer'
 import {
   CALCULATION_PROFILES,
   DEFAULT_CALCULATION_SETTINGS,
@@ -189,7 +190,7 @@ function PrayerSchedule({
                 ≈
               </span>
             ) : key === activePrayer ? (
-              <span className="active-mark" aria-label="Следующий намаз">
+              <span className="active-mark" aria-label="Текущий намаз">
                 ✦
               </span>
             ) : null}
@@ -255,6 +256,30 @@ function useModalDialog(
   return dialogRef
 }
 
+function useDialogViewport(open: boolean) {
+  const layerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open || !layerRef.current || !window.visualViewport) return
+    const layer = layerRef.current
+    const viewport = window.visualViewport
+    const syncViewport = () => {
+      layer.style.setProperty('--dialog-viewport-height', `${viewport.height}px`)
+      layer.style.setProperty('--dialog-viewport-top', `${viewport.offsetTop}px`)
+    }
+
+    syncViewport()
+    viewport.addEventListener('resize', syncViewport)
+    viewport.addEventListener('scroll', syncViewport)
+    return () => {
+      viewport.removeEventListener('resize', syncViewport)
+      viewport.removeEventListener('scroll', syncViewport)
+    }
+  }, [open])
+
+  return layerRef
+}
+
 interface LocationDialogProps {
   locations: PrayerLocation[]
   cityDataset: CityDataset
@@ -288,6 +313,7 @@ function LocationDialog({
   const [locationError, setLocationError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const dialogRef = useModalDialog(open, onClose, searchRef)
+  const layerRef = useDialogViewport(open)
   const deferredSearch = useDeferredValue(search)
   const countryGroups = useMemo(
     () => getCountryGroups(cityDataset),
@@ -309,6 +335,10 @@ function LocationDialog({
   const cityMatches = useMemo(
     () => searchCities(cityDataset, deferredSearch),
     [cityDataset, deferredSearch],
+  )
+  const searchCountryGroups = useMemo(
+    () => groupCitiesByCountry(cityMatches),
+    [cityMatches],
   )
   const hasSearch = deferredSearch.trim().length > 0
 
@@ -364,7 +394,7 @@ function LocationDialog({
   )
 
   return (
-    <div className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div ref={layerRef} className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section
         ref={dialogRef}
         aria-labelledby="location-dialog-title"
@@ -374,14 +404,16 @@ function LocationDialog({
       >
         <div className="dialog-handle" aria-hidden="true" />
         <header className="dialog-header">
-          <div>
-            <p className="dialog-kicker">Официально в РТ · расчёт вне РТ</p>
-            <h2 id="location-dialog-title">Выбор местоположения</h2>
-          </div>
+          <h2 id="location-dialog-title">Выбор местоположения</h2>
           <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
             <CloseIcon />
           </button>
         </header>
+
+        <p className="location-mode-guide">
+          <strong>В Татарстане</strong> — готовое расписание ДУМ РТ.{' '}
+          <strong>В других регионах</strong> — расчёт по вашим настройкам.
+        </p>
 
         <div className="location-actions">
           <button
@@ -438,17 +470,31 @@ function LocationDialog({
               {filteredOfficialLocations.length > 0 ? (
                 <section className="location-section" aria-labelledby="official-search-title">
                   <h3 id="official-search-title">Татарстан · официальное расписание</h3>
-                  <ul className="location-list">
-                    {filteredOfficialLocations.map(renderOfficialOption)}
-                  </ul>
+                  <details className="country-group official-country-group" open>
+                    <summary>
+                      <span>Татарстан</span>
+                      <small>Официальное расписание</small>
+                    </summary>
+                    <ul className="location-list">{filteredOfficialLocations.map(renderOfficialOption)}</ul>
+                  </details>
                 </section>
               ) : null}
               {cityMatches.length > 0 ? (
                 <section className="location-section" aria-labelledby="city-search-title">
                   <h3 id="city-search-title">Города мира · автономный расчёт</h3>
-                  <ul className="location-list">
-                    {cityMatches.map((city) => renderCityOption(city, true))}
-                  </ul>
+                  <div className="country-list">
+                    {searchCountryGroups.map((group) => (
+                      <details className="country-group" key={group.code} open>
+                        <summary>
+                          <span>{group.name}</span>
+                          <small>Городов: {group.cities.length}</small>
+                        </summary>
+                        <ul className="location-list">
+                          {group.cities.map((city) => renderCityOption(city, false))}
+                        </ul>
+                      </details>
+                    ))}
+                  </div>
                 </section>
               ) : null}
               {filteredOfficialLocations.length === 0 && cityMatches.length === 0 ? (
@@ -494,14 +540,16 @@ function LocationDialog({
 
 interface SettingsDialogProps {
   open: boolean
+  officialMode: boolean
   settings: CalculationSettings
   onClose: () => void
   onChange: (settings: CalculationSettings) => void
 }
 
-function SettingsDialog({ open, settings, onClose, onChange }: SettingsDialogProps) {
+function SettingsDialog({ open, officialMode, settings, onClose, onChange }: SettingsDialogProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useModalDialog(open, onClose, closeRef)
+  const layerRef = useDialogViewport(open)
   if (!open) return null
 
   const update = <Key extends keyof CalculationSettings>(
@@ -510,7 +558,7 @@ function SettingsDialog({ open, settings, onClose, onChange }: SettingsDialogPro
   ) => onChange({ ...settings, [key]: value })
 
   return (
-    <div className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div ref={layerRef} className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section
         ref={dialogRef}
         aria-labelledby="settings-dialog-title"
@@ -520,14 +568,17 @@ function SettingsDialog({ open, settings, onClose, onChange }: SettingsDialogPro
       >
         <div className="dialog-handle" aria-hidden="true" />
         <header className="dialog-header">
-          <div>
-            <p className="dialog-kicker">Автономный расчёт</p>
-            <h2 id="settings-dialog-title">Настройки расчёта</h2>
-          </div>
+          <h2 id="settings-dialog-title">Настройки расчёта</h2>
           <button ref={closeRef} className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
             <CloseIcon />
           </button>
         </header>
+
+        <p className="settings-mode-note" data-active={!officialMode || undefined}>
+          {officialMode
+            ? 'Сейчас используется готовое расписание ДУМ РТ. Эти параметры сохранятся и применятся после выбора города вне Татарстана.'
+            : 'Сейчас расписание пересчитывается по этим параметрам. Изменения применяются сразу.'}
+        </p>
 
         <label className="setting-field">
           <span>Аср</span>
@@ -568,9 +619,6 @@ function SettingsDialog({ open, settings, onClose, onChange }: SettingsDialogPro
           </select>
         </label>
 
-        <p className="settings-hint">
-          Настройки применяются к расчёту вне зоны официального расписания.
-        </p>
       </section>
     </div>
   )
@@ -602,6 +650,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [selectedDate, setSelectedDate] = useState(() => getSystemDate(services.now()))
   const [currentTime, setCurrentTime] = useState(() => services.now())
   const [schedule, setSchedule] = useState<DisplaySchedule | null>(null)
+  const [previousSchedule, setPreviousSchedule] = useState<DisplaySchedule | undefined>()
   const [tomorrow, setTomorrow] = useState<DisplaySchedule | undefined>()
   const [loading, setLoading] = useState(true)
   const [scheduleLoading, setScheduleLoading] = useState(false)
@@ -652,26 +701,34 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     setScheduleLoading(true)
     setScheduleError(null)
 
-    const loadSchedules = async (): Promise<[DisplaySchedule | null, DisplaySchedule | undefined]> => {
+    const loadSchedules = async (): Promise<[
+      DisplaySchedule | undefined,
+      DisplaySchedule | null,
+      DisplaySchedule | undefined,
+    ]> => {
       if (locationMode === 'calculated' && calculatedLocation) {
         return [
+          calculatePrayerSchedule(calculatedLocation, addDays(selectedDate, -1), calculationSettings),
           calculatePrayerSchedule(calculatedLocation, selectedDate, calculationSettings),
           calculatePrayerSchedule(calculatedLocation, addDays(selectedDate, 1), calculationSettings),
         ]
       }
-      const [officialDay, officialTomorrow] = await Promise.all([
+      const [officialPrevious, officialDay, officialTomorrow] = await Promise.all([
+        services.getDay(locationId, addDays(selectedDate, -1)),
         services.getDay(locationId, selectedDate),
         services.getDay(locationId, addDays(selectedDate, 1)),
       ])
-      return [officialDay ?? null, officialTomorrow]
+      return [officialPrevious, officialDay ?? null, officialTomorrow]
     }
 
-    void loadSchedules().then(([loadedSchedule, loadedTomorrow]) => {
+    void loadSchedules().then(([loadedPrevious, loadedSchedule, loadedTomorrow]) => {
       if (!active) return
+      setPreviousSchedule(loadedPrevious)
       setSchedule(loadedSchedule)
       setTomorrow(loadedTomorrow)
     }).catch(() => {
       if (!active) return
+      setPreviousSchedule(undefined)
       setSchedule(null)
       setTomorrow(undefined)
       setScheduleError('Не удалось загрузить расписание. Попробуйте ещё раз.')
@@ -696,6 +753,9 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const selectedLocation = meta?.locations.find(({ id }) => id === locationId)
   const nextPrayer = selectedDate === today && schedule
     ? findNextPrayer(currentTime, schedule, tomorrow)
+    : null
+  const currentPrayer = selectedDate === today && schedule
+    ? findCurrentPrayer(currentTime, schedule, previousSchedule)
     : null
 
   const selectOfficialLocation = useCallback((nextLocationId: string) => {
@@ -799,6 +859,13 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const onDateInput = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.value) changeDate(event.target.value)
   }
+  const showDatePicker = (event: React.MouseEvent<HTMLInputElement>) => {
+    try {
+      event.currentTarget.showPicker()
+    } catch {
+      // Нативный клик остаётся резервным вариантом в браузерах без showPicker.
+    }
+  }
   const updateCalculationSettings = (settings: CalculationSettings) => {
     setCalculationSettings(settings)
     void services.saveCalculationSettings(settings)
@@ -870,7 +937,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 ref={settingsButtonRef}
                 className="icon-button settings-button"
                 type="button"
-                aria-label="Настройки расчёта"
+                aria-label="Настройки автономного расчёта"
                 onClick={() => setSettingsDialogOpen(true)}
               >
                 <SettingsIcon />
@@ -897,6 +964,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                   min={minDate}
                   max={maxDate}
                   value={selectedDate}
+                  onClick={showDatePicker}
                   onChange={onDateInput}
                 />
               </label>
@@ -919,7 +987,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         </header>
 
         <div className="content-grid" data-loading={scheduleLoading || undefined}>
-          <section className="next-prayer-panel" aria-label="Следующий намаз">
+          <section className="next-prayer-panel" aria-label="Текущий намаз и время до следующего">
             {scheduleError ? (
               <div className="no-next-prayer"><ClockIcon /><p>Расписание временно недоступно</p></div>
             ) : scheduleLoading && !schedule ? (
@@ -927,8 +995,12 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
             ) : selectedDate === today ? (
               nextPrayer ? (
                 <>
-                  <p className="next-label">До следующего намаза</p>
-                  <p className="next-name">{nextPrayer.label} · {nextPrayer.time}</p>
+                  <div className="current-prayer">
+                    <p className="current-label">Сейчас</p>
+                    <p className="next-name">
+                      {currentPrayer ? `${currentPrayer.label} · ${currentPrayer.time}` : 'До первого намаза'}
+                    </p>
+                  </div>
                   <div
                     className="countdown"
                     role="timer"
@@ -936,7 +1008,10 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                     aria-label={`Осталось ${formatRemainingTime(nextPrayer.remainingSeconds)}`}
                   >
                     <ClockIcon />
-                    <span>{formatRemainingTime(nextPrayer.remainingSeconds)}</span>
+                    <span className="countdown-copy">
+                      <span className="next-label">До следующего намаза</span>
+                      <span className="countdown-value">{formatRemainingTime(nextPrayer.remainingSeconds)}</span>
+                    </span>
                   </div>
                 </>
               ) : (
@@ -959,7 +1034,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 <button className="primary-button" type="button" onClick={() => setScheduleRetryCount((count) => count + 1)}>Повторить</button>
               </div>
             ) : schedule ? (
-              <PrayerSchedule schedule={schedule} activePrayer={nextPrayer?.date === schedule.date ? nextPrayer.key : undefined} />
+              <PrayerSchedule schedule={schedule} activePrayer={currentPrayer?.date === schedule.date ? currentPrayer.key : undefined} />
             ) : scheduleLoading ? (
               <div className="schedule-skeleton" aria-label="Загружаем расписание" />
             ) : (
@@ -982,10 +1057,10 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 <CheckIcon />
                 {officialMode ? (
                   <span>
-                    По данным <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a> · Доступно офлайн
+                    Официальное расписание <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a> · Настройки расчёта не влияют · Доступно офлайн
                   </span>
                 ) : (
-                  <span>Рассчитано на устройстве · {profileLabel} · Доступно офлайн</span>
+                  <span>Расчёт по настройкам · {profileLabel} · Аср: {calculationSettings.asrMethod === 'hanafi' ? 'ханафитский' : 'стандартный'} · Доступно офлайн</span>
                 )}
                 <span className="source-spark" aria-hidden="true">✦</span>
               </footer>
@@ -993,8 +1068,6 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
           </section>
         </div>
       </section>
-
-      <p className="privacy-note">Координаты и выбранный город остаются на этом устройстве.</p>
 
       <LocationDialog
         locations={meta.locations}
@@ -1011,6 +1084,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
       />
       <SettingsDialog
         open={settingsDialogOpen}
+        officialMode={officialMode}
         settings={calculationSettings}
         onClose={closeSettingsDialog}
         onChange={updateCalculationSettings}

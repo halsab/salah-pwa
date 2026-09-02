@@ -100,14 +100,19 @@ export function getCountryGroups(
   dataset: CityDataset,
   citiesPerCountry = 5,
 ): CountryCityGroup[] {
+  return groupCitiesByCountry(dataset.cities).map((group) => ({
+    ...group,
+    cities: group.cities.slice(0, citiesPerCountry),
+  }))
+}
+
+export function groupCitiesByCountry(cities: readonly City[]): CountryCityGroup[] {
   const grouped = new Map<string, City[]>()
 
-  for (const city of dataset.cities) {
-    const cities = grouped.get(city.countryCode) ?? []
-    if (cities.length < citiesPerCountry) {
-      cities.push(city)
-      grouped.set(city.countryCode, cities)
-    }
+  for (const city of cities) {
+    const countryCities = grouped.get(city.countryCode) ?? []
+    countryCities.push(city)
+    grouped.set(city.countryCode, countryCities)
   }
 
   return [...grouped.entries()]

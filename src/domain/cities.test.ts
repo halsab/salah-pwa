@@ -5,6 +5,7 @@ import {
   findNearestCity,
   formatCityLabel,
   getCountryGroups,
+  groupCitiesByCountry,
   searchCities,
 } from './cities'
 
@@ -74,6 +75,18 @@ describe('getCountryGroups', () => {
     const turkey = getCountryGroups(dataset, 1).find(({ code }) => code === 'TR')
 
     expect(turkey?.cities.map(({ id }) => id)).toEqual([745044])
+  })
+})
+
+describe('groupCitiesByCountry', () => {
+  it('сохраняет все найденные города и группирует их по стране', () => {
+    const groups = groupCitiesByCountry([cities[1]!, cities[0]!, cities[2]!])
+
+    expect(groups.map(({ name }) => name)).toEqual(['Россия', 'Турция'])
+    expect(groups.find(({ code }) => code === 'TR')?.cities.map(({ id }) => id)).toEqual([
+      745044,
+      323786,
+    ])
   })
 })
 

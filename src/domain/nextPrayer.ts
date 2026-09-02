@@ -40,6 +40,8 @@ export interface NextPrayer {
   remainingSeconds: number
 }
 
+export type CurrentPrayer = Omit<NextPrayer, 'remainingSeconds'>
+
 function prayerInstant(date: string, time: PrayerTime): Date {
   // Татарстан круглый год живёт по UTC+3, поэтому время источника не зависит от DST устройства.
   return new Date(`${date}T${time}:00${MOSCOW_UTC_OFFSET}`)
@@ -49,7 +51,7 @@ function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {
   for (const prayer of SALAH_PRAYERS) {
     const time = day[prayer.key]
     const instant = prayerInstant(day.date, time)
-    if (instant.getTime() >= now.getTime()) {
+    if (instant.getTime() > now.getTime()) {
       return {
         ...prayer,
         date: day.date,
@@ -71,7 +73,7 @@ function nextInCalculatedDay(
 ): NextPrayer | null {
   for (const prayer of CALCULATED_SALAH_PRAYERS) {
     const entry = day.entries[prayer.key]
-    if (entry.instant >= now.getTime()) {
+    if (entry.instant > now.getTime()) {
       return {
         ...prayer,
         date: day.date,
@@ -99,6 +101,34 @@ export function findNextPrayer(
   tomorrow?: PrayerSchedule,
 ): NextPrayer | null {
   return nextInDay(now, today) ?? (tomorrow ? nextInDay(now, tomorrow) : null)
+}
+
+function currentInDay(now: Date, day: PrayerSchedule): CurrentPrayer | null {
+  const prayers = 'entries' in day ? CALCULATED_SALAH_PRAYERS : SALAH_PRAYERS
+
+  for (let index = prayers.length - 1; index >= 0; index -= 1) {
+    const prayer = prayers[index]!
+    const time = 'entries' in day
+      ? day.entries[prayer.key as Exclude<ScheduleSalahPrayerKey, 'fajrJamaat'>].time
+      : day[prayer.key as SalahPrayerKey]
+    const instant = 'entries' in day
+      ? day.entries[prayer.key as Exclude<ScheduleSalahPrayerKey, 'fajrJamaat'>].instant
+      : prayerInstant(day.date, time).getTime()
+
+    if (instant <= now.getTime()) {
+      return { ...prayer, date: day.date, time }
+    }
+  }
+
+  return null
+}
+
+export function findCurrentPrayer(
+  now: Date,
+  today: PrayerSchedule,
+  yesterday?: PrayerSchedule,
+): CurrentPrayer | null {
+  return currentInDay(now, today) ?? (yesterday ? currentInDay(now, yesterday) : null)
 }
 
 export function formatRemainingTime(totalSeconds: number): string {

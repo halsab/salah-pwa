@@ -118,13 +118,13 @@ function createServices(
 }
 
 describe('Salah', () => {
-  it('показывает все восемь времён и обратный отсчёт до следующего намаза', async () => {
+  it('показывает текущий намаз, выделяет его и считает до следующего', async () => {
     render(<App services={createServices()} />)
 
     expect(await screen.findByRole('button', { name: /Казань/ })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Salah' })).toBeVisible()
     expect(await screen.findByText('До следующего намаза')).toBeVisible()
-    expect(screen.getByText('Аср · 16:24')).toBeVisible()
+    expect(screen.getByText('Зухр · 12:00')).toBeVisible()
     expect(screen.getByText('03:24:00')).toBeVisible()
 
     const schedule = screen.getByRole('list', { name: 'Времена намаза' })
@@ -132,13 +132,17 @@ describe('Salah', () => {
     expect(within(schedule).getByText('Завершение сухура')).toBeVisible()
     expect(within(schedule).getByText(/в мечетях/i)).toBeVisible()
     expect(within(schedule).getByText('20:33')).toBeVisible()
+    expect(within(schedule).getByText('Зухр').closest('li')).toHaveAttribute('data-active', 'true')
+    expect(within(schedule).getByText('Аср').closest('li')).not.toHaveAttribute('data-active')
+    expect(document.querySelector('.source-note')).toHaveTextContent(/Официальное расписание ДУМ РТ/i)
+    expect(screen.queryByText(/Координаты и выбранный город/i)).not.toBeInTheDocument()
   })
 
   it('при просмотре другой даты скрывает таймер и показывает кнопку Сегодня', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
 
-    await screen.findByText('Аср · 16:24')
+    await screen.findByText('Зухр · 12:00')
     await user.click(screen.getByRole('button', { name: 'Следующий день' }))
 
     expect((await screen.findAllByText('среда, 2 сентября'))[0]).toBeVisible()
@@ -160,7 +164,7 @@ describe('Salah', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Набережные Челны' }))
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(screen.getByText('Аср · 16:37')).toBeVisible()
+    expect(screen.getByText('16:37')).toBeVisible()
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny')
   })
 
@@ -244,7 +248,7 @@ describe('Salah', () => {
     expect(within(schedule).getByText('Фаджр')).toBeVisible()
     expect(within(schedule).queryByText(/сухура/i)).not.toBeInTheDocument()
     expect(within(schedule).queryByText(/в мечетях/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/Рассчитано на устройстве · ДУМ РТ/i)).toBeVisible()
+    expect(screen.getByText(/Расчёт по настройкам · ДУМ РТ/i)).toBeVisible()
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
@@ -291,6 +295,7 @@ describe('Salah', () => {
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.type(screen.getByRole('searchbox'), 'Стамбул')
+    expect(screen.getByText('Турция', { exact: true })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Istanbul, Турция' }))
 
     expect(await screen.findByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
@@ -359,8 +364,9 @@ describe('Salah', () => {
     const services = createServices()
     render(<App services={services} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Настройки расчёта' }))
+    await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
     const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    expect(within(dialog).getByText(/Сейчас используется готовое расписание ДУМ РТ/i)).toBeVisible()
     await user.selectOptions(within(dialog).getByLabelText('Аср'), 'standard')
     await user.selectOptions(within(dialog).getByLabelText('Профиль'), 'turkey')
     await user.selectOptions(within(dialog).getByLabelText('Северные правила'), 'seventhOfNight')
@@ -406,6 +412,6 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Повторить' }))
 
     expect(await screen.findByRole('list', { name: 'Времена намаза' })).toBeVisible()
-    expect(getDay).toHaveBeenCalledTimes(4)
+    expect(getDay).toHaveBeenCalledTimes(6)
   })
 })

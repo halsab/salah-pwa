@@ -67,7 +67,7 @@ test('сохранённое GPS-расписание вне Татарстан�
       .getByRole('list', { name: 'Времена намаза' })
       .getByText('Фаджр', { exact: true }),
   ).toBeVisible()
-  await expect(page.getByText(/Рассчитано на устройстве · ДУМ РТ/)).toBeVisible()
+  await expect(page.getByText(/Расчёт по настройкам · ДУМ РТ/)).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
@@ -82,7 +82,7 @@ test('сохранённое GPS-расписание вне Татарстан�
         .getByRole('list', { name: 'Времена намаза' })
         .getByText('Фаджр', { exact: true }),
     ).toBeVisible()
-    await expect(page.getByText(/Рассчитано на устройстве · ДУМ РТ/)).toBeVisible()
+    await expect(page.getByText(/Расчёт по настройкам · ДУМ РТ/)).toBeVisible()
   } finally {
     await context.setOffline(false)
   }

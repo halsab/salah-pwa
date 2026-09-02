@@ -43,20 +43,48 @@ test.describe('мобильная компоновка', () => {
 
     const searchBox = page.getByRole('searchbox')
     await searchBox.fill('Казань')
-    const firstOption = page.getByRole('dialog').getByRole('button', { name: 'Казань' })
-    const [searchBounds, optionBounds] = await Promise.all([
+    const countryTab = page.getByRole('dialog').locator('.official-country-group')
+    const [searchBounds, tabBounds] = await Promise.all([
       searchBox.locator('..').boundingBox(),
-      firstOption.boundingBox(),
+      countryTab.boundingBox(),
     ])
 
     expect(searchBounds).not.toBeNull()
-    expect(optionBounds).not.toBeNull()
-    expect(Math.abs(optionBounds!.x - searchBounds!.x)).toBeLessThanOrEqual(1)
+    expect(tabBounds).not.toBeNull()
+    expect(Math.abs(tabBounds!.x - searchBounds!.x)).toBeLessThanOrEqual(1)
     expect(
       Math.abs(
-        optionBounds!.x + optionBounds!.width - (searchBounds!.x + searchBounds!.width),
+        tabBounds!.x + tabBounds!.width - (searchBounds!.x + searchBounds!.width),
       ),
-    ).toBeLessThanOrEqual(12)
+    ).toBeLessThanOrEqual(1)
+  })
+
+  test('вписывает bottom sheet в доступную область над клавиатурой', async ({ page }) => {
+    await page.addInitScript(() => {
+      const viewport = Object.assign(new EventTarget(), {
+        height: 360,
+        offsetLeft: 0,
+        offsetTop: 0,
+        pageLeft: 0,
+        pageTop: 0,
+        scale: 1,
+        width: 375,
+      })
+      Object.defineProperty(window, 'visualViewport', {
+        configurable: true,
+        value: viewport,
+      })
+    })
+    await page.goto('./')
+    await page.getByRole('button', { name: /Казань/ }).click()
+
+    const [layerBounds, dialogBounds] = await Promise.all([
+      page.locator('.dialog-layer').boundingBox(),
+      page.getByRole('dialog').boundingBox(),
+    ])
+
+    expect(layerBounds?.height).toBeLessThanOrEqual(361)
+    expect(dialogBounds!.y + dialogBounds!.height).toBeLessThanOrEqual(361)
   })
 
   test('не выпускает клавиатурный фокус из диалога', async ({ page }) => {
@@ -72,5 +100,41 @@ test.describe('мобильная компоновка', () => {
 
     await page.keyboard.press('Tab')
     await expect(closeButton).toBeFocused()
+  })
+})
+
+test.describe('адаптивность', () => {
+  test('не создаёт горизонтальное переполнение на экране 319 px', async ({ page }) => {
+    await page.setViewportSize({ width: 319, height: 1324 })
+    await page.goto('./')
+
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
+
+    for (const selector of ['.app-frame', '.next-prayer-panel', '.countdown', '.prayer-row']) {
+      const boxes = await page.locator(selector).evaluateAll((elements) =>
+        elements.map((element) => {
+          const bounds = element.getBoundingClientRect()
+          return { left: bounds.left, right: bounds.right }
+        }),
+      )
+      expect(boxes.every(({ left, right }) => left >= 0 && right <= 319)).toBe(true)
+    }
+  })
+
+  test('открывает нативный календарь по клику на дату', async ({ page }) => {
+    await page.addInitScript(() => {
+      Object.defineProperty(HTMLInputElement.prototype, 'showPicker', {
+        configurable: true,
+        value() {
+          document.documentElement.dataset.datePickerOpened = 'true'
+        },
+      })
+    })
+    await page.goto('./')
+
+    await page.getByLabel('Выбрать дату').click()
+
+    await expect(page.locator('html')).toHaveAttribute('data-date-picker-opened', 'true')
   })
 })
