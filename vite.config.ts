@@ -8,7 +8,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['apple-touch-icon.png', 'paper-texture.svg'],
+      includeAssets: ['app-icon.svg', 'apple-touch-icon.png', 'paper-texture.svg'],
       manifest: {
         name: 'Salah — времена намаза',
         short_name: 'Salah',
@@ -16,8 +16,8 @@ export default defineConfig({
         lang: 'ru',
         display: 'standalone',
         orientation: 'portrait-primary',
-        background_color: '#f6f0e6',
-        theme_color: '#27388f',
+        background_color: '#f6eedf',
+        theme_color: '#184c3b',
         start_url: './',
         scope: './',
         icons: [

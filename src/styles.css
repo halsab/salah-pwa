@@ -3,21 +3,28 @@
   font-family: 'Neucha', cursive;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
-  --page: #293a94;
-  --paper: #f8f1e6;
-  --paper-strong: #fff9ef;
-  --ink: #171b50;
-  --ink-soft: #5f5d69;
-  --outline: #1b245d;
-  --indigo: #3449aa;
-  --indigo-strong: #293b94;
-  --accent: #daa912;
-  --accent-ink: #15183e;
-  --danger: #9b3e4f;
-  --focus: #465792;
-  --shadow: #10132c;
-  --hairline: rgb(23 27 80 / 22%);
-  --backdrop: rgb(12 11 24 / 70%);
+  --page: #184c3b;
+  --paper: #f6eedf;
+  --paper-strong: #fff8ea;
+  --ink: #17352c;
+  --ink-soft: #596c62;
+  --outline: #285744;
+  --primary: #2b7256;
+  --primary-strong: #1f624a;
+  --on-primary: #fff8e8;
+  --accent: #c99a35;
+  --accent-ink: #17352c;
+  --danger: #963f50;
+  --danger-surface: rgb(150 63 80 / 8%);
+  --focus: #0d6b50;
+  --caret: #1f624a;
+  --shadow: #0a2119;
+  --hairline: rgb(23 53 44 / 22%);
+  --surface-wash: rgb(255 255 255 / 18%);
+  --surface-wash-soft: rgb(255 255 255 / 10%);
+  --drawer-shadow: rgb(10 33 25 / 35%);
+  --selection: rgb(201 154 53 / 42%);
+  --backdrop: rgb(4 16 12 / 72%);
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
@@ -25,6 +32,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+::selection {
+  color: var(--ink);
+  background: var(--selection);
 }
 
 html {
@@ -47,6 +59,7 @@ input,
 select,
 textarea {
   font: inherit;
+  caret-color: var(--caret);
 }
 
 button,
@@ -204,8 +217,8 @@ button:disabled {
   gap: 13px;
   padding: 9px 17px;
   border-radius: 16px;
-  color: #fff8e8;
-  background: var(--indigo-strong);
+  color: var(--on-primary);
+  background: var(--primary-strong);
   box-shadow: 3px 3px 0 var(--outline);
   font-size: 1.08rem;
   font-weight: 720;
@@ -368,7 +381,7 @@ button:disabled {
   padding: 18px clamp(18px, 2.4vw, 28px);
   border: 2px solid var(--outline);
   border-radius: 22px;
-  background: rgb(255 255 255 / 18%);
+  background: var(--surface-wash);
   box-shadow: 3px 3px 0 var(--hairline);
   font-weight: 560;
 }
@@ -612,8 +625,8 @@ button:disabled {
 
 .primary-button {
   padding: 10px 22px;
-  color: #fff8e8;
-  background: var(--indigo-strong);
+  color: var(--on-primary);
+  background: var(--primary-strong);
   font-weight: 800;
 }
 
@@ -719,7 +732,7 @@ button:disabled {
   padding: 10px 12px;
   border: 1px dashed var(--hairline);
   border-radius: 12px;
-  background: rgb(255 255 255 / 10%);
+  background: var(--surface-wash-soft);
 }
 
 .settings-mode-note[data-active='true'] {
@@ -735,8 +748,8 @@ button:disabled {
   gap: 11px;
   padding: 9px 16px;
   border-radius: 15px;
-  color: #fff8e8;
-  background: var(--indigo-strong);
+  color: var(--on-primary);
+  background: var(--primary-strong);
   font-weight: 800;
   transition: transform 160ms var(--ease-out);
 }
@@ -784,7 +797,7 @@ button:disabled {
   border: 1px solid var(--danger);
   border-radius: 10px;
   color: var(--danger);
-  background: rgb(155 62 79 / 8%);
+  background: var(--danger-surface);
   font-size: 0.9rem;
   font-weight: 700;
 }
@@ -847,7 +860,7 @@ button:disabled {
   overscroll-behavior: contain;
   contain: layout paint;
   scrollbar-width: thin;
-  scrollbar-color: var(--indigo) transparent;
+  scrollbar-color: var(--primary) transparent;
 }
 
 .location-results::-webkit-scrollbar {
@@ -860,7 +873,7 @@ button:disabled {
 
 .location-results::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: var(--indigo);
+  background: var(--primary);
 }
 
 .location-list {
@@ -978,7 +991,7 @@ button:disabled {
   contain-intrinsic-size: auto 52px;
   border: 1.5px solid var(--outline);
   border-radius: 12px;
-  background: rgb(255 255 255 / 10%);
+  background: var(--surface-wash-soft);
 }
 
 .country-group summary {
@@ -1335,7 +1348,7 @@ button:disabled {
     padding: 11px max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     border-width: 2px 0 0;
     border-radius: 26px 26px 0 0;
-    box-shadow: 0 -5px 0 rgb(16 19 44 / 35%);
+    box-shadow: 0 -5px 0 var(--drawer-shadow);
     animation: drawer-in 500ms var(--ease-drawer) both;
   }
 
@@ -1477,21 +1490,28 @@ button:disabled {
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --page: #121019;
-    --paper: #16172b;
-    --paper-strong: #1e2036;
-    --ink: #f6edda;
-    --ink-soft: #beb6a8;
-    --outline: #f3e6c9;
-    --indigo: #3449aa;
-    --indigo-strong: #2e409b;
-    --accent: #d8a817;
-    --accent-ink: #17162b;
+    --page: #091410;
+    --paper: #12231c;
+    --paper-strong: #1a2e25;
+    --ink: #f4ecd9;
+    --ink-soft: #b7c1b7;
+    --outline: #b4c2b6;
+    --primary: #3d8a6c;
+    --primary-strong: #2b7155;
+    --on-primary: #fff8e8;
+    --accent: #d2a843;
+    --accent-ink: #10251d;
     --danger: #f092a1;
-    --focus: #b8c3f4;
-    --shadow: #08070d;
-    --hairline: rgb(243 230 201 / 26%);
-    --backdrop: rgb(3 3 8 / 78%);
+    --danger-surface: rgb(240 146 161 / 10%);
+    --focus: #e0b84e;
+    --caret: #d2a843;
+    --shadow: #020907;
+    --hairline: rgb(180 194 182 / 24%);
+    --surface-wash: rgb(244 236 217 / 8%);
+    --surface-wash-soft: rgb(244 236 217 / 5%);
+    --drawer-shadow: rgb(2 9 7 / 70%);
+    --selection: rgb(210 168 67 / 45%);
+    --backdrop: rgb(2 9 7 / 80%);
   }
 
   .app-frame,
