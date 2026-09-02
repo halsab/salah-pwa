@@ -1,4 +1,9 @@
-import type { City, CityDataset, CityDatasetSource } from '../domain/cities'
+import {
+  prepareCitySearch,
+  type City,
+  type CityDataset,
+  type CityDatasetSource,
+} from '../domain/cities'
 
 type CompactCityRecord = [
   id: number,
@@ -71,7 +76,9 @@ export function parseCityDataset(value: unknown): CityDataset {
     }),
   )
 
-  return { source: file.source, cities }
+  const dataset = { source: file.source, cities }
+  prepareCitySearch(dataset)
+  return dataset
 }
 
 export async function loadCityDataset(): Promise<CityDataset> {

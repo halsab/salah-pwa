@@ -660,7 +660,7 @@ button:disabled {
   top: var(--dialog-viewport-top, 0px);
   right: 0;
   left: 0;
-  height: var(--dialog-viewport-height, 100dvh);
+  height: calc(var(--dialog-viewport-height, 100dvh) + var(--dialog-keyboard-inset, 0px));
   z-index: 100;
   display: grid;
   place-items: center;
@@ -672,7 +672,7 @@ button:disabled {
 .location-dialog {
   width: min(580px, 100%);
   min-width: 0;
-  max-height: min(760px, calc(var(--dialog-viewport-height, 100dvh) - 36px));
+  max-height: min(760px, calc(var(--dialog-viewport-height, 100dvh) + var(--dialog-keyboard-inset, 0px) - 36px));
   display: grid;
   gap: 15px;
   overflow: hidden;
@@ -684,6 +684,10 @@ button:disabled {
   background-image: url('/paper-texture.svg');
   box-shadow: 7px 7px 0 var(--shadow);
   animation: dialog-in 260ms var(--ease-out) both;
+}
+
+.location-dialog:focus {
+  outline: none;
 }
 
 .location-dialog:not(.settings-dialog) {
@@ -821,6 +825,7 @@ button:disabled {
   outline: 0;
   color: var(--ink);
   background: transparent;
+  touch-action: manipulation;
 }
 
 .search-control input::placeholder {
@@ -832,6 +837,7 @@ button:disabled {
   flex: 1 1 auto;
   overflow-y: auto;
   overscroll-behavior: contain;
+  contain: layout paint;
   scrollbar-width: thin;
   scrollbar-color: var(--indigo) transparent;
 }
@@ -1280,7 +1286,10 @@ button:disabled {
 
   .location-dialog {
     width: 100%;
-    max-height: min(calc(var(--dialog-viewport-height, 100dvh) - max(8px, env(safe-area-inset-top))), 820px);
+    max-height: min(
+      calc(var(--dialog-viewport-height, 100dvh) + var(--dialog-keyboard-inset, 0px) - max(8px, env(safe-area-inset-top))),
+      calc(820px + var(--dialog-keyboard-inset, 0px))
+    );
     padding: 11px max(16px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     border-width: 2px 0 0;
     border-radius: 26px 26px 0 0;
@@ -1290,7 +1299,14 @@ button:disabled {
 
 
   .settings-dialog {
-    max-height: min(calc(var(--dialog-viewport-height, 100dvh) - max(8px, env(safe-area-inset-top))), 620px);
+    max-height: min(
+      calc(var(--dialog-viewport-height, 100dvh) + var(--dialog-keyboard-inset, 0px) - max(8px, env(safe-area-inset-top))),
+      calc(620px + var(--dialog-keyboard-inset, 0px))
+    );
+  }
+
+  .dialog-layer[data-keyboard-open='true'] .location-dialog {
+    padding-bottom: calc(var(--dialog-keyboard-inset, 0px) + 12px);
   }
 
   .setting-field {

@@ -1,4 +1,5 @@
 import {
+  memo,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -23,7 +24,6 @@ import {
   findNearestCity,
   formatCityLabel,
   getCountryGroups,
-  getCountryName,
   groupCitiesByCountry,
   searchCities,
   type City,
@@ -212,7 +212,11 @@ function useModalDialog(
     if (!open) return
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    requestAnimationFrame(() => initialFocusRef?.current?.focus())
+    requestAnimationFrame(() => {
+      const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
+      const focusTarget = coarsePointer ? dialogRef.current : initialFocusRef?.current ?? dialogRef.current
+      focusTarget?.focus({ preventScroll: true })
+    })
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -263,17 +267,61 @@ function useDialogViewport(open: boolean) {
     if (!open || !layerRef.current || !window.visualViewport) return
     const layer = layerRef.current
     const viewport = window.visualViewport
+    let layoutViewportHeight = Math.max(
+      document.documentElement.clientHeight,
+      window.innerHeight,
+      viewport.offsetTop + viewport.height,
+    )
+    let animationFrame: number | null = null
+
+    const setProperty = (name: string, value: string) => {
+      if (layer.style.getPropertyValue(name) !== value) {
+        layer.style.setProperty(name, value)
+      }
+    }
+
     const syncViewport = () => {
-      layer.style.setProperty('--dialog-viewport-height', `${viewport.height}px`)
-      layer.style.setProperty('--dialog-viewport-top', `${viewport.offsetTop}px`)
+      if (animationFrame !== null) return
+      animationFrame = requestAnimationFrame(() => {
+        animationFrame = null
+        const viewportHeight = Math.round(viewport.height)
+        const viewportTop = Math.round(viewport.offsetTop)
+        const visibleBottom = viewportTop + viewportHeight
+        const activeElement = document.activeElement
+        const textEntryFocused = activeElement instanceof HTMLElement && (
+          activeElement.matches('input, textarea') || activeElement.isContentEditable
+        )
+        const hiddenViewportHeight = Math.max(0, layoutViewportHeight - visibleBottom)
+        // Нижняя часть шита уходит под клавиатуру, поэтому видимый край остаётся цельным без скруглений.
+        const keyboardInset = textEntryFocused && hiddenViewportHeight >= 80
+          ? hiddenViewportHeight
+          : 0
+
+        if (keyboardInset === 0) {
+          layoutViewportHeight = Math.max(
+            document.documentElement.clientHeight,
+            window.innerHeight,
+            visibleBottom,
+          )
+        }
+
+        setProperty('--dialog-viewport-height', `${viewportHeight}px`)
+        setProperty('--dialog-viewport-top', `${viewportTop}px`)
+        setProperty('--dialog-keyboard-inset', `${keyboardInset}px`)
+        const keyboardOpen = keyboardInset > 0 ? 'true' : 'false'
+        if (layer.dataset.keyboardOpen !== keyboardOpen) {
+          layer.dataset.keyboardOpen = keyboardOpen
+        }
+      })
     }
 
     syncViewport()
-    viewport.addEventListener('resize', syncViewport)
-    viewport.addEventListener('scroll', syncViewport)
+    viewport.addEventListener('resize', syncViewport, { passive: true })
+    viewport.addEventListener('scroll', syncViewport, { passive: true })
     return () => {
       viewport.removeEventListener('resize', syncViewport)
       viewport.removeEventListener('scroll', syncViewport)
+      if (animationFrame !== null) cancelAnimationFrame(animationFrame)
     }
   }, [open])
 
@@ -294,7 +342,138 @@ interface LocationDialogProps {
   onReverse: () => Promise<void>
 }
 
-function LocationDialog({
+interface LocationResultsProps {
+  locations: PrayerLocation[]
+  cityDataset: CityDataset
+  selectedOfficialId: string | null
+  selectedCityId: number | null
+  query: string
+  onSelectOfficial: (locationId: string) => void
+  onSelectCity: (city: City) => void
+}
+
+const LocationResults = memo(function LocationResults({
+  locations,
+  cityDataset,
+  selectedOfficialId,
+  selectedCityId,
+  query,
+  onSelectOfficial,
+  onSelectCity,
+}: LocationResultsProps) {
+  const countryGroups = useMemo(
+    () => getCountryGroups(cityDataset),
+    [cityDataset],
+  )
+  const filteredOfficialLocations = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU')
+    return normalizedQuery
+      ? locations.filter(({ name }) => name.toLocaleLowerCase('ru-RU').includes(normalizedQuery))
+      : locations
+  }, [locations, query])
+  const cityMatches = useMemo(
+    () => searchCities(cityDataset, query),
+    [cityDataset, query],
+  )
+  const searchCountryGroups = useMemo(
+    () => groupCitiesByCountry(cityMatches),
+    [cityMatches],
+  )
+  const hasSearch = query.trim().length > 0
+
+  const renderOfficialOption = (location: PrayerLocation) => (
+    <li key={location.id}>
+      <button
+        className="location-option"
+        aria-current={location.id === selectedOfficialId ? 'location' : undefined}
+        type="button"
+        onClick={() => onSelectOfficial(location.id)}
+      >
+        <span>{location.name}</span>
+        {location.id === selectedOfficialId ? <CheckIcon /> : null}
+      </button>
+    </li>
+  )
+
+  const renderCityOption = (city: City) => (
+    <li key={city.id}>
+      <button
+        className="location-option city-option"
+        aria-label={formatCityLabel(city)}
+        aria-current={city.id === selectedCityId ? 'location' : undefined}
+        type="button"
+        onClick={() => onSelectCity(city)}
+      >
+        <span>{city.name}</span>
+        {city.id === selectedCityId ? <CheckIcon /> : null}
+      </button>
+    </li>
+  )
+
+  return (
+    <div className="location-results">
+      {hasSearch ? (
+        <>
+          {filteredOfficialLocations.length > 0 ? (
+            <section className="location-section" aria-labelledby="official-search-title">
+              <h3 id="official-search-title">Татарстан · официальное расписание</h3>
+              <details className="country-group official-country-group" open>
+                <summary>
+                  <span>Татарстан</span>
+                  <small>Официальное расписание</small>
+                </summary>
+                <ul className="location-list">{filteredOfficialLocations.map(renderOfficialOption)}</ul>
+              </details>
+            </section>
+          ) : null}
+          {cityMatches.length > 0 ? (
+            <section className="location-section" aria-labelledby="city-search-title">
+              <h3 id="city-search-title">Города мира · автономный расчёт</h3>
+              <div className="country-list">
+                {searchCountryGroups.map((group) => (
+                  <details className="country-group" key={group.code} open>
+                    <summary>
+                      <span>{group.name}</span>
+                      <small>Городов: {group.cities.length}</small>
+                    </summary>
+                    <ul className="location-list">{group.cities.map(renderCityOption)}</ul>
+                  </details>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {filteredOfficialLocations.length === 0 && cityMatches.length === 0 ? (
+            <p className="empty-search">Ничего не нашли. Попробуйте другое название.</p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p className="country-list-title">Регионы и страны</p>
+          <div className="country-list">
+            <details className="country-group official-country-group">
+              <summary>
+                <span>Татарстан</span>
+                <small>Официальное расписание</small>
+              </summary>
+              <ul className="location-list">{locations.map(renderOfficialOption)}</ul>
+            </details>
+            {countryGroups.map((group) => (
+              <details className="country-group" key={group.code}>
+                <summary>
+                  <span>{group.name}</span>
+                  <small>Городов: {group.cities.length}</small>
+                </summary>
+                <ul className="location-list">{group.cities.map(renderCityOption)}</ul>
+              </details>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+})
+
+const LocationDialog = memo(function LocationDialog({
   locations,
   cityDataset,
   selectedOfficialId,
@@ -315,32 +494,12 @@ function LocationDialog({
   const dialogRef = useModalDialog(open, onClose, searchRef)
   const layerRef = useDialogViewport(open)
   const deferredSearch = useDeferredValue(search)
-  const countryGroups = useMemo(
-    () => getCountryGroups(cityDataset),
-    [cityDataset],
-  )
 
   useEffect(() => {
     if (!open) return
     setSearch('')
     setLocationError(null)
   }, [open])
-
-  const filteredOfficialLocations = useMemo(() => {
-    const query = deferredSearch.trim().toLocaleLowerCase('ru-RU')
-    return query
-      ? locations.filter(({ name }) => name.toLocaleLowerCase('ru-RU').includes(query))
-      : locations
-  }, [deferredSearch, locations])
-  const cityMatches = useMemo(
-    () => searchCities(cityDataset, deferredSearch),
-    [cityDataset, deferredSearch],
-  )
-  const searchCountryGroups = useMemo(
-    () => groupCitiesByCountry(cityMatches),
-    [cityMatches],
-  )
-  const hasSearch = deferredSearch.trim().length > 0
 
   if (!open) return null
 
@@ -361,38 +520,6 @@ function LocationDialog({
     }
   }
 
-  const renderOfficialOption = (location: PrayerLocation) => (
-    <li key={location.id}>
-      <button
-        className="location-option"
-        aria-current={location.id === selectedOfficialId ? 'location' : undefined}
-        type="button"
-        onClick={() => onSelectOfficial(location.id)}
-      >
-        <span>{location.name}</span>
-        {location.id === selectedOfficialId ? <CheckIcon /> : null}
-      </button>
-    </li>
-  )
-
-  const renderCityOption = (city: City, showCountry: boolean) => (
-    <li key={city.id}>
-      <button
-        className="location-option city-option"
-        aria-label={formatCityLabel(city)}
-        aria-current={city.id === selectedCityId ? 'location' : undefined}
-        type="button"
-        onClick={() => onSelectCity(city)}
-      >
-        <span>
-          {city.name}
-          {showCountry ? <small>{getCountryName(city.countryCode)}</small> : null}
-        </span>
-        {city.id === selectedCityId ? <CheckIcon /> : null}
-      </button>
-    </li>
-  )
-
   return (
     <div ref={layerRef} className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section
@@ -401,6 +528,7 @@ function LocationDialog({
         aria-modal="true"
         className="location-dialog"
         role="dialog"
+        tabIndex={-1}
       >
         <div className="dialog-handle" aria-hidden="true" />
         <header className="dialog-header">
@@ -456,72 +584,22 @@ function LocationDialog({
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Найти город или район"
+            autoComplete="off"
+            autoCorrect="off"
+            enterKeyHint="search"
+            spellCheck={false}
           />
         </label>
 
-        <div className="location-results">
-          {hasSearch ? (
-            <>
-              {filteredOfficialLocations.length > 0 ? (
-                <section className="location-section" aria-labelledby="official-search-title">
-                  <h3 id="official-search-title">Татарстан · официальное расписание</h3>
-                  <details className="country-group official-country-group" open>
-                    <summary>
-                      <span>Татарстан</span>
-                      <small>Официальное расписание</small>
-                    </summary>
-                    <ul className="location-list">{filteredOfficialLocations.map(renderOfficialOption)}</ul>
-                  </details>
-                </section>
-              ) : null}
-              {cityMatches.length > 0 ? (
-                <section className="location-section" aria-labelledby="city-search-title">
-                  <h3 id="city-search-title">Города мира · автономный расчёт</h3>
-                  <div className="country-list">
-                    {searchCountryGroups.map((group) => (
-                      <details className="country-group" key={group.code} open>
-                        <summary>
-                          <span>{group.name}</span>
-                          <small>Городов: {group.cities.length}</small>
-                        </summary>
-                        <ul className="location-list">
-                          {group.cities.map((city) => renderCityOption(city, false))}
-                        </ul>
-                      </details>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-              {filteredOfficialLocations.length === 0 && cityMatches.length === 0 ? (
-                <p className="empty-search">Ничего не нашли. Попробуйте другое название.</p>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <p className="country-list-title">Регионы и страны</p>
-              <div className="country-list">
-                <details className="country-group official-country-group">
-                  <summary>
-                    <span>Татарстан</span>
-                    <small>Официальное расписание</small>
-                  </summary>
-                  <ul className="location-list">{locations.map(renderOfficialOption)}</ul>
-                </details>
-                {countryGroups.map((group) => (
-                  <details className="country-group" key={group.code}>
-                    <summary>
-                      <span>{group.name}</span>
-                      <small>Городов: {group.cities.length}</small>
-                    </summary>
-                    <ul className="location-list">
-                      {group.cities.map((city) => renderCityOption(city, false))}
-                    </ul>
-                  </details>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        <LocationResults
+          locations={locations}
+          cityDataset={cityDataset}
+          selectedOfficialId={selectedOfficialId}
+          selectedCityId={selectedCityId}
+          query={deferredSearch}
+          onSelectOfficial={onSelectOfficial}
+          onSelectCity={onSelectCity}
+        />
 
         <p className="location-attribution">
           Города: <a href={cityDataset.source.url} target="_blank" rel="noreferrer">GeoNames</a>{' '}
@@ -531,7 +609,7 @@ function LocationDialog({
       </section>
     </div>
   )
-}
+})
 
 interface SettingsDialogProps {
   open: boolean
@@ -560,6 +638,7 @@ function SettingsDialog({ open, officialMode, settings, onClose, onChange }: Set
         aria-modal="true"
         className="location-dialog settings-dialog"
         role="dialog"
+        tabIndex={-1}
       >
         <div className="dialog-handle" aria-hidden="true" />
         <header className="dialog-header">
@@ -819,6 +898,43 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     })
   }, [cityDataset, meta, selectCalculatedLocation, selectOfficialLocation, services])
 
+  const selectPresetCity = useCallback((city: City) => {
+    if (!meta) return
+    const officialLocation = findNearestLocation(
+      city.latitude,
+      city.longitude,
+      meta.locations,
+      MAX_AUTOMATIC_DISTANCE_KM,
+    )
+    if (officialLocation) {
+      selectOfficialLocation(officialLocation.id)
+      return
+    }
+
+    selectCalculatedLocation({
+      latitude: city.latitude,
+      longitude: city.longitude,
+      accuracy: null,
+      timestamp: services.now().getTime(),
+      name: formatCityLabel(city),
+      cityId: city.id,
+      nameSource: 'geonames',
+      source: 'preset',
+    })
+  }, [meta, selectCalculatedLocation, selectOfficialLocation, services])
+
+  const reverseCalculatedLocation = useCallback(async () => {
+    if (!calculatedLocation) return
+    const name = await services.resolvePlaceName(calculatedLocation)
+    const updatedLocation: SavedCoordinates = {
+      ...calculatedLocation,
+      name,
+      nameSource: 'nominatim',
+    }
+    setCalculatedLocation(updatedLocation)
+    await services.saveCalculatedLocation(updatedLocation)
+  }, [calculatedLocation, services])
+
   useEffect(() => {
     if (!meta || !cityDataset || automaticLocationAttempted.current) return
     automaticLocationAttempted.current = true
@@ -868,42 +984,6 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const calculatedSchedule = schedule && 'entries' in schedule ? schedule : null
   const profileLabel = calculationProfileLabel(calculationSettings.profile)
   const calculatedLocationLabel = calculatedLocation?.name ?? 'Текущее местоположение'
-
-  const selectPresetCity = (city: City) => {
-    const officialLocation = findNearestLocation(
-      city.latitude,
-      city.longitude,
-      meta.locations,
-      MAX_AUTOMATIC_DISTANCE_KM,
-    )
-    if (officialLocation) {
-      selectOfficialLocation(officialLocation.id)
-      return
-    }
-
-    selectCalculatedLocation({
-      latitude: city.latitude,
-      longitude: city.longitude,
-      accuracy: null,
-      timestamp: services.now().getTime(),
-      name: formatCityLabel(city),
-      cityId: city.id,
-      nameSource: 'geonames',
-      source: 'preset',
-    })
-  }
-
-  const reverseCalculatedLocation = async () => {
-    if (!calculatedLocation) return
-    const name = await services.resolvePlaceName(calculatedLocation)
-    const updatedLocation: SavedCoordinates = {
-      ...calculatedLocation,
-      name,
-      nameSource: 'nominatim',
-    }
-    setCalculatedLocation(updatedLocation)
-    await services.saveCalculatedLocation(updatedLocation)
-  }
 
   return (
     <main className="page-shell">

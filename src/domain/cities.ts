@@ -32,6 +32,7 @@ export interface CountryCityGroup {
 const countryNames = new Intl.DisplayNames(['ru'], { type: 'region' })
 const englishCountryNames = new Intl.DisplayNames(['en'], { type: 'region' })
 const countryCollator = new Intl.Collator('ru', { sensitivity: 'base' })
+const citySearchIndexes = new WeakMap<CityDataset, readonly string[]>()
 
 function normalize(value: string): string {
   return value
@@ -46,6 +47,24 @@ export function getCountryName(countryCode: string): string {
 
 export function formatCityLabel(city: City): string {
   return `${city.name}, ${getCountryName(city.countryCode)}`
+}
+
+export function prepareCitySearch(dataset: CityDataset): void {
+  if (citySearchIndexes.has(dataset)) return
+
+  const countrySearchNames = new Map<string, string>()
+  const searchIndex = dataset.cities.map((city) => {
+    let countrySearchName = countrySearchNames.get(city.countryCode)
+    if (countrySearchName === undefined) {
+      countrySearchName = normalize(
+        `${getCountryName(city.countryCode)} ${englishCountryNames.of(city.countryCode) ?? ''}`,
+      )
+      countrySearchNames.set(city.countryCode, countrySearchName)
+    }
+    return `${normalize(`${city.name} ${city.searchNames}`)} ${countrySearchName}`
+  })
+
+  citySearchIndexes.set(dataset, searchIndex)
 }
 
 export function findNearestCity(
@@ -81,15 +100,14 @@ export function searchCities(
   const terms = normalize(query).trim().split(/\s+/).filter(Boolean)
   if (terms.length === 0) return []
 
+  prepareCitySearch(dataset)
+  const searchIndex = citySearchIndexes.get(dataset)!
+
   const matches: City[] = []
-  for (const city of dataset.cities) {
-    const countryName = getCountryName(city.countryCode)
-    const englishCountryName = englishCountryNames.of(city.countryCode) ?? ''
-    const haystack = normalize(
-      `${city.name} ${city.searchNames} ${countryName} ${englishCountryName}`,
-    )
+  for (let index = 0; index < dataset.cities.length; index += 1) {
+    const haystack = searchIndex[index]!
     if (terms.every((term) => haystack.includes(term))) {
-      matches.push(city)
+      matches.push(dataset.cities[index]!)
       if (matches.length === limit) break
     }
   }

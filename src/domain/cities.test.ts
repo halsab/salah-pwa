@@ -6,6 +6,7 @@ import {
   formatCityLabel,
   getCountryGroups,
   groupCitiesByCountry,
+  prepareCitySearch,
   searchCities,
 } from './cities'
 
@@ -67,6 +68,33 @@ describe('searchCities', () => {
       745044,
       323786,
     ])
+  })
+
+  it('переиспользует подготовленный поисковый индекс', () => {
+    let sourceReads = 0
+    const trackedCity: City = {
+      id: 524901,
+      get name() {
+        sourceReads += 1
+        return 'Moscow'
+      },
+      get searchNames() {
+        sourceReads += 1
+        return 'Москва Москву'
+      },
+      countryCode: 'RU',
+      latitude: 55.7522,
+      longitude: 37.6156,
+      population: 10_381_222,
+    }
+    const trackedDataset = { ...dataset, cities: [trackedCity] }
+
+    prepareCitySearch(trackedDataset)
+    const readsAfterPreparation = sourceReads
+
+    expect(searchCities(trackedDataset, 'Москва')).toEqual([trackedCity])
+    expect(searchCities(trackedDataset, 'Россия')).toEqual([trackedCity])
+    expect(sourceReads).toBe(readsAfterPreparation)
   })
 })
 

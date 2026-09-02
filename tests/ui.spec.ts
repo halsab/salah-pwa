@@ -59,10 +59,10 @@ test.describe('мобильная компоновка', () => {
     ).toBeLessThanOrEqual(1)
   })
 
-  test('вписывает bottom sheet в доступную область над клавиатурой', async ({ page }) => {
+  test('оставляет bottom sheet привязанным к низу за клавиатурой', async ({ page }) => {
     await page.addInitScript(() => {
       const viewport = Object.assign(new EventTarget(), {
-        height: 360,
+        height: 667,
         offsetLeft: 0,
         offsetTop: 0,
         pageLeft: 0,
@@ -77,14 +77,24 @@ test.describe('мобильная компоновка', () => {
     })
     await page.goto('./')
     await page.getByRole('button', { name: /Казань/ }).click()
+    await page.getByRole('searchbox').focus()
+    await page.evaluate(() => {
+      Object.assign(window.visualViewport!, { height: 360 })
+      window.visualViewport!.dispatchEvent(new Event('resize'))
+    })
 
-    const [layerBounds, dialogBounds] = await Promise.all([
-      page.locator('.dialog-layer').boundingBox(),
+    const layer = page.locator('.dialog-layer')
+    await expect(layer).toHaveAttribute('data-keyboard-open', 'true')
+    const [layerBounds, dialogBounds, attributionBounds] = await Promise.all([
+      layer.boundingBox(),
       page.getByRole('dialog').boundingBox(),
+      page.locator('.location-attribution').boundingBox(),
     ])
 
-    expect(layerBounds?.height).toBeLessThanOrEqual(361)
-    expect(dialogBounds!.y + dialogBounds!.height).toBeLessThanOrEqual(361)
+    expect(layerBounds!.height).toBeGreaterThanOrEqual(666)
+    expect(Math.abs(dialogBounds!.y + dialogBounds!.height - (layerBounds!.y + layerBounds!.height))).toBeLessThanOrEqual(1)
+    expect(dialogBounds!.y + dialogBounds!.height).toBeGreaterThan(600)
+    expect(attributionBounds!.y + attributionBounds!.height).toBeLessThanOrEqual(361)
   })
 
   test('не выпускает клавиатурный фокус из диалога', async ({ page }) => {
@@ -173,7 +183,18 @@ test.describe('адаптивность', () => {
 })
 
 test.describe('сенсорное управление', () => {
-  test.use({ viewport: { width: 380, height: 1324 }, hasTouch: true })
+  test.use({ viewport: { width: 380, height: 1324 }, hasTouch: true, isMobile: true })
+
+  test('открывает клавиатуру только после тапа по поиску', async ({ page }) => {
+    await page.goto('./')
+
+    await page.getByRole('button', { name: /Казань/ }).tap()
+    await expect(page.getByRole('dialog')).toBeFocused()
+    await expect(page.getByRole('searchbox')).not.toBeFocused()
+
+    await page.getByRole('searchbox').tap()
+    await expect(page.getByRole('searchbox')).toBeFocused()
+  })
 
   test('не оставляет обводку на экшенах после тапа', async ({ page }) => {
     await page.goto('./')
