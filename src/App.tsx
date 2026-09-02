@@ -10,7 +10,8 @@ import {
   type RefObject,
 } from 'react'
 
-import { loadCityDataset } from './data/cityRepository'
+import { cityCatalogService } from './data/cityCatalogClient'
+import type { CityCatalog, CityCatalogService } from './data/cityCatalog'
 import { prayerRepository } from './data/prayerRepository'
 import { resolvePlaceName } from './data/reverseGeocoder'
 import {
@@ -21,13 +22,9 @@ import {
 } from './domain/date'
 import { findNearestLocation } from './domain/location'
 import {
-  findNearestCity,
   formatCityLabel,
-  getCountryGroups,
   groupCitiesByCountry,
-  searchCities,
   type City,
-  type CityDataset,
 } from './domain/cities'
 import { findCurrentPrayer, findNextPrayer, formatRemainingTime } from './domain/nextPrayer'
 import {
@@ -77,11 +74,11 @@ interface InitializedAppState {
   locationMode: LocationMode
   calculatedLocation: SavedCoordinates | null
   calculationSettings: CalculationSettings
-  cityDataset: CityDataset
 }
 
 export interface AppServices {
   initialize: () => Promise<InitializedAppState>
+  cities: CityCatalogService
   getDay: (locationId: string, date: string) => Promise<PrayerDay | undefined>
   saveOfficialLocation: (locationId: string) => Promise<void>
   saveCalculatedLocation: (coordinates: SavedCoordinates) => Promise<void>
@@ -94,13 +91,7 @@ export interface AppServices {
 
 const defaultServices: AppServices = {
   ...prayerRepository,
-  initialize: async () => {
-    const [state, cityDataset] = await Promise.all([
-      prayerRepository.initialize(),
-      loadCityDataset(),
-    ])
-    return { ...state, cityDataset }
-  },
+  cities: cityCatalogService,
   resolvePlaceName,
   getPermission: getGeolocationPermission,
   getPosition: getCurrentPosition,
@@ -330,7 +321,8 @@ function useDialogViewport(open: boolean) {
 
 interface LocationDialogProps {
   locations: PrayerLocation[]
-  cityDataset: CityDataset
+  cityCatalog: CityCatalog | null
+  cityCatalogStatus: CityCatalogStatus
   selectedOfficialId: string | null
   selectedCityId: number | null
   calculatedLocation: SavedCoordinates | null
@@ -340,41 +332,134 @@ interface LocationDialogProps {
   onSelectCity: (city: City) => void
   onLocate: () => Promise<void>
   onReverse: () => Promise<void>
+  onLoadCities: () => void
+  onSearchCities: (query: string) => Promise<City[]>
 }
 
 interface LocationResultsProps {
   locations: PrayerLocation[]
-  cityDataset: CityDataset
+  cityCatalog: CityCatalog | null
+  cityCatalogStatus: CityCatalogStatus
+  cityMatches: City[]
+  citySearchPending: boolean
+  citySearchFailed: boolean
   selectedOfficialId: string | null
   selectedCityId: number | null
   query: string
   onSelectOfficial: (locationId: string) => void
   onSelectCity: (city: City) => void
+  onLoadCities: () => void
+}
+
+type CityCatalogStatus = 'idle' | 'loading' | 'ready' | 'error'
+
+interface CityOptionProps {
+  city: City
+  selected: boolean
+  onSelect: (city: City) => void
+}
+
+const CityOption = memo(function CityOption({ city, selected, onSelect }: CityOptionProps) {
+  return (
+    <li>
+      <button
+        className="location-option city-option"
+        aria-label={formatCityLabel(city)}
+        aria-current={selected ? 'location' : undefined}
+        type="button"
+        onClick={() => onSelect(city)}
+      >
+        <span>{city.name}</span>
+        {selected ? <CheckIcon /> : null}
+      </button>
+    </li>
+  )
+})
+
+function CollapsibleCityGroup({
+  group,
+  selectedCityId,
+  onSelectCity,
+}: {
+  group: CityCatalog['countryGroups'][number]
+  selectedCityId: number | null
+  onSelectCity: (city: City) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  return (
+    <details
+      className="country-group"
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        <span>{group.name}</span>
+        <small>Городов: {group.cities.length}</small>
+      </summary>
+      {expanded ? (
+        <ul className="location-list">
+          {group.cities.map((city) => (
+            <CityOption
+              city={city}
+              key={city.id}
+              selected={city.id === selectedCityId}
+              onSelect={onSelectCity}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </details>
+  )
+}
+
+function CityCatalogState({
+  status,
+  onRetry,
+}: {
+  status: CityCatalogStatus
+  onRetry: () => void
+}) {
+  if (status === 'ready') return null
+
+  if (status === 'error') {
+    return (
+      <div className="city-catalog-state" role="status">
+        <p>Города сейчас недоступны</p>
+        <button className="city-catalog-retry" type="button" onClick={onRetry}>
+          Повторить
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="city-catalog-state" role="status">
+      <span className="city-loading-mark" aria-hidden="true" />
+      <p>Загружаем города</p>
+    </div>
+  )
 }
 
 const LocationResults = memo(function LocationResults({
   locations,
-  cityDataset,
+  cityCatalog,
+  cityCatalogStatus,
+  cityMatches,
+  citySearchPending,
+  citySearchFailed,
   selectedOfficialId,
   selectedCityId,
   query,
   onSelectOfficial,
   onSelectCity,
+  onLoadCities,
 }: LocationResultsProps) {
-  const countryGroups = useMemo(
-    () => getCountryGroups(cityDataset),
-    [cityDataset],
-  )
   const filteredOfficialLocations = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase('ru-RU')
     return normalizedQuery
       ? locations.filter(({ name }) => name.toLocaleLowerCase('ru-RU').includes(normalizedQuery))
       : locations
   }, [locations, query])
-  const cityMatches = useMemo(
-    () => searchCities(cityDataset, query),
-    [cityDataset, query],
-  )
   const searchCountryGroups = useMemo(
     () => groupCitiesByCountry(cityMatches),
     [cityMatches],
@@ -395,23 +480,8 @@ const LocationResults = memo(function LocationResults({
     </li>
   )
 
-  const renderCityOption = (city: City) => (
-    <li key={city.id}>
-      <button
-        className="location-option city-option"
-        aria-label={formatCityLabel(city)}
-        aria-current={city.id === selectedCityId ? 'location' : undefined}
-        type="button"
-        onClick={() => onSelectCity(city)}
-      >
-        <span>{city.name}</span>
-        {city.id === selectedCityId ? <CheckIcon /> : null}
-      </button>
-    </li>
-  )
-
   return (
-    <div className="location-results">
+    <div className="location-results" aria-busy={citySearchPending}>
       {hasSearch ? (
         <>
           {filteredOfficialLocations.length > 0 ? (
@@ -436,13 +506,30 @@ const LocationResults = memo(function LocationResults({
                       <span>{group.name}</span>
                       <small>Городов: {group.cities.length}</small>
                     </summary>
-                    <ul className="location-list">{group.cities.map(renderCityOption)}</ul>
+                    <ul className="location-list">
+                      {group.cities.map((city) => (
+                        <CityOption
+                          city={city}
+                          key={city.id}
+                          selected={city.id === selectedCityId}
+                          onSelect={onSelectCity}
+                        />
+                      ))}
+                    </ul>
                   </details>
                 ))}
               </div>
             </section>
           ) : null}
-          {filteredOfficialLocations.length === 0 && cityMatches.length === 0 ? (
+          <CityCatalogState status={cityCatalogStatus} onRetry={onLoadCities} />
+          {citySearchFailed ? (
+            <p className="empty-search">Не удалось выполнить поиск городов.</p>
+          ) : null}
+          {cityCatalogStatus === 'ready' &&
+          !citySearchPending &&
+          !citySearchFailed &&
+          filteredOfficialLocations.length === 0 &&
+          cityMatches.length === 0 ? (
             <p className="empty-search">Ничего не нашли. Попробуйте другое название.</p>
           ) : null}
         </>
@@ -457,16 +544,16 @@ const LocationResults = memo(function LocationResults({
               </summary>
               <ul className="location-list">{locations.map(renderOfficialOption)}</ul>
             </details>
-            {countryGroups.map((group) => (
-              <details className="country-group" key={group.code}>
-                <summary>
-                  <span>{group.name}</span>
-                  <small>Городов: {group.cities.length}</small>
-                </summary>
-                <ul className="location-list">{group.cities.map(renderCityOption)}</ul>
-              </details>
+            {cityCatalog?.countryGroups.map((group) => (
+              <CollapsibleCityGroup
+                group={group}
+                key={group.code}
+                selectedCityId={selectedCityId}
+                onSelectCity={onSelectCity}
+              />
             ))}
           </div>
+          <CityCatalogState status={cityCatalogStatus} onRetry={onLoadCities} />
         </>
       )}
     </div>
@@ -475,7 +562,8 @@ const LocationResults = memo(function LocationResults({
 
 const LocationDialog = memo(function LocationDialog({
   locations,
-  cityDataset,
+  cityCatalog,
+  cityCatalogStatus,
   selectedOfficialId,
   selectedCityId,
   calculatedLocation,
@@ -485,8 +573,13 @@ const LocationDialog = memo(function LocationDialog({
   onSelectCity,
   onLocate,
   onReverse,
+  onLoadCities,
+  onSearchCities,
 }: LocationDialogProps) {
   const [search, setSearch] = useState('')
+  const [cityMatches, setCityMatches] = useState<City[]>([])
+  const [citySearchPending, setCitySearchPending] = useState(false)
+  const [citySearchFailed, setCitySearchFailed] = useState(false)
   const [locating, setLocating] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
@@ -498,8 +591,35 @@ const LocationDialog = memo(function LocationDialog({
   useEffect(() => {
     if (!open) return
     setSearch('')
+    setCityMatches([])
+    setCitySearchPending(false)
+    setCitySearchFailed(false)
     setLocationError(null)
   }, [open])
+
+  useEffect(() => {
+    const query = deferredSearch.trim()
+    if (!open || !query || cityCatalogStatus !== 'ready') {
+      setCityMatches([])
+      setCitySearchPending(false)
+      setCitySearchFailed(false)
+      return
+    }
+
+    let active = true
+    setCityMatches([])
+    setCitySearchPending(true)
+    setCitySearchFailed(false)
+    void onSearchCities(query).then((matches) => {
+      if (active) setCityMatches(matches)
+    }).catch(() => {
+      if (active) setCitySearchFailed(true)
+    }).finally(() => {
+      if (active) setCitySearchPending(false)
+    })
+
+    return () => { active = false }
+  }, [cityCatalogStatus, deferredSearch, onSearchCities, open])
 
   if (!open) return null
 
@@ -593,17 +713,27 @@ const LocationDialog = memo(function LocationDialog({
 
         <LocationResults
           locations={locations}
-          cityDataset={cityDataset}
+          cityCatalog={cityCatalog}
+          cityCatalogStatus={cityCatalogStatus}
+          cityMatches={cityMatches}
+          citySearchPending={citySearchPending}
+          citySearchFailed={citySearchFailed}
           selectedOfficialId={selectedOfficialId}
           selectedCityId={selectedCityId}
           query={deferredSearch}
           onSelectOfficial={onSelectOfficial}
           onSelectCity={onSelectCity}
+          onLoadCities={onLoadCities}
         />
 
         <p className="location-attribution">
-          Города: <a href={cityDataset.source.url} target="_blank" rel="noreferrer">GeoNames</a>{' '}
-          (<a href={cityDataset.source.licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a>) · онлайн:{' '}
+          {cityCatalog ? (
+            <>
+              Города: <a href={cityCatalog.source.url} target="_blank" rel="noreferrer">GeoNames</a>{' '}
+              (<a href={cityCatalog.source.licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a>) ·{' '}
+            </>
+          ) : null}
+          Онлайн:{' '}
           <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>
         </p>
       </section>
@@ -716,7 +846,8 @@ function calculationProfileLabel(profileId: CalculationProfileId): string {
 
 export function App({ services = defaultServices }: { services?: AppServices }) {
   const [meta, setMeta] = useState<DatasetMeta | null>(null)
-  const [cityDataset, setCityDataset] = useState<CityDataset | null>(null)
+  const [cityCatalog, setCityCatalog] = useState<CityCatalog | null>(null)
+  const [cityCatalogStatus, setCityCatalogStatus] = useState<CityCatalogStatus>('idle')
   const [locationId, setLocationId] = useState('kazan')
   const [locationMode, setLocationMode] = useState<LocationMode>('official')
   const [calculatedLocation, setCalculatedLocation] = useState<SavedCoordinates | null>(null)
@@ -735,8 +866,29 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const automaticLocationAttempted = useRef(false)
+  const cityCatalogLoad = useRef<Promise<void> | null>(null)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
+
+  const loadCities = useCallback(() => {
+    if (cityCatalog || cityCatalogLoad.current) return
+
+    setCityCatalogStatus('loading')
+    const load = services.cities.load().then((catalog) => {
+      setCityCatalog(catalog)
+      setCityCatalogStatus('ready')
+    }).catch(() => {
+      setCityCatalogStatus('error')
+    }).finally(() => {
+      cityCatalogLoad.current = null
+    })
+    cityCatalogLoad.current = load
+  }, [cityCatalog, services])
+
+  const openLocationDialog = useCallback(() => {
+    setLocationDialogOpen(true)
+    loadCities()
+  }, [loadCities])
 
   const closeLocationDialog = useCallback(() => {
     setLocationDialogOpen(false)
@@ -758,7 +910,6 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
       setLocationMode(state.locationMode)
       setCalculatedLocation(state.calculatedLocation)
       setCalculationSettings(state.calculationSettings)
-      setCityDataset(state.cityDataset)
     }).catch(() => active && setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.'))
       .finally(() => active && setLoading(false))
     return () => { active = false }
@@ -849,7 +1000,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   }, [closeLocationDialog, services])
 
   const locateAutomatically = useCallback(async () => {
-    if (!meta || !cityDataset) return
+    if (!meta) return
     const coarse = await services.getPosition('coarse')
     const coarseOfficial = findNearestLocation(
       coarse.latitude,
@@ -879,12 +1030,18 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     } catch {
       // Грубых координат достаточно для резервного автономного расчёта.
     }
-    const nearestCity = findNearestCity(
-      bestPosition.latitude,
-      bestPosition.longitude,
-      cityDataset.cities,
-      MAX_OFFLINE_CITY_DISTANCE_KM,
-    )
+    let nearestCity: City | null = null
+    if (cityCatalog) {
+      try {
+        nearestCity = await services.cities.findNearest(
+          bestPosition.latitude,
+          bestPosition.longitude,
+          MAX_OFFLINE_CITY_DISTANCE_KM,
+        )
+      } catch {
+        // Координат достаточно для расчёта; название города необязательно.
+      }
+    }
     selectCalculatedLocation({
       ...bestPosition,
       source: 'gps',
@@ -896,7 +1053,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
           }
         : {}),
     })
-  }, [cityDataset, meta, selectCalculatedLocation, selectOfficialLocation, services])
+  }, [cityCatalog, meta, selectCalculatedLocation, selectOfficialLocation, services])
 
   const selectPresetCity = useCallback((city: City) => {
     if (!meta) return
@@ -936,16 +1093,16 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   }, [calculatedLocation, services])
 
   useEffect(() => {
-    if (!meta || !cityDataset || automaticLocationAttempted.current) return
+    if (!meta || automaticLocationAttempted.current) return
     automaticLocationAttempted.current = true
     void services.getPermission().then((permission) => {
       if (permission === 'granted') void locateAutomatically().catch(() => undefined)
     })
-  }, [cityDataset, locateAutomatically, meta, services])
+  }, [locateAutomatically, meta, services])
 
   if (loading) return <LoadingScreen />
 
-  if (error || !meta || !cityDataset) {
+  if (error || !meta) {
     return (
       <main className="page-shell error-page">
         <section className="app-frame error-frame">
@@ -999,7 +1156,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 ref={locationButtonRef}
                 className="location-control"
                 type="button"
-                onClick={() => setLocationDialogOpen(true)}
+                onClick={openLocationDialog}
                 aria-label={officialMode
                   ? `Населённый пункт: ${selectedLocation?.name ?? 'не выбран'}`
                   : `Местоположение: ${calculatedLocationLabel}`}
@@ -1146,7 +1303,8 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
 
       <LocationDialog
         locations={meta.locations}
-        cityDataset={cityDataset}
+        cityCatalog={cityCatalog}
+        cityCatalogStatus={cityCatalogStatus}
         selectedOfficialId={officialMode ? locationId : null}
         selectedCityId={officialMode ? null : calculatedLocation?.cityId ?? null}
         calculatedLocation={officialMode ? null : calculatedLocation}
@@ -1156,6 +1314,8 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         onSelectCity={selectPresetCity}
         onLocate={locateAutomatically}
         onReverse={reverseCalculatedLocation}
+        onLoadCities={loadCities}
+        onSearchCities={services.cities.search}
       />
       <SettingsDialog
         open={settingsDialogOpen}

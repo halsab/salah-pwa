@@ -929,6 +929,40 @@ button:disabled {
   gap: 7px;
 }
 
+.city-catalog-state {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 4px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.city-catalog-state p {
+  margin: 0;
+}
+
+.city-loading-mark {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+  border: 2px dashed var(--accent);
+  border-radius: 50%;
+  animation: spin 1.6s linear infinite;
+}
+
+.city-catalog-retry {
+  min-height: 44px;
+  padding: 7px 14px;
+  border: 1.5px solid var(--outline);
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--paper-strong);
+  font-weight: 800;
+}
+
 .country-group {
   content-visibility: auto;
   contain-intrinsic-size: auto 52px;

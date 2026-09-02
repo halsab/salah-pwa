@@ -3,7 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
 import { App, type AppServices } from './App'
-import type { CityDataset } from './domain/cities'
+import type { CityCatalog } from './data/cityCatalog'
+import {
+  findNearestCity,
+  getCountryGroups,
+  searchCities,
+  type CityDataset,
+} from './domain/cities'
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
 import type { PrayerDay } from './domain/types'
 
@@ -92,8 +98,23 @@ function createServices(
       locationMode: 'official',
       calculatedLocation: null,
       calculationSettings: DEFAULT_CALCULATION_SETTINGS,
-      cityDataset,
     }),
+    cities: {
+      load: vi.fn().mockResolvedValue({
+        source: cityDataset.source,
+        countryGroups: getCountryGroups(cityDataset),
+      }),
+      search: vi.fn().mockImplementation((query: string) =>
+        Promise.resolve(searchCities(cityDataset, query)),
+      ),
+      findNearest: vi.fn().mockImplementation((
+        latitude: number,
+        longitude: number,
+        maxDistanceKm: number,
+      ) => Promise.resolve(
+        findNearestCity(latitude, longitude, cityDataset.cities, maxDistanceKm),
+      )),
+    },
     getDay: vi
       .fn()
       .mockImplementation((locationId: string, date: string) =>
@@ -166,6 +187,44 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(screen.getByText('16:37')).toBeVisible()
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny')
+  })
+
+  it('загружает города только после открытия выбора местоположения', async () => {
+    const user = userEvent.setup()
+    const services = createServices()
+    render(<App services={services} />)
+
+    const locationButton = await screen.findByRole('button', { name: /Казань/ })
+    expect(services.cities.load).not.toHaveBeenCalled()
+
+    await user.click(locationButton)
+
+    expect(services.cities.load).toHaveBeenCalledTimes(1)
+  })
+
+  it('показывает короткий статус во время загрузки городов', async () => {
+    const user = userEvent.setup()
+    let resolveCities!: (value: CityCatalog) => void
+    const load = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveCities = resolve
+    }))
+    const services = createServices({
+      cities: {
+        ...createServices().cities,
+        load,
+      },
+    })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+
+    expect(screen.getByText('Загружаем города')).toBeVisible()
+
+    resolveCities!({
+      source: cityDataset.source,
+      countryGroups: getCountryGroups(cityDataset),
+    })
+    expect(await screen.findByText('Турция', { exact: true })).toBeVisible()
   })
 
   it('не сбрасывает поиск при секундном обновлении таймера', async () => {
@@ -284,6 +343,39 @@ describe('Salah', () => {
       name: 'Moscow, Россия',
       cityId: 524901,
       nameSource: 'geonames',
+      source: 'gps',
+    })
+  })
+
+  it('рассчитывает по GPS без названия города, когда справочник недоступен', async () => {
+    const user = userEvent.setup()
+    const coarse = {
+      latitude: 55.75,
+      longitude: 37.62,
+      accuracy: 900,
+      timestamp: 100,
+    }
+    const precise = { ...coarse, latitude: 55.7558, longitude: 37.6173, accuracy: 12, timestamp: 200 }
+    const baseServices = createServices()
+    const services = createServices({
+      cities: {
+        ...baseServices.cities,
+        load: vi.fn().mockRejectedValue(new Error('offline')),
+      },
+      getPosition: vi.fn()
+        .mockResolvedValueOnce(coarse)
+        .mockResolvedValueOnce(precise),
+    })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    expect(await screen.findByText('Города сейчас недоступны')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
+
+    expect(await screen.findByRole('button', { name: /Текущее местоположение/ })).toBeVisible()
+    expect(screen.getByRole('list', { name: 'Времена намаза' }).children).toHaveLength(7)
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
+      ...precise,
       source: 'gps',
     })
   })

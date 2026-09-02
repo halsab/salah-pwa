@@ -52,7 +52,7 @@ test('после первого запуска расписание полнос
   }
 })
 
-test('сохранённое GPS-расписание вне Татарстана рассчитывается без сети', async ({
+test('GPS-расписание вне Татарстана рассчитывается без справочника городов', async ({
   context,
   page,
 }) => {
@@ -60,7 +60,7 @@ test('сохранённое GPS-расписание вне Татарстан�
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
   await page.goto('./')
 
-  await expect(page.getByRole('button', { name: /Moscow, Россия/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Текущее местоположение/i })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
   await expect(
     page
@@ -75,7 +75,7 @@ test('сохранённое GPS-расписание вне Татарстан�
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /Moscow, Россия/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Текущее местоположение/i })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
     await expect(
       page
@@ -108,6 +108,9 @@ test('город из офлайн-справочника сохраняется
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+    await page.getByRole('button', { name: /Istanbul, Турция/ }).click()
+    await page.getByRole('searchbox').fill('Москва')
+    await expect(page.getByRole('button', { name: 'Moscow, Россия' })).toBeVisible()
   } finally {
     await context.setOffline(false)
   }

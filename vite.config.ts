@@ -30,7 +30,19 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallback: 'index.html',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
+        globIgnores: ['**/data/cities-current.json'],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        runtimeCaching: [
+          {
+            urlPattern: /\/data\/cities-current\.json$/,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'city-data',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 1 },
+            },
+          },
+        ],
       },
       devOptions: { enabled: false }
     })
