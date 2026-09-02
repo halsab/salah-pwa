@@ -181,12 +181,46 @@ describe('Salah', () => {
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     const dialog = screen.getByRole('dialog', { name: 'Выбор местоположения' })
-    await user.type(within(dialog).getByRole('searchbox'), 'челны')
-    await user.click(within(dialog).getByRole('button', { name: 'Набережные Челны' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Найти город или район' }))
+    const searchDialog = screen.getByRole('dialog', { name: 'Поиск населённого пункта' })
+    await user.type(within(searchDialog).getByRole('searchbox'), 'челны')
+    await user.click(within(searchDialog).getByRole('button', { name: 'Набережные Челны' }))
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(screen.getByText('16:37')).toBeVisible()
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny')
+  })
+
+  it('переключает шит в сфокусированный режим поиска', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Выбор местоположения' })
+    expect(within(dialog).queryByRole('searchbox')).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Найти город или район' }))
+
+    const searchDialog = screen.getByRole('dialog', { name: 'Поиск населённого пункта' })
+    await waitFor(() => expect(within(searchDialog).getByRole('searchbox')).toHaveFocus())
+    expect(within(searchDialog).queryByText('Выбор местоположения')).not.toBeInTheDocument()
+    expect(within(searchDialog).queryByRole('button', { name: 'Определить автоматически' })).not.toBeInTheDocument()
+    expect(within(searchDialog).queryByText(/GeoNames/)).not.toBeInTheDocument()
+    expect(within(searchDialog).getByRole('button', { name: 'Закрыть' })).toBeVisible()
+  })
+
+  it('закрывает весь шит крестиком в режиме поиска', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    const locationButton = await screen.findByRole('button', { name: /Казань/ })
+    await user.click(locationButton)
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    const searchDialog = screen.getByRole('dialog', { name: 'Поиск населённого пункта' })
+    await user.click(within(searchDialog).getByRole('button', { name: 'Закрыть' }))
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    await waitFor(() => expect(locationButton).toHaveFocus())
   })
 
   it('загружает города только после открытия выбора местоположения', async () => {
@@ -232,6 +266,7 @@ describe('Salah', () => {
     render(<App services={createServices()} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'челны')
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Казань' })).not.toBeInTheDocument()
@@ -248,6 +283,7 @@ describe('Salah', () => {
 
     const locationButton = await screen.findByRole('button', { name: /Казань/ })
     await user.click(locationButton)
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await waitFor(() => expect(screen.getByRole('searchbox')).toHaveFocus())
 
     await user.keyboard('{Escape}')
@@ -386,6 +422,7 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'Стамбул')
     expect(screen.getByText('Турция', { exact: true })).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Istanbul, Турция' }))
@@ -401,6 +438,33 @@ describe('Salah', () => {
       nameSource: 'geonames',
       source: 'preset',
     })
+  })
+
+  it('показывает статус поиска и сохраняет группировку по странам', async () => {
+    const user = userEvent.setup()
+    let resolveSearch!: (cities: CityDataset['cities']) => void
+    const search = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveSearch = resolve
+    }))
+    const services = createServices({
+      cities: {
+        ...createServices().cities,
+        search,
+      },
+    })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await screen.findByText('Турция', { exact: true })
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    await user.type(screen.getByRole('searchbox'), 'Москва')
+
+    expect(await screen.findByText('Ищем города…', { selector: '.city-search-state p' })).toBeVisible()
+    resolveSearch!([cityDataset.cities[1]!])
+
+    expect(await screen.findByText('Россия', { exact: true })).toBeVisible()
+    expect(screen.getByText('Найдено вариантов: 1')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Moscow, Россия' })).toBeVisible()
   })
 
   it('показывает крупнейшие города подпунктами страны', async () => {

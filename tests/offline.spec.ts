@@ -15,6 +15,7 @@ test('весь интерфейс использует рукописный шр
   )
 
   await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Найти город или район' }).click()
   const inputFont = await page.getByRole('searchbox').evaluate((element) =>
     getComputedStyle(element).fontFamily,
   )
@@ -94,6 +95,7 @@ test('город из офлайн-справочника сохраняется
 }) => {
   await page.goto('./')
   await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Найти город или район' }).click()
   await page.getByRole('searchbox').fill('Стамбул')
   await page.getByRole('button', { name: 'Istanbul, Турция' }).click()
 
@@ -109,6 +111,7 @@ test('город из офлайн-справочника сохраняется
     await expect(page.getByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
     await page.getByRole('button', { name: /Istanbul, Турция/ }).click()
+    await page.getByRole('button', { name: 'Найти город или район' }).click()
     await page.getByRole('searchbox').fill('Москва')
     await expect(page.getByRole('button', { name: 'Moscow, Россия' })).toBeVisible()
   } finally {

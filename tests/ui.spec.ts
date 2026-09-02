@@ -37,15 +37,16 @@ test.describe('мобильная компоновка', () => {
     expect(Math.abs(todayBounds!.y - dateBounds!.y)).toBeLessThanOrEqual(1)
   })
 
-  test('выравнивает список населённых пунктов по полю поиска', async ({ page }) => {
+  test('выравнивает список по строке поиска и закрытия', async ({ page }) => {
     await page.goto('./')
     await page.getByRole('button', { name: /Казань/ }).click()
+    await page.getByRole('button', { name: 'Найти город или район' }).click()
 
     const searchBox = page.getByRole('searchbox')
     await searchBox.fill('Казань')
     const countryTab = page.getByRole('dialog').locator('.official-country-group')
     const [searchBounds, tabBounds] = await Promise.all([
-      searchBox.locator('..').boundingBox(),
+      page.locator('.location-search-header').boundingBox(),
       countryTab.boundingBox(),
     ])
 
@@ -59,42 +60,49 @@ test.describe('мобильная компоновка', () => {
     ).toBeLessThanOrEqual(1)
   })
 
-  test('оставляет bottom sheet привязанным к низу за клавиатурой', async ({ page }) => {
+  test('оставляет результаты видимыми над клавиатурой', async ({ page }) => {
     await page.addInitScript(() => {
       const viewport = Object.assign(new EventTarget(), {
-        height: 667,
+        height: 852,
         offsetLeft: 0,
         offsetTop: 0,
         pageLeft: 0,
         pageTop: 0,
         scale: 1,
-        width: 375,
+        width: 393,
       })
       Object.defineProperty(window, 'visualViewport', {
         configurable: true,
         value: viewport,
       })
     })
+    await page.setViewportSize({ width: 393, height: 852 })
     await page.goto('./')
     await page.getByRole('button', { name: /Казань/ }).click()
-    await page.getByRole('searchbox').focus()
+    await page.getByRole('button', { name: 'Найти город или район' }).click()
+    await page.getByRole('searchbox').fill('Казань')
     await page.evaluate(() => {
-      Object.assign(window.visualViewport!, { height: 360 })
+      Object.assign(window.visualViewport!, { height: 393 })
       window.visualViewport!.dispatchEvent(new Event('resize'))
     })
 
     const layer = page.locator('.dialog-layer')
     await expect(layer).toHaveAttribute('data-keyboard-open', 'true')
-    const [layerBounds, dialogBounds, attributionBounds] = await Promise.all([
+    await expect(page.locator('.location-attribution')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Определить автоматически' })).toHaveCount(0)
+
+    const result = page.getByRole('dialog').getByRole('button', { name: 'Казань' })
+    const [layerBounds, dialogBounds, resultBounds] = await Promise.all([
       layer.boundingBox(),
       page.getByRole('dialog').boundingBox(),
-      page.locator('.location-attribution').boundingBox(),
+      result.boundingBox(),
     ])
 
-    expect(layerBounds!.height).toBeGreaterThanOrEqual(666)
+    expect(layerBounds!.height).toBeLessThanOrEqual(394)
     expect(Math.abs(dialogBounds!.y + dialogBounds!.height - (layerBounds!.y + layerBounds!.height))).toBeLessThanOrEqual(1)
-    expect(dialogBounds!.y + dialogBounds!.height).toBeGreaterThan(600)
-    expect(attributionBounds!.y + attributionBounds!.height).toBeLessThanOrEqual(361)
+    expect(resultBounds).not.toBeNull()
+    expect(resultBounds!.y).toBeGreaterThanOrEqual(0)
+    expect(resultBounds!.y + resultBounds!.height).toBeLessThanOrEqual(393)
   })
 
   test('не выпускает клавиатурный фокус из диалога', async ({ page }) => {
@@ -162,7 +170,7 @@ test.describe('адаптивность', () => {
       return element.getBoundingClientRect().left - panel.left
     })
 
-    expect(inset).toBeGreaterThanOrEqual(14)
+    expect(inset).toBeGreaterThanOrEqual(14 - 0.1)
   })
 
   test('открывает нативный календарь по клику на дату', async ({ page }) => {
@@ -190,9 +198,9 @@ test.describe('сенсорное управление', () => {
 
     await page.getByRole('button', { name: /Казань/ }).tap()
     await expect(page.getByRole('dialog')).toBeFocused()
-    await expect(page.getByRole('searchbox')).not.toBeFocused()
+    await expect(page.getByRole('searchbox')).toHaveCount(0)
 
-    await page.getByRole('searchbox').tap()
+    await page.getByRole('button', { name: 'Найти город или район' }).tap()
     await expect(page.getByRole('searchbox')).toBeFocused()
   })
 

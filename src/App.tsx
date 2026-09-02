@@ -465,6 +465,15 @@ const LocationResults = memo(function LocationResults({
     [cityMatches],
   )
   const hasSearch = query.trim().length > 0
+  const searchAnnouncement = hasSearch
+    ? citySearchPending
+      ? 'Ищем города…'
+      : citySearchFailed
+        ? 'Не удалось выполнить поиск городов.'
+        : cityCatalogStatus === 'ready'
+          ? `Найдено вариантов: ${filteredOfficialLocations.length + cityMatches.length}`
+          : ''
+    : ''
 
   const renderOfficialOption = (location: PrayerLocation) => (
     <li key={location.id}>
@@ -482,6 +491,9 @@ const LocationResults = memo(function LocationResults({
 
   return (
     <div className="location-results" aria-busy={citySearchPending}>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {searchAnnouncement}
+      </p>
       {hasSearch ? (
         <>
           {filteredOfficialLocations.length > 0 ? (
@@ -520,6 +532,12 @@ const LocationResults = memo(function LocationResults({
                 ))}
               </div>
             </section>
+          ) : null}
+          {citySearchPending ? (
+            <div className="city-search-state" aria-hidden="true">
+              <span className="city-loading-mark" />
+              <p>Ищем города…</p>
+            </div>
           ) : null}
           <CityCatalogState status={cityCatalogStatus} onRetry={onLoadCities} />
           {citySearchFailed ? (
@@ -576,6 +594,7 @@ const LocationDialog = memo(function LocationDialog({
   onLoadCities,
   onSearchCities,
 }: LocationDialogProps) {
+  const [searchMode, setSearchMode] = useState(false)
   const [search, setSearch] = useState('')
   const [cityMatches, setCityMatches] = useState<City[]>([])
   const [citySearchPending, setCitySearchPending] = useState(false)
@@ -584,12 +603,17 @@ const LocationDialog = memo(function LocationDialog({
   const [resolving, setResolving] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-  const dialogRef = useModalDialog(open, onClose, searchRef)
+  const closeDialog = useCallback(() => {
+    setSearchMode(false)
+    onClose()
+  }, [onClose])
+  const dialogRef = useModalDialog(open, closeDialog, searchRef)
   const layerRef = useDialogViewport(open)
   const deferredSearch = useDeferredValue(search)
 
   useEffect(() => {
     if (!open) return
+    setSearchMode(false)
     setSearch('')
     setCityMatches([])
     setCitySearchPending(false)
@@ -599,7 +623,7 @@ const LocationDialog = memo(function LocationDialog({
 
   useEffect(() => {
     const query = deferredSearch.trim()
-    if (!open || !query || cityCatalogStatus !== 'ready') {
+    if (!open || !searchMode || !query || cityCatalogStatus !== 'ready') {
       setCityMatches([])
       setCitySearchPending(false)
       setCitySearchFailed(false)
@@ -619,7 +643,7 @@ const LocationDialog = memo(function LocationDialog({
     })
 
     return () => { active = false }
-  }, [cityCatalogStatus, deferredSearch, onSearchCities, open])
+  }, [cityCatalogStatus, deferredSearch, onSearchCities, open, searchMode])
 
   if (!open) return null
 
@@ -640,76 +664,102 @@ const LocationDialog = memo(function LocationDialog({
     }
   }
 
+  const openSearch = () => {
+    setSearchMode(true)
+    requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }))
+  }
+
   return (
-    <div ref={layerRef} className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div
+      ref={layerRef}
+      className={`dialog-layer${searchMode ? ' location-search-layer' : ''}`}
+      onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}
+    >
       <section
         ref={dialogRef}
-        aria-labelledby="location-dialog-title"
+        aria-labelledby={searchMode ? 'location-search-title' : 'location-dialog-title'}
         aria-modal="true"
-        className="location-dialog"
+        className={`location-dialog${searchMode ? ' location-search-dialog' : ''}`}
         role="dialog"
         tabIndex={-1}
       >
-        <div className="dialog-handle" aria-hidden="true" />
-        <header className="dialog-header">
-          <h2 id="location-dialog-title">Выбор местоположения</h2>
-          <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </header>
+        {searchMode ? (
+          <>
+            <h2 id="location-search-title" className="sr-only">Поиск населённого пункта</h2>
+            <div className="location-search-header">
+              <label className="search-control">
+                <SearchIcon />
+                <span className="sr-only">Поиск населённого пункта</span>
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Найти город или район"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  enterKeyHint="search"
+                  spellCheck={false}
+                />
+              </label>
+              <button className="icon-button" type="button" aria-label="Закрыть" onClick={closeDialog}>
+                <CloseIcon />
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="dialog-handle" aria-hidden="true" />
+            <header className="dialog-header">
+              <h2 id="location-dialog-title">Выбор местоположения</h2>
+              <button className="icon-button" type="button" aria-label="Закрыть" onClick={closeDialog}>
+                <CloseIcon />
+              </button>
+            </header>
 
-        <p className="location-mode-guide">
-          <strong>В Татарстане</strong> — готовое расписание ДУМ РТ.{' '}
-          <strong>В других регионах</strong> — расчёт по вашим настройкам.
-        </p>
+            <p className="location-mode-guide">
+              <strong>В Татарстане</strong> — готовое расписание ДУМ РТ.{' '}
+              <strong>В других регионах</strong> — расчёт по вашим настройкам.
+            </p>
 
-        <div className="location-actions">
-          <button
-            className="auto-location-button"
-            type="button"
-            onClick={() => void runLocationAction(onLocate, setLocating)}
-            disabled={locating || resolving}
-          >
-            <CompassIcon />
-            <span>{locating ? 'Определяем…' : 'Определить автоматически'}</span>
-          </button>
+            <div className="location-actions">
+              <button
+                className="auto-location-button"
+                type="button"
+                onClick={() => void runLocationAction(onLocate, setLocating)}
+                disabled={locating || resolving}
+              >
+                <CompassIcon />
+                <span>{locating ? 'Определяем…' : 'Определить автоматически'}</span>
+              </button>
 
-          {calculatedLocation ? (
-            <button
-              className="reverse-location-button"
-              type="button"
-              onClick={() => void runLocationAction(onReverse, setResolving)}
-              disabled={
-                locating ||
-                resolving ||
-                calculatedLocation.nameSource === 'nominatim'
-              }
-            >
-              {resolving
-                ? 'Уточняем…'
-                : calculatedLocation.nameSource === 'nominatim'
-                  ? 'Название уточнено онлайн'
-                  : 'Уточнить название онлайн'}
+              {calculatedLocation ? (
+                <button
+                  className="reverse-location-button"
+                  type="button"
+                  onClick={() => void runLocationAction(onReverse, setResolving)}
+                  disabled={
+                    locating ||
+                    resolving ||
+                    calculatedLocation.nameSource === 'nominatim'
+                  }
+                >
+                  {resolving
+                    ? 'Уточняем…'
+                    : calculatedLocation.nameSource === 'nominatim'
+                      ? 'Название уточнено онлайн'
+                      : 'Уточнить название онлайн'}
+                </button>
+              ) : null}
+              {locationError ? <p className="location-error" role="alert">{locationError}</p> : null}
+            </div>
+
+            <button className="search-control search-entry-button" type="button" onClick={openSearch}>
+              <SearchIcon />
+              <span>Найти город или район</span>
             </button>
-          ) : null}
-          {locationError ? <p className="location-error" role="alert">{locationError}</p> : null}
-        </div>
-
-        <label className="search-control">
-          <SearchIcon />
-          <span className="sr-only">Поиск населённого пункта</span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Найти город или район"
-            autoComplete="off"
-            autoCorrect="off"
-            enterKeyHint="search"
-            spellCheck={false}
-          />
-        </label>
+          </>
+        )}
 
         <LocationResults
           locations={locations}
@@ -720,22 +770,24 @@ const LocationDialog = memo(function LocationDialog({
           citySearchFailed={citySearchFailed}
           selectedOfficialId={selectedOfficialId}
           selectedCityId={selectedCityId}
-          query={deferredSearch}
+          query={searchMode ? deferredSearch : ''}
           onSelectOfficial={onSelectOfficial}
           onSelectCity={onSelectCity}
           onLoadCities={onLoadCities}
         />
 
-        <p className="location-attribution">
-          {cityCatalog ? (
-            <>
-              Города: <a href={cityCatalog.source.url} target="_blank" rel="noreferrer">GeoNames</a>{' '}
-              (<a href={cityCatalog.source.licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a>) ·{' '}
-            </>
-          ) : null}
-          Онлайн:{' '}
-          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>
-        </p>
+        {searchMode ? null : (
+          <p className="location-attribution">
+            {cityCatalog ? (
+              <>
+                Города: <a href={cityCatalog.source.url} target="_blank" rel="noreferrer">GeoNames</a>{' '}
+                (<a href={cityCatalog.source.licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a>) ·{' '}
+              </>
+            ) : null}
+            Онлайн:{' '}
+            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>
+          </p>
+        )}
       </section>
     </div>
   )
