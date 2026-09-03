@@ -575,6 +575,26 @@ button:disabled {
   text-underline-offset: 3px;
 }
 
+.methodology-trigger,
+.methodology-settings-trigger {
+  appearance: none;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.methodology-trigger {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 3px;
+  margin-block: -8px;
+}
+
 .source-spark {
   color: var(--accent);
   font-size: 22px;
@@ -1053,6 +1073,74 @@ button:disabled {
   max-width: 540px;
 }
 
+.methodology-dialog {
+  width: min(620px, 100%);
+  max-height: min(780px, calc(var(--dialog-viewport-height, 100dvh) - 36px));
+}
+
+.methodology-content {
+  min-height: 0;
+  display: grid;
+  gap: 15px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1px 7px 2px 1px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--primary) transparent;
+}
+
+.methodology-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.methodology-content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.methodology-section {
+  display: grid;
+  gap: 7px;
+  padding: 0 2px 15px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.methodology-section h3,
+.methodology-section p,
+.methodology-disclaimer {
+  margin: 0;
+}
+
+.methodology-section h3 {
+  font-size: 1.2rem;
+  line-height: 1.15;
+}
+
+.methodology-section p,
+.methodology-disclaimer {
+  max-width: 70ch;
+  font-size: 0.98rem;
+  line-height: 1.38;
+}
+
+.methodology-content a {
+  color: var(--ink);
+  font-weight: 800;
+  text-underline-offset: 3px;
+}
+
+.methodology-timezone {
+  padding: 12px 13px;
+  border: 1.5px dashed var(--outline);
+  border-radius: 12px;
+  background: var(--surface-wash-soft);
+}
+
+.methodology-disclaimer {
+  padding: 0 2px 2px;
+  color: var(--ink-soft);
+}
+
 .dialog-layer.share-layer {
   --share-dialog-max-height: calc(
     var(--dialog-viewport-height, 100dvh)
@@ -1155,6 +1243,14 @@ button:disabled {
   background: var(--paper-strong);
 }
 
+.methodology-settings-trigger {
+  min-height: 48px;
+  justify-self: start;
+  padding: 7px 10px;
+  color: var(--ink-soft);
+  font-size: 1rem;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .icon-button:not(:disabled):hover,
   .today-button:hover,
@@ -1169,6 +1265,12 @@ button:disabled {
   .primary-button:hover,
   .share-button:hover {
     transform: translateY(-2px);
+  }
+
+  .methodology-trigger:hover,
+  .methodology-settings-trigger:hover,
+  .methodology-content a:hover {
+    color: var(--primary-strong);
   }
 }
 

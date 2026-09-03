@@ -103,6 +103,12 @@ const defaultServices: AppServices = {
 const MAX_AUTOMATIC_DISTANCE_KM = 80
 const MAX_OFFLINE_CITY_DISTANCE_KM = 30
 const APP_SHARE_QR_SRC = `${import.meta.env.BASE_URL}share-qr.svg`
+const ADHAN_URL = 'https://github.com/batoulapps/adhan-js'
+const ADHAN_METHODS_URL = 'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md'
+const GEONAMES_URL = 'https://www.geonames.org/'
+const CC_BY_URL = 'https://creativecommons.org/licenses/by/4.0/'
+const OPENSTREETMAP_URL = 'https://www.openstreetmap.org/copyright'
+const NOMINATIM_URL = 'https://nominatim.org/'
 const ASR_METHOD_LABELS: Record<CalculationSettings['asrMethod'], string> = {
   hanafi: 'Ханафитский',
   standard: 'Шафиитский, маликитский и ханбалитский',
@@ -221,7 +227,7 @@ function useModalDialog(
 
       const focusableElements = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])',
+          'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), summary, [tabindex]:not([tabindex="-1"])',
         ),
       ).filter(
         (element) =>
@@ -800,13 +806,29 @@ interface SettingsDialogProps {
   open: boolean
   officialMode: boolean
   settings: CalculationSettings
+  focusMethodologyOnOpen: boolean
+  methodologyTriggerRef: RefObject<HTMLButtonElement | null>
   onClose: () => void
   onChange: (settings: CalculationSettings) => void
+  onOpenMethodology: () => void
 }
 
-function SettingsDialog({ open, officialMode, settings, onClose, onChange }: SettingsDialogProps) {
+function SettingsDialog({
+  open,
+  officialMode,
+  settings,
+  focusMethodologyOnOpen,
+  methodologyTriggerRef,
+  onClose,
+  onChange,
+  onOpenMethodology,
+}: SettingsDialogProps) {
   const closeRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useModalDialog(open, onClose, closeRef)
+  const dialogRef = useModalDialog(
+    open,
+    onClose,
+    focusMethodologyOnOpen ? methodologyTriggerRef : closeRef,
+  )
   const layerRef = useDialogViewport(open)
   if (!open) return null
 
@@ -878,6 +900,116 @@ function SettingsDialog({ open, officialMode, settings, onClose, onChange }: Set
           </select>
         </label>
 
+        <button
+          ref={methodologyTriggerRef}
+          className="methodology-settings-trigger"
+          type="button"
+          onClick={onOpenMethodology}
+        >
+          Как рассчитывается время
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function MethodologyDialog({
+  open,
+  officialScheduleUrl,
+  onClose,
+}: {
+  open: boolean
+  officialScheduleUrl: string
+  onClose: () => void
+}) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useModalDialog(open, onClose, closeRef)
+  const layerRef = useDialogViewport(open)
+  if (!open) return null
+
+  return (
+    <div
+      ref={layerRef}
+      className="dialog-layer"
+      onPointerDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        ref={dialogRef}
+        aria-labelledby="methodology-dialog-title"
+        aria-modal="true"
+        className="location-dialog methodology-dialog"
+        role="dialog"
+        tabIndex={-1}
+      >
+        <div className="dialog-handle" aria-hidden="true" />
+        <header className="dialog-header">
+          <h2 id="methodology-dialog-title">Как рассчитывается время</h2>
+          <button
+            ref={closeRef}
+            className="icon-button"
+            type="button"
+            aria-label="Закрыть"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <div className="methodology-content">
+          <section className="methodology-section">
+            <h3>В Татарстане</h3>
+            <p>
+              Это готовое расписание: приложение его не пересчитывает. Источник —{' '}
+              <a href={officialScheduleUrl} target="_blank" rel="noreferrer">ДУМ РТ</a>.
+            </p>
+          </section>
+
+          <section className="methodology-section">
+            <h3>В других местах</h3>
+            <p>
+              Время рассчитывается прямо на устройстве библиотекой{' '}
+              <a href={ADHAN_URL} target="_blank" rel="noreferrer">Adhan JS 4.4.6</a>.
+              Для расчёта интернет не нужен.
+            </p>
+            <p>
+              Профиль задаёт углы Фаджра и Иша: ДУМ РТ — 18°/15°, ДУМ РФ — 16°/15°.
+              Аср и правило для северных широт выбираются отдельно.
+            </p>
+            <p>
+              Если сумерек нет, правило ДУМ РТ ставит Фаджр за 120 минут до восхода,
+              а Иша — через 90 минут после заката. Другие варианты перечислены здесь:{' '}
+              <a href={ADHAN_METHODS_URL} target="_blank" rel="noreferrer">описание профилей</a>.
+            </p>
+          </section>
+
+          <section className="methodology-section methodology-timezone">
+            <h3>Часовой пояс</h3>
+            <p>
+              Время показывается в часовом поясе устройства. Если выбран город в другом
+              часовом поясе, расписание может быть сдвинуто на разницу во времени.
+            </p>
+          </section>
+
+          <section className="methodology-section">
+            <h3>Местоположение</h3>
+            <p>
+              GPS обрабатывается на устройстве. Справочник городов —{' '}
+              <a href={GEONAMES_URL} target="_blank" rel="noreferrer">GeoNames</a>{' '}
+              (<a href={CC_BY_URL} target="_blank" rel="noreferrer">CC BY 4.0</a>).
+            </p>
+            <p>
+              Только после нажатия «Уточнить название онлайн» округлённые координаты
+              отправляются в <a href={NOMINATIM_URL} target="_blank" rel="noreferrer">Nominatim</a>,
+              который использует данные{' '}
+              <a href={OPENSTREETMAP_URL} target="_blank" rel="noreferrer">OpenStreetMap</a>.
+            </p>
+          </section>
+
+          <p className="methodology-disclaimer">
+            Расчётное время может отличаться от расписания местной мечети. Если есть местное
+            официальное расписание, ориентируйтесь на него.
+          </p>
+        </div>
       </section>
     </div>
   )
@@ -963,6 +1095,8 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [error, setError] = useState<string | null>(null)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const [settingsFocusMethodology, setSettingsFocusMethodology] = useState(false)
+  const [methodologyDialogOpen, setMethodologyDialogOpen] = useState(false)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const automaticLocationAttempted = useRef(false)
@@ -970,6 +1104,9 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const cityCatalogLoad = useRef<Promise<void> | null>(null)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
+  const footerMethodologyButtonRef = useRef<HTMLButtonElement>(null)
+  const settingsMethodologyButtonRef = useRef<HTMLButtonElement>(null)
+  const methodologyReturnTarget = useRef<'footer' | 'settings'>('footer')
   const shareButtonRef = useRef<HTMLButtonElement>(null)
 
   const loadCities = useCallback(() => {
@@ -998,7 +1135,26 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   }, [])
   const closeSettingsDialog = useCallback(() => {
     setSettingsDialogOpen(false)
+    setSettingsFocusMethodology(false)
     requestAnimationFrame(() => settingsButtonRef.current?.focus())
+  }, [])
+  const openSettingsDialog = useCallback(() => {
+    setSettingsFocusMethodology(false)
+    setSettingsDialogOpen(true)
+  }, [])
+  const openMethodologyDialog = useCallback((returnTarget: 'footer' | 'settings') => {
+    methodologyReturnTarget.current = returnTarget
+    if (returnTarget === 'settings') setSettingsDialogOpen(false)
+    setMethodologyDialogOpen(true)
+  }, [])
+  const closeMethodologyDialog = useCallback(() => {
+    setMethodologyDialogOpen(false)
+    if (methodologyReturnTarget.current === 'settings') {
+      setSettingsFocusMethodology(true)
+      setSettingsDialogOpen(true)
+      return
+    }
+    requestAnimationFrame(() => footerMethodologyButtonRef.current?.focus())
   }, [])
   const closeShareDialog = useCallback(() => {
     setShareDialogOpen(false)
@@ -1295,7 +1451,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 className="icon-button settings-button"
                 type="button"
                 aria-label="Настройки автономного расчёта"
-                onClick={() => setSettingsDialogOpen(true)}
+                onClick={openSettingsDialog}
               >
                 <SettingsIcon />
               </button>
@@ -1414,10 +1570,30 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                 <CheckIcon />
                 {officialMode ? (
                   <span>
-                    Официальное расписание <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a> · Настройки расчёта не влияют · Доступно офлайн
+                    Официальное расписание <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a> · Настройки расчёта не влияют ·{' '}
+                    <button
+                      ref={footerMethodologyButtonRef}
+                      className="methodology-trigger"
+                      type="button"
+                      onClick={() => openMethodologyDialog('footer')}
+                    >
+                      Методика
+                    </button>{' '}
+                    · Доступно офлайн
                   </span>
                 ) : (
-                  <span>Расчёт по настройкам · {profileLabel} · Аср: {ASR_METHOD_LABELS[calculationSettings.asrMethod]} · Доступно офлайн</span>
+                  <span>
+                    Расчёт по настройкам · {profileLabel} · Аср: {ASR_METHOD_LABELS[calculationSettings.asrMethod]} ·{' '}
+                    <button
+                      ref={footerMethodologyButtonRef}
+                      className="methodology-trigger"
+                      type="button"
+                      onClick={() => openMethodologyDialog('footer')}
+                    >
+                      Методика
+                    </button>{' '}
+                    · Доступно офлайн
+                  </span>
                 )}
                 <span className="source-spark" aria-hidden="true">✦</span>
               </footer>
@@ -1456,8 +1632,16 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         open={settingsDialogOpen}
         officialMode={officialMode}
         settings={calculationSettings}
+        focusMethodologyOnOpen={settingsFocusMethodology}
+        methodologyTriggerRef={settingsMethodologyButtonRef}
         onClose={closeSettingsDialog}
         onChange={updateCalculationSettings}
+        onOpenMethodology={() => openMethodologyDialog('settings')}
+      />
+      <MethodologyDialog
+        open={methodologyDialogOpen}
+        officialScheduleUrl={meta.source.url}
+        onClose={closeMethodologyDialog}
       />
       <ShareDialog open={shareDialogOpen} onClose={closeShareDialog} />
     </main>

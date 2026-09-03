@@ -405,6 +405,7 @@ describe('Salah', () => {
     expect(within(schedule).queryByText(/сухура/i)).not.toBeInTheDocument()
     expect(within(schedule).queryByText(/в мечетях/i)).not.toBeInTheDocument()
     expect(screen.getByText(/Расчёт по настройкам · ДУМ РТ/i)).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Методика' })).toBeVisible()
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
@@ -599,6 +600,76 @@ describe('Salah', () => {
       asrMethod: 'standard',
       profile: 'dumRf',
       highLatitudeRule: 'seventhOfNight',
+    })
+  })
+
+  it('объясняет источники, правила расчёта и часовой пояс', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    const methodologyButton = await screen.findByRole('button', { name: 'Методика' })
+    await user.click(methodologyButton)
+
+    const dialog = screen.getByRole('dialog', { name: 'Как рассчитывается время' })
+    expect(within(dialog).getByText(/готовое расписание.+не пересчитывает/i)).toBeVisible()
+    expect(within(dialog).getByText(/ДУМ РТ — 18°\/15°.+ДУМ РФ — 16°\/15°/i)).toBeVisible()
+    expect(within(dialog).getByText(/120 минут до восхода.+90 минут после заката/i)).toBeVisible()
+    expect(within(dialog).getByText(/часовом поясе устройства/i)).toBeVisible()
+    expect(within(dialog).getByText(/город в другом часовом поясе.+сдвинуто/i)).toBeVisible()
+
+    const officialSourceLink = within(dialog).getByRole('link', { name: 'ДУМ РТ' })
+    expect(officialSourceLink).toHaveAttribute(
+      'href',
+      'https://dumrt.ru/ru/help-info/prayertime/',
+    )
+    expect(within(dialog).getByRole('link', { name: 'Adhan JS 4.4.6' })).toHaveAttribute(
+      'href',
+      'https://github.com/batoulapps/adhan-js',
+    )
+    expect(within(dialog).getByRole('link', { name: 'описание профилей' })).toHaveAttribute(
+      'href',
+      'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md',
+    )
+    expect(within(dialog).getByRole('link', { name: 'GeoNames' })).toHaveAttribute(
+      'href',
+      'https://www.geonames.org/',
+    )
+    expect(within(dialog).getByRole('link', { name: 'CC BY 4.0' })).toHaveAttribute(
+      'href',
+      'https://creativecommons.org/licenses/by/4.0/',
+    )
+    expect(within(dialog).getByRole('link', { name: 'OpenStreetMap' })).toHaveAttribute(
+      'href',
+      'https://www.openstreetmap.org/copyright',
+    )
+    expect(within(dialog).getByRole('link', { name: 'Nominatim' })).toHaveAttribute(
+      'href',
+      'https://nominatim.org/',
+    )
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog', { name: 'Как рассчитывается время' })).not.toBeInTheDocument()
+    await waitFor(() => expect(methodologyButton).toHaveFocus())
+  })
+
+  it('открывает методику из настроек и возвращается к ним после закрытия', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+    const settingsDialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    await user.click(within(settingsDialog).getByRole('button', { name: 'Как рассчитывается время' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Настройки расчёта' })).not.toBeInTheDocument()
+    const methodologyDialog = screen.getByRole('dialog', { name: 'Как рассчитывается время' })
+    await user.click(within(methodologyDialog).getByRole('button', { name: 'Закрыть' }))
+
+    const reopenedSettings = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    await waitFor(() => {
+      expect(
+        within(reopenedSettings).getByRole('button', { name: 'Как рассчитывается время' }),
+      ).toHaveFocus()
     })
   })
 
