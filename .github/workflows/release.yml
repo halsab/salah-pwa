@@ -1,0 +1,76 @@
+name: Создать релиз
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Определить следующую версию
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.version.outputs.app_version }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+    steps:
+      - name: Проверить ветку запуска
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo 'Релиз можно запускать только из ветки main.'
+          exit 1
+
+      - name: Скачать main и все теги
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Подготовить Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Вычислить номер релиза
+        id: version
+        run: echo "app_version=$(node scripts/nextReleaseVersion.ts)" >> "$GITHUB_OUTPUT"
+
+      - name: Зафиксировать commit релиза
+        id: commit
+        run: echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Проверить и опубликовать
+    needs: prepare
+    uses: ./.github/workflows/ci.yml
+    with:
+      app_version: ${{ needs.prepare.outputs.app_version }}
+      checkout_ref: ${{ needs.prepare.outputs.commit_sha }}
+      deploy: true
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+
+  release:
+    name: Создать Git-тег и GitHub Release
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ needs.prepare.outputs.app_version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_COMMIT: ${{ needs.prepare.outputs.commit_sha }}
+    steps:
+      - name: Создать релиз
+        run: gh release create "$APP_VERSION" --target "$RELEASE_COMMIT" --title "$APP_VERSION" --generate-notes

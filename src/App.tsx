@@ -1059,7 +1059,11 @@ function ShareDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
   )
 }
 
-function LoadingScreen() {
+function AppVersion({ version }: { version: string | undefined }) {
+  return version ? <small className="app-version">{version}</small> : null
+}
+
+function LoadingScreen({ version }: { version: string | undefined }) {
   return (
     <main className="page-shell loading-page">
       <section className="app-frame" aria-busy="true">
@@ -1067,6 +1071,7 @@ function LoadingScreen() {
         <div className="loading-mark" aria-hidden="true" />
         <p>Открываем расписание…</p>
       </section>
+      <AppVersion version={version} />
     </main>
   )
 }
@@ -1075,7 +1080,13 @@ function calculationProfileLabel(profileId: CalculationProfileId): string {
   return CALCULATION_PROFILES.find(({ id }) => id === profileId)?.label ?? 'ДУМ РТ'
 }
 
-export function App({ services = defaultServices }: { services?: AppServices }) {
+export function App({
+  services = defaultServices,
+  version = import.meta.env.VITE_APP_VERSION,
+}: {
+  services?: AppServices
+  version?: string
+}) {
   const [meta, setMeta] = useState<DatasetMeta | null>(null)
   const [cityCatalog, setCityCatalog] = useState<CityCatalog | null>(null)
   const [cityCatalogStatus, setCityCatalogStatus] = useState<CityCatalogStatus>('idle')
@@ -1380,7 +1391,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     })
   }, [locateAutomatically, meta, services])
 
-  if (loading) return <LoadingScreen />
+  if (loading) return <LoadingScreen version={version} />
 
   if (error || !meta) {
     return (
@@ -1393,6 +1404,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
             Попробовать снова
           </button>
         </section>
+        <AppVersion version={version} />
       </main>
     )
   }
@@ -1611,6 +1623,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         <ShareIcon />
         <span>Поделиться</span>
       </button>
+      <AppVersion version={version} />
 
       <LocationDialog
         locations={meta.locations}

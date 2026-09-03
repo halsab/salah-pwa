@@ -673,6 +673,15 @@ button:disabled {
   height: 24px;
 }
 
+.app-version {
+  margin-top: -8px;
+  color: color-mix(in srgb, var(--on-primary) 72%, var(--page));
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+
 .missing-schedule,
 .schedule-skeleton {
   min-height: 440px;
@@ -757,6 +766,18 @@ button:disabled {
   font-size: 2rem;
   font-weight: 400;
   line-height: 1.05;
+}
+
+.dialog-header .icon-button {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  padding: 0;
+  line-height: 0;
+}
+
+.dialog-header .icon-button svg {
+  display: block;
 }
 
 .location-mode-guide,
@@ -1540,7 +1561,6 @@ button:disabled {
 
   .share-button {
     min-height: 50px;
-    margin-bottom: max(2px, env(safe-area-inset-bottom));
   }
 
   .dialog-layer {
@@ -1561,7 +1581,8 @@ button:disabled {
     animation: drawer-in 500ms var(--ease-drawer) both;
   }
 
-  .location-dialog > .location-results {
+  .location-dialog > .location-results,
+  .location-dialog > .methodology-content {
     margin-right: calc(-1 * max(16px, env(safe-area-inset-right)));
     margin-left: calc(-1 * max(16px, env(safe-area-inset-left)));
     padding-right: max(16px, env(safe-area-inset-right));

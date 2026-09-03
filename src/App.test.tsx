@@ -139,6 +139,16 @@ function createServices(
 }
 
 describe('Salah', () => {
+  it('показывает номер релизной сборки внизу приложения', async () => {
+    render(<App services={createServices()} version="v26.4" />)
+
+    await screen.findByRole('button', { name: /Казань/ })
+
+    const version = screen.getByText('v26.4')
+    expect(version).toBeVisible()
+    expect(version).toHaveClass('app-version')
+  })
+
   it('показывает текущее событие, выделяет его и считает до следующего', async () => {
     render(<App services={createServices()} />)
 

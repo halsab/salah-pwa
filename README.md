@@ -41,4 +41,6 @@ Offline smoke-test запускает production preview, дожидается �
 
 ## Публикация
 
-После push в `main` GitHub Actions выполняет воспроизводимую установку, тесты, typecheck, production build и offline smoke-test, затем публикует `dist` в GitHub Pages. В настройках Pages источником должен быть выбран **GitHub Actions**.
+Push в `main` и pull request запускают проверки без публикации. Production-релиз запускается вручную через workflow `Создать релиз` в GitHub Actions из ветки `main`. Workflow находит последний тег текущего года, увеличивает номер (`v26.4` → `v26.5`), передаёт его в Vite, выполняет все проверки, публикует `dist` в GitHub Pages и создаёт одноимённые Git-тег и GitHub Release. В новом году нумерация автоматически начинается с `1`.
+
+Одновременно может выполняться только один релиз. В настройках Pages источником должен быть выбран **GitHub Actions**.
