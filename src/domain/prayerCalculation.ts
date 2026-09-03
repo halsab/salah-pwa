@@ -18,6 +18,7 @@ import type {
 
 export type CalculationProfileId =
   | 'dumRt'
+  | 'dumRf'
   | 'turkey'
   | 'muslimWorldLeague'
   | 'karachi'
@@ -45,6 +46,7 @@ export interface CalculationProfileOption {
 
 export const CALCULATION_PROFILES: readonly CalculationProfileOption[] = [
   { id: 'dumRt', label: 'ДУМ РТ' },
+  { id: 'dumRf', label: 'ДУМ РФ' },
   { id: 'turkey', label: 'Турция · Diyanet' },
   { id: 'muslimWorldLeague', label: 'Muslim World League' },
   { id: 'karachi', label: 'Карачи' },
@@ -106,11 +108,11 @@ function profileParameters(
   profile: CalculationProfileId,
   date: Date,
 ): CalculationParameters {
-  if (profile === 'dumRt') {
+  if (profile === 'dumRt' || profile === 'dumRf') {
     const parameters = CalculationMethod.Other()
-    parameters.fajrAngle = 18
+    parameters.fajrAngle = profile === 'dumRt' ? 18 : 16
     parameters.ishaAngle = 15
-    parameters.rounding = Rounding.None
+    if (profile === 'dumRt') parameters.rounding = Rounding.None
     return parameters
   }
 

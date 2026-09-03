@@ -243,20 +243,18 @@ test.describe('адаптивность', () => {
       const closeButton = element.querySelector('.share-close-button')!
       const closeButtonBounds = closeButton.getBoundingClientRect()
       return {
-        closeHitAreaHeight: Number.parseFloat(getComputedStyle(closeButton, '::before').height),
+        closeButtonHeight: closeButtonBounds.height,
         closeButtonWidth: closeButtonBounds.width,
+        contentGap: Number.parseFloat(getComputedStyle(element.querySelector('.share-content')!).rowGap),
         dialogAspectRatio: dialogBounds.width / dialogBounds.height,
         dialogLeft: dialogBounds.left,
         dialogRight: dialogBounds.right,
         dialogOverflow: element.scrollHeight - element.clientHeight,
-        horizontalInset: qrFrameBounds.left - dialogBounds.left,
         paddingBlockStart: Number.parseFloat(dialogStyle.paddingBlockStart),
         paddingInlineStart: Number.parseFloat(dialogStyle.paddingInlineStart),
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
         qrFrameWidth: qrFrameBounds.width,
         qrWidth: qrBounds.width,
-        verticalInsetBottom: dialogBounds.bottom - closeButtonBounds.bottom,
-        verticalInsetTop: qrFrameBounds.top - dialogBounds.top,
       }
     })
 
@@ -265,11 +263,10 @@ test.describe('адаптивность', () => {
     expect(layout.dialogOverflow).toBe(0)
     expect(Math.abs(layout.dialogAspectRatio - 11 / 12)).toBeLessThanOrEqual(0.01)
     expect(Math.abs(layout.paddingBlockStart - layout.paddingInlineStart)).toBeLessThanOrEqual(0.1)
-    expect(Math.abs(layout.verticalInsetTop - layout.horizontalInset)).toBeLessThanOrEqual(1)
-    expect(Math.abs(layout.verticalInsetBottom - layout.horizontalInset)).toBeLessThanOrEqual(1)
     expect(layout.pageOverflow).toBeLessThanOrEqual(0)
-    expect(layout.qrWidth).toBeGreaterThanOrEqual(230)
-    expect(layout.closeHitAreaHeight).toBeGreaterThanOrEqual(44)
+    expect(layout.qrWidth).toBeGreaterThanOrEqual(220)
+    expect(layout.contentGap).toBeGreaterThanOrEqual(12)
+    expect(layout.closeButtonHeight).toBeGreaterThanOrEqual(50)
     expect(Math.abs(layout.closeButtonWidth - layout.qrFrameWidth)).toBeLessThanOrEqual(1)
 
     await page.locator('.share-layer').dispatchEvent('pointerdown', { pointerType: 'touch' })

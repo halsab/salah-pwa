@@ -1,4 +1,5 @@
 import {
+  CALCULATION_PROFILES,
   DEFAULT_CALCULATION_SETTINGS,
   type CalculationSettings,
 } from '../domain/prayerCalculation'
@@ -147,9 +148,7 @@ function isCalculationSettings(value: unknown): value is CalculationSettings {
   if (!value || typeof value !== 'object') return false
   const settings = value as Partial<CalculationSettings>
   return (
-    ['dumRt', 'turkey', 'muslimWorldLeague', 'karachi', 'northAmerica', 'ummAlQura'].includes(
-      settings.profile ?? '',
-    ) &&
+    CALCULATION_PROFILES.some(({ id }) => id === settings.profile) &&
     ['hanafi', 'standard'].includes(settings.asrMethod ?? '') &&
     ['dumRt', 'seventhOfNight', 'twilightAngle', 'nearestDay'].includes(
       settings.highLatitudeRule ?? '',

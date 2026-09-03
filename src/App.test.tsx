@@ -585,13 +585,19 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
     const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
     expect(within(dialog).getByText(/Сейчас используется готовое расписание ДУМ РТ/i)).toBeVisible()
-    await user.selectOptions(within(dialog).getByLabelText('Аср'), 'standard')
-    await user.selectOptions(within(dialog).getByLabelText('Профиль'), 'turkey')
+    const asrSelect = within(dialog).getByLabelText('Аср')
+    expect(within(asrSelect).getByRole('option', { name: 'Ханафитский' })).toBeVisible()
+    expect(within(asrSelect).getByRole('option', {
+      name: 'Шафиитский, маликитский и ханбалитский',
+    })).toBeVisible()
+    expect(within(asrSelect).queryByRole('option', { name: 'Стандартный' })).not.toBeInTheDocument()
+    await user.selectOptions(asrSelect, 'standard')
+    await user.selectOptions(within(dialog).getByLabelText('Профиль'), 'dumRf')
     await user.selectOptions(within(dialog).getByLabelText('Северные правила'), 'seventhOfNight')
 
     expect(services.saveCalculationSettings).toHaveBeenLastCalledWith({
       asrMethod: 'standard',
-      profile: 'turkey',
+      profile: 'dumRf',
       highLatitudeRule: 'seventhOfNight',
     })
   })

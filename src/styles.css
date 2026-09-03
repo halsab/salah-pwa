@@ -1069,7 +1069,6 @@ button:disabled {
   min-width: 0;
   max-height: var(--share-dialog-max-height);
   aspect-ratio: 11 / 12;
-  container-type: inline-size;
   display: grid;
   place-items: center;
   overflow: auto;
@@ -1105,32 +1104,20 @@ button:disabled {
   width: 100%;
   display: grid;
   justify-items: center;
-  gap: min(6px, 1.02cqi);
+  gap: clamp(12px, 2.4vw, 20px);
 }
 
 .share-close-button {
-  position: relative;
-  width: min(400px, calc(100% - 25px));
-  height: min(54px, 9.184cqi);
-  min-height: 0;
-  padding: 0;
+  width: min(400px, calc(100% - 36px));
+  min-height: clamp(50px, 7.6vw, 54px);
   border-radius: 15px;
   box-shadow: 3px 3px 0 var(--outline);
   font-size: 1.12rem;
 }
 
-.share-close-button::before {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: max(44px, 100%);
-  content: '';
-}
-
 .share-qr-frame {
-  width: min(400px, calc(100% - 25px));
-  padding: clamp(4px, 1.4vw, 10px);
+  width: min(400px, calc(100% - 36px));
+  padding: clamp(4px, 1.2vw, 10px);
   border: 2px solid var(--outline);
   border-radius: 18px;
   background: #fff8ea;

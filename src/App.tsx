@@ -103,6 +103,10 @@ const defaultServices: AppServices = {
 const MAX_AUTOMATIC_DISTANCE_KM = 80
 const MAX_OFFLINE_CITY_DISTANCE_KM = 30
 const APP_SHARE_QR_SRC = `${import.meta.env.BASE_URL}share-qr.svg`
+const ASR_METHOD_LABELS: Record<CalculationSettings['asrMethod'], string> = {
+  hanafi: 'Ханафитский',
+  standard: 'Шафиитский, маликитский и ханбалитский',
+}
 
 type DisplaySchedule = PrayerDay | CalculatedPrayerSchedule
 type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
@@ -842,8 +846,8 @@ function SettingsDialog({ open, officialMode, settings, onClose, onChange }: Set
             value={settings.asrMethod}
             onChange={(event) => update('asrMethod', event.target.value as CalculationSettings['asrMethod'])}
           >
-            <option value="hanafi">Ханафитский</option>
-            <option value="standard">Стандартный</option>
+            <option value="hanafi">{ASR_METHOD_LABELS.hanafi}</option>
+            <option value="standard">{ASR_METHOD_LABELS.standard}</option>
           </select>
         </label>
 
@@ -1413,7 +1417,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                     Официальное расписание <a href={meta.source.url} target="_blank" rel="noreferrer">ДУМ РТ</a> · Настройки расчёта не влияют · Доступно офлайн
                   </span>
                 ) : (
-                  <span>Расчёт по настройкам · {profileLabel} · Аср: {calculationSettings.asrMethod === 'hanafi' ? 'ханафитский' : 'стандартный'} · Доступно офлайн</span>
+                  <span>Расчёт по настройкам · {profileLabel} · Аср: {ASR_METHOD_LABELS[calculationSettings.asrMethod]} · Доступно офлайн</span>
                 )}
                 <span className="source-spark" aria-hidden="true">✦</span>
               </footer>

@@ -94,6 +94,26 @@ describe('calculatePrayerSchedule', () => {
     }
   })
 
+  it('считает профиль ДУМ РФ по углам 16°/15°', () => {
+    const dumRf = calculatePrayerSchedule(
+      KAZAN,
+      '2026-01-15',
+      withSettings({ profile: 'dumRf' }),
+    )
+    const dumRt = calculatePrayerSchedule(KAZAN, '2026-01-15')
+    const isna = calculatePrayerSchedule(
+      KAZAN,
+      '2026-01-15',
+      withSettings({ profile: 'northAmerica' }),
+    )
+
+    expect(CALCULATION_PROFILES).toContainEqual({ id: 'dumRf', label: 'ДУМ РФ' })
+    expect(dumRf.profile).toBe('dumRf')
+    expect(dumRf.entries.fajr.instant).toBeGreaterThan(dumRt.entries.fajr.instant)
+    expect(dumRf.entries.fajr.instant).toBeLessThan(isna.entries.fajr.instant)
+    expect(dumRf.entries.isha.instant).toBe(isna.entries.isha.instant)
+  })
+
   it('восстанавливает полярный день и возвращает упорядоченное расписание', () => {
     const schedule = calculatePrayerSchedule(
       { latitude: 69.6492, longitude: 18.9553 },
