@@ -915,6 +915,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const automaticLocationAttempted = useRef(false)
+  const followingToday = useRef(true)
   const cityCatalogLoad = useRef<Promise<void> | null>(null)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
@@ -964,10 +965,28 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
     return () => { active = false }
   }, [retryCount, services])
 
-  useEffect(() => {
-    const timer = window.setInterval(() => setCurrentTime(services.now()), 1_000)
-    return () => window.clearInterval(timer)
+  const syncCurrentTime = useCallback(() => {
+    const now = services.now()
+    setCurrentTime(now)
+    if (followingToday.current) {
+      const currentDate = getSystemDate(now)
+      setSelectedDate((date) => date === currentDate ? date : currentDate)
+    }
   }, [services])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncCurrentTime()
+    }
+    const timer = window.setInterval(syncCurrentTime, 1_000)
+    window.addEventListener('pageshow', syncCurrentTime)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('pageshow', syncCurrentTime)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [syncCurrentTime])
 
   useEffect(() => {
     if (!meta) return
@@ -1170,6 +1189,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const minDate = officialMode ? `${meta.source.years[0]}-01-01` : undefined
   const maxDate = officialMode ? `${meta.source.years.at(-1)}-12-31` : undefined
   const changeDate = (date: string) => {
+    followingToday.current = date === today
     setSelectedDate(date)
     pulseHaptic()
   }
@@ -1268,7 +1288,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         </header>
 
         <div className="content-grid" data-loading={scheduleLoading || undefined}>
-          <section className="next-prayer-panel" aria-label="Текущий намаз и время до следующего">
+          <section className="next-prayer-panel" aria-label="Текущее событие и время до следующего">
             {scheduleError ? (
               <div className="no-next-prayer"><ClockIcon /><p>Расписание временно недоступно</p></div>
             ) : scheduleLoading && !schedule ? (
@@ -1279,18 +1299,18 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
                   <div className="current-prayer">
                     <p className="current-label">Сейчас</p>
                     <p className="next-name">
-                      {currentPrayer ? `${currentPrayer.label} · ${currentPrayer.time}` : 'До первого намаза'}
+                      {currentPrayer ? `${currentPrayer.label} · ${currentPrayer.time}` : 'До первого события'}
                     </p>
                   </div>
                   <div
                     className="countdown"
                     role="timer"
                     aria-live="off"
-                    aria-label={`Осталось ${formatRemainingTime(nextPrayer.remainingSeconds)}`}
+                    aria-label={`${nextPrayer.countdownLabel}, осталось ${formatRemainingTime(nextPrayer.remainingSeconds)}`}
                   >
                     <ClockIcon />
                     <span className="countdown-copy">
-                      <span className="next-label">До следующего намаза</span>
+                      <span className="next-label">{nextPrayer.countdownLabel}</span>
                       <span className="countdown-value">{formatRemainingTime(nextPrayer.remainingSeconds)}</span>
                     </span>
                   </div>
@@ -1298,7 +1318,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
               ) : (
                 <div className="no-next-prayer">
                   <MoonIcon />
-                  <p>{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующий намаз не найден'}</p>
+                  <p>{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующее событие не найдено'}</p>
                 </div>
               )
             ) : (

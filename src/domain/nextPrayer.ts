@@ -1,40 +1,57 @@
 import type { CalculatedPrayerSchedule } from './prayerCalculation'
 import type {
+  CalculatedPrayerKey,
   PrayerDay,
+  PrayerKey,
   PrayerTime,
-  SalahPrayerKey,
-  ScheduleSalahPrayerKey,
+  SchedulePrayerKey,
 } from './types'
 
 const MOSCOW_UTC_OFFSET = '+03:00'
 
-const SALAH_PRAYERS: ReadonlyArray<{
-  key: SalahPrayerKey
+const OFFICIAL_EVENTS: ReadonlyArray<{
+  key: PrayerKey
   label: string
+  countdownLabel: string
 }> = [
-  { key: 'fajrJamaat', label: 'Утренний намаз' },
-  { key: 'dhuhr', label: 'Зухр' },
-  { key: 'asr', label: 'Аср' },
-  { key: 'maghrib', label: 'Магриб' },
-  { key: 'isha', label: 'Иша' },
+  {
+    key: 'suhurEnd',
+    label: 'Завершение сухура',
+    countdownLabel: 'До сухура',
+  },
+  {
+    key: 'fajrJamaat',
+    label: 'Утренний намаз',
+    countdownLabel: 'До утреннего в мечети',
+  },
+  { key: 'sunrise', label: 'Восход', countdownLabel: 'До восхода' },
+  { key: 'zenith', label: 'Зенит', countdownLabel: 'До зенита' },
+  { key: 'dhuhr', label: 'Зухр', countdownLabel: 'До зухра' },
+  { key: 'asr', label: 'Аср', countdownLabel: 'До асра' },
+  { key: 'maghrib', label: 'Магриб', countdownLabel: 'До магриба' },
+  { key: 'isha', label: 'Иша', countdownLabel: 'До иша' },
 ]
 
-const CALCULATED_SALAH_PRAYERS: ReadonlyArray<{
-  key: Exclude<ScheduleSalahPrayerKey, 'fajrJamaat'>
+const CALCULATED_EVENTS: ReadonlyArray<{
+  key: CalculatedPrayerKey
   label: string
+  countdownLabel: string
 }> = [
-  { key: 'fajr', label: 'Фаджр' },
-  { key: 'dhuhr', label: 'Зухр' },
-  { key: 'asr', label: 'Аср' },
-  { key: 'maghrib', label: 'Магриб' },
-  { key: 'isha', label: 'Иша' },
+  { key: 'fajr', label: 'Фаджр', countdownLabel: 'До фаджра' },
+  { key: 'sunrise', label: 'Восход', countdownLabel: 'До восхода' },
+  { key: 'zenith', label: 'Зенит', countdownLabel: 'До зенита' },
+  { key: 'dhuhr', label: 'Зухр', countdownLabel: 'До зухра' },
+  { key: 'asr', label: 'Аср', countdownLabel: 'До асра' },
+  { key: 'maghrib', label: 'Магриб', countdownLabel: 'До магриба' },
+  { key: 'isha', label: 'Иша', countdownLabel: 'До иша' },
 ]
 
 type PrayerSchedule = PrayerDay | CalculatedPrayerSchedule
 
 export interface NextPrayer {
-  key: ScheduleSalahPrayerKey
+  key: SchedulePrayerKey
   label: string
+  countdownLabel: string
   date: string
   time: PrayerTime
   remainingSeconds: number
@@ -48,12 +65,12 @@ function prayerInstant(date: string, time: PrayerTime): Date {
 }
 
 function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {
-  for (const prayer of SALAH_PRAYERS) {
-    const time = day[prayer.key]
+  for (const event of OFFICIAL_EVENTS) {
+    const time = day[event.key]
     const instant = prayerInstant(day.date, time)
     if (instant.getTime() > now.getTime()) {
       return {
-        ...prayer,
+        ...event,
         date: day.date,
         time,
         remainingSeconds: Math.max(
@@ -71,11 +88,11 @@ function nextInCalculatedDay(
   now: Date,
   day: CalculatedPrayerSchedule,
 ): NextPrayer | null {
-  for (const prayer of CALCULATED_SALAH_PRAYERS) {
-    const entry = day.entries[prayer.key]
+  for (const event of CALCULATED_EVENTS) {
+    const entry = day.entries[event.key]
     if (entry.instant > now.getTime()) {
       return {
-        ...prayer,
+        ...event,
         date: day.date,
         time: entry.time,
         remainingSeconds: Math.max(
@@ -104,19 +121,21 @@ export function findNextPrayer(
 }
 
 function currentInDay(now: Date, day: PrayerSchedule): CurrentPrayer | null {
-  const prayers = 'entries' in day ? CALCULATED_SALAH_PRAYERS : SALAH_PRAYERS
-
-  for (let index = prayers.length - 1; index >= 0; index -= 1) {
-    const prayer = prayers[index]!
-    const time = 'entries' in day
-      ? day.entries[prayer.key as Exclude<ScheduleSalahPrayerKey, 'fajrJamaat'>].time
-      : day[prayer.key as SalahPrayerKey]
-    const instant = 'entries' in day
-      ? day.entries[prayer.key as Exclude<ScheduleSalahPrayerKey, 'fajrJamaat'>].instant
-      : prayerInstant(day.date, time).getTime()
-
-    if (instant <= now.getTime()) {
-      return { ...prayer, date: day.date, time }
+  if ('entries' in day) {
+    for (let index = CALCULATED_EVENTS.length - 1; index >= 0; index -= 1) {
+      const event = CALCULATED_EVENTS[index]!
+      const entry = day.entries[event.key]
+      if (entry.instant <= now.getTime()) {
+        return { ...event, date: day.date, time: entry.time }
+      }
+    }
+  } else {
+    for (let index = OFFICIAL_EVENTS.length - 1; index >= 0; index -= 1) {
+      const event = OFFICIAL_EVENTS[index]!
+      const time = day[event.key]
+      if (prayerInstant(day.date, time).getTime() <= now.getTime()) {
+        return { ...event, date: day.date, time }
+      }
     }
   }
 

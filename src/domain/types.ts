@@ -21,19 +21,6 @@ export type CalculatedPrayerKey =
 
 export type SchedulePrayerKey = PrayerKey | 'fajr'
 
-export type SalahPrayerKey = Extract<
-  PrayerKey,
-  'fajrJamaat' | 'dhuhr' | 'asr' | 'maghrib' | 'isha'
->
-
-export type ScheduleSalahPrayerKey =
-  | 'fajr'
-  | 'fajrJamaat'
-  | 'dhuhr'
-  | 'asr'
-  | 'maghrib'
-  | 'isha'
-
 export interface PrayerDay {
   locationId: string
   date: string

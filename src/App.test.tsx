@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -139,12 +139,12 @@ function createServices(
 }
 
 describe('Salah', () => {
-  it('показывает текущий намаз, выделяет его и считает до следующего', async () => {
+  it('показывает текущее событие, выделяет его и считает до следующего', async () => {
     render(<App services={createServices()} />)
 
     expect(await screen.findByRole('button', { name: /Казань/ })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Salah' })).toBeVisible()
-    expect(await screen.findByText('До следующего намаза')).toBeVisible()
+    expect(await screen.findByText('До асра')).toBeVisible()
     expect(screen.getByText('Зухр · 12:00')).toBeVisible()
     expect(screen.getByText('03:24:00')).toBeVisible()
 
@@ -160,6 +160,29 @@ describe('Salah', () => {
     expect(screen.queryByText(/Координаты и выбранный город/i)).not.toBeInTheDocument()
   })
 
+  it('выделяет зенит и считает до зухра', async () => {
+    render(<App services={createServices({
+      now: () => new Date('2026-09-01T08:50:00.000Z'),
+    })} />)
+
+    expect(await screen.findByText('Зенит · 11:44')).toBeVisible()
+    expect(screen.getByText('До зухра')).toBeVisible()
+    expect(screen.getByText('00:10:00')).toBeVisible()
+
+    const schedule = screen.getByRole('list', { name: 'Времена намаза' })
+    expect(within(schedule).getByText('Зенит').closest('li')).toHaveAttribute('data-active', 'true')
+    expect(within(schedule).getByText('Зухр').closest('li')).not.toHaveAttribute('data-active')
+  })
+
+  it('для утреннего намаза использует уточнённую подпись таймера', async () => {
+    render(<App services={createServices({
+      now: () => new Date('2026-09-01T00:00:00.000Z'),
+    })} />)
+
+    expect(await screen.findByText('Завершение сухура · 02:21')).toBeVisible()
+    expect(screen.getByText('До утреннего в мечети')).toBeVisible()
+  })
+
   it('при просмотре другой даты скрывает таймер и показывает кнопку Сегодня', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
@@ -168,11 +191,48 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Следующий день' }))
 
     expect((await screen.findAllByText('среда, 2 сентября'))[0]).toBeVisible()
-    expect(screen.queryByText('До следующего намаза')).not.toBeInTheDocument()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Сегодня' })).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: 'Сегодня' }))
     expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
+  })
+
+  it('после возврата в приложение переключает сегодняшний день и расписание', async () => {
+    let now = new Date('2026-09-01T10:00:00.000Z')
+    const services = createServices({ now: () => new Date(now) })
+    render(<App services={services} />)
+
+    expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
+
+    act(() => {
+      now = new Date('2026-09-02T10:00:00.000Z')
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect(await screen.findByText('среда, 2 сентября')).toBeVisible()
+    await waitFor(() => {
+      expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-02')
+    })
+  })
+
+  it('после возврата сохраняет вручную выбранную дату', async () => {
+    let now = new Date('2026-09-01T10:00:00.000Z')
+    const services = createServices({ now: () => new Date(now) })
+    const user = userEvent.setup()
+    render(<App services={services} />)
+
+    await screen.findByText('вторник, 1 сентября')
+    await user.click(screen.getByRole('button', { name: 'Предыдущий день' }))
+    expect((await screen.findAllByText('понедельник, 31 августа'))[0]).toBeVisible()
+
+    act(() => {
+      now = new Date('2026-09-02T10:00:00.000Z')
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+
+    expect((await screen.findAllByText('понедельник, 31 августа'))[0]).toBeVisible()
+    expect(screen.getAllByRole('button', { name: 'Сегодня' })[0]).toBeVisible()
   })
 
   it('меняет населённый пункт через доступный диалог', async () => {
