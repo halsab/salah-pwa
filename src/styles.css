@@ -1173,6 +1173,7 @@ button:disabled {
 }
 
 .share-dialog {
+  --share-dialog-padding: clamp(14px, 4.8vw, 34px);
   position: relative;
   width: min(660px, 100%, calc(var(--share-dialog-max-height) * 11 / 12));
   min-width: 0;
@@ -1181,7 +1182,7 @@ button:disabled {
   display: grid;
   place-items: center;
   overflow: auto;
-  padding: clamp(14px, 4.8vw, 34px);
+  padding: var(--share-dialog-padding);
   border: 2px solid var(--outline);
   border-radius: 28px;
   color: var(--ink);
@@ -1634,6 +1635,15 @@ button:disabled {
     justify-self: center;
     border-radius: 999px;
     background: var(--hairline);
+  }
+}
+
+@media (max-width: 520px) {
+  .share-dialog {
+    width: min(100%, calc(var(--share-dialog-max-height) - 74px));
+    aspect-ratio: auto;
+    /* Компенсируем сужение QR и кнопки на 36px, чтобы визуальные поля были равны. */
+    padding-block: calc(var(--share-dialog-padding) + 18px);
   }
 }
 

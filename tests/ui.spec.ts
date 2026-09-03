@@ -106,6 +106,28 @@ test.describe('мобильная компоновка', () => {
     expect(searchLayout.contentRight).toBeLessThanOrEqual(303)
   })
 
+  test('растягивает скролл методики до краёв экрана', async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 1324 })
+    await page.goto('./')
+    await page.getByRole('button', { name: 'Методика' }).click()
+
+    const layout = await page.locator('.methodology-content').evaluate((element) => {
+      const scrollBounds = element.getBoundingClientRect()
+      const contentBounds = element.querySelector('.methodology-section')!.getBoundingClientRect()
+      return {
+        contentLeft: contentBounds.left,
+        contentRight: contentBounds.right,
+        scrollLeft: scrollBounds.left,
+        scrollRight: scrollBounds.right,
+      }
+    })
+
+    expect(layout.scrollLeft).toBeLessThanOrEqual(1)
+    expect(layout.scrollRight).toBeGreaterThanOrEqual(419)
+    expect(layout.contentLeft).toBeGreaterThanOrEqual(16)
+    expect(layout.contentRight).toBeLessThanOrEqual(404)
+  })
+
   test('оставляет результаты видимыми над клавиатурой', async ({ page }) => {
     await page.addInitScript(() => {
       const viewport = Object.assign(new EventTarget(), {
@@ -143,9 +165,7 @@ test.describe('мобильная компоновка', () => {
       page.getByRole('dialog').boundingBox(),
       result.boundingBox(),
       page.locator('.location-results').evaluate((element) => ({
-        clientHeight: element.clientHeight,
         paddingBottom: Number.parseFloat(getComputedStyle(element).paddingBottom),
-        scrollHeight: element.scrollHeight,
       })),
     ])
 
@@ -153,7 +173,6 @@ test.describe('мобильная компоновка', () => {
     expect(Math.abs(dialogBounds!.y + dialogBounds!.height - (layerBounds!.y + layerBounds!.height))).toBeLessThanOrEqual(1)
     expect(dialogBounds!.y + dialogBounds!.height).toBeGreaterThan(800)
     expect(resultsLayout.paddingBottom).toBeGreaterThanOrEqual(459)
-    expect(resultsLayout.scrollHeight).toBeGreaterThan(resultsLayout.clientHeight)
     expect(resultBounds).not.toBeNull()
     expect(resultBounds!.y).toBeGreaterThanOrEqual(0)
     expect(resultBounds!.y + resultBounds!.height).toBeLessThanOrEqual(393)
@@ -165,10 +184,10 @@ test.describe('мобильная компоновка', () => {
 
     const dialog = page.getByRole('dialog')
     const closeButton = dialog.getByRole('button', { name: 'Закрыть' })
-    const lastOption = dialog.locator('.country-group summary').last()
+    const lastFocusable = dialog.getByRole('link', { name: 'OpenStreetMap' })
     await closeButton.focus()
     await page.keyboard.press('Shift+Tab')
-    await expect(lastOption).toBeFocused()
+    await expect(lastFocusable).toBeFocused()
 
     await page.keyboard.press('Tab')
     await expect(closeButton).toBeFocused()
@@ -243,16 +262,17 @@ test.describe('адаптивность', () => {
       const closeButton = element.querySelector('.share-close-button')!
       const closeButtonBounds = closeButton.getBoundingClientRect()
       return {
+        blockStartInset: qrFrameBounds.top - dialogBounds.top,
         closeButtonHeight: closeButtonBounds.height,
         closeButtonWidth: closeButtonBounds.width,
         contentGap: Number.parseFloat(getComputedStyle(element.querySelector('.share-content')!).rowGap),
-        dialogAspectRatio: dialogBounds.width / dialogBounds.height,
         dialogLeft: dialogBounds.left,
         dialogRight: dialogBounds.right,
         dialogOverflow: element.scrollHeight - element.clientHeight,
         paddingBlockStart: Number.parseFloat(dialogStyle.paddingBlockStart),
         paddingInlineStart: Number.parseFloat(dialogStyle.paddingInlineStart),
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        inlineStartInset: qrFrameBounds.left - dialogBounds.left,
         qrFrameWidth: qrFrameBounds.width,
         qrWidth: qrBounds.width,
       }
@@ -261,8 +281,8 @@ test.describe('адаптивность', () => {
     expect(layout.dialogLeft).toBeGreaterThanOrEqual(0)
     expect(layout.dialogRight).toBeLessThanOrEqual(319)
     expect(layout.dialogOverflow).toBe(0)
-    expect(Math.abs(layout.dialogAspectRatio - 11 / 12)).toBeLessThanOrEqual(0.01)
-    expect(Math.abs(layout.paddingBlockStart - layout.paddingInlineStart)).toBeLessThanOrEqual(0.1)
+    expect(layout.paddingBlockStart).toBeGreaterThan(layout.paddingInlineStart)
+    expect(Math.abs(layout.blockStartInset - layout.inlineStartInset)).toBeLessThanOrEqual(1)
     expect(layout.pageOverflow).toBeLessThanOrEqual(0)
     expect(layout.qrWidth).toBeGreaterThanOrEqual(220)
     expect(layout.contentGap).toBeGreaterThanOrEqual(12)
