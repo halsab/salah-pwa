@@ -605,19 +605,19 @@ describe('Salah', () => {
 
     await user.click(shareButton)
 
-    const dialog = screen.getByRole('dialog', { name: 'Поделиться Salah' })
+    const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
     expect(within(dialog).getByRole('img', { name: 'QR-код со ссылкой на Salah' })).toHaveAttribute(
       'src',
       '/share-qr.svg',
     )
-    expect(within(dialog).getByRole('link', { name: 'halsab.github.io/salah-pwa' })).toHaveAttribute(
-      'href',
-      'https://halsab.github.io/salah-pwa/',
-    )
+    expect(within(dialog).queryByRole('heading')).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('link')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Наведите камеру телефона на QR-код')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/после первого открытия/i)).not.toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
 
-    expect(screen.queryByRole('dialog', { name: 'Поделиться Salah' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
     await waitFor(() => expect(shareButton).toHaveFocus())
   })
 

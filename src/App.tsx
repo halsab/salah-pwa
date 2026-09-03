@@ -102,7 +102,6 @@ const defaultServices: AppServices = {
 
 const MAX_AUTOMATIC_DISTANCE_KM = 80
 const MAX_OFFLINE_CITY_DISTANCE_KM = 30
-const APP_SHARE_URL = 'https://halsab.github.io/salah-pwa/'
 const APP_SHARE_QR_SRC = `${import.meta.env.BASE_URL}share-qr.svg`
 
 type DisplaySchedule = PrayerDay | CalculatedPrayerSchedule
@@ -894,27 +893,12 @@ function ShareDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
     >
       <section
         ref={dialogRef}
-        aria-labelledby="share-dialog-title"
+        aria-label="QR-код Salah"
         aria-modal="true"
         className="share-dialog"
         role="dialog"
         tabIndex={-1}
       >
-        <header className="share-dialog-header">
-          <img className="share-app-icon" src={`${import.meta.env.BASE_URL}app-icon.svg`} alt="" />
-          <h2 id="share-dialog-title">Поделиться Salah</h2>
-          <button
-            ref={closeRef}
-            className="icon-button share-close-button"
-            type="button"
-            aria-label="Закрыть"
-            onClick={onClose}
-          >
-            <CloseIcon />
-          </button>
-        </header>
-
-        <p className="share-guide">Наведите камеру телефона на QR-код</p>
         <div className="share-qr-frame">
           <img
             className="share-qr"
@@ -924,10 +908,14 @@ function ShareDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
             alt="QR-код со ссылкой на Salah"
           />
         </div>
-        <a className="share-link" href={APP_SHARE_URL} target="_blank" rel="noreferrer">
-          halsab.github.io/salah-pwa
-        </a>
-        <p className="share-note">После первого открытия расписание будет доступно без интернета.</p>
+        <button
+          ref={closeRef}
+          className="primary-button share-close-button"
+          type="button"
+          onClick={onClose}
+        >
+          Закрыть
+        </button>
       </section>
     </div>
   )

@@ -220,21 +220,30 @@ test.describe('адаптивность', () => {
     await page.goto('./')
 
     const shareButton = page.getByRole('button', { name: 'Поделиться', exact: true })
+    const [shareButtonWidth, appFrameWidth] = await Promise.all([
+      shareButton.evaluate((element) => Number.parseFloat(getComputedStyle(element).width)),
+      page.locator('.app-frame').evaluate((element) => Number.parseFloat(getComputedStyle(element).width)),
+    ])
     expect(await shareButton.evaluate((element) => element.previousElementSibling?.className)).toBe('app-frame')
+    expect(Math.abs(shareButtonWidth - appFrameWidth)).toBeLessThanOrEqual(1)
     await shareButton.click()
 
-    const dialog = page.getByRole('dialog', { name: 'Поделиться Salah' })
+    const dialog = page.getByRole('dialog', { name: 'QR-код Salah' })
     const qr = dialog.getByRole('img', { name: 'QR-код со ссылкой на Salah' })
     await expect(qr).toHaveAttribute('src', '/salah-pwa/share-qr.svg')
 
     const layout = await dialog.evaluate((element) => {
       const dialogBounds = element.getBoundingClientRect()
       const qrBounds = element.querySelector('.share-qr')!.getBoundingClientRect()
+      const qrFrameBounds = element.querySelector('.share-qr-frame')!.getBoundingClientRect()
+      const closeButtonBounds = element.querySelector('.share-close-button')!.getBoundingClientRect()
       return {
+        closeButtonWidth: closeButtonBounds.width,
         dialogLeft: dialogBounds.left,
         dialogRight: dialogBounds.right,
         dialogOverflow: element.scrollHeight - element.clientHeight,
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        qrFrameWidth: qrFrameBounds.width,
         qrWidth: qrBounds.width,
       }
     })
@@ -244,6 +253,7 @@ test.describe('адаптивность', () => {
     expect(layout.dialogOverflow).toBe(0)
     expect(layout.pageOverflow).toBeLessThanOrEqual(0)
     expect(layout.qrWidth).toBeGreaterThanOrEqual(230)
+    expect(Math.abs(layout.closeButtonWidth - layout.qrFrameWidth)).toBeLessThanOrEqual(1)
 
     await dialog.getByRole('button', { name: 'Закрыть' }).click()
     await expect(shareButton).toBeFocused()

@@ -631,7 +631,7 @@ button:disabled {
 }
 
 .share-button {
-  min-width: 190px;
+  width: min(1180px, 100%);
   min-height: 52px;
   display: inline-flex;
   align-items: center;
@@ -1067,7 +1067,7 @@ button:disabled {
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 16px;
+  gap: 20px;
   overflow: auto;
   padding: 26px 34px 30px;
   border: 2px solid var(--outline);
@@ -1097,47 +1097,16 @@ button:disabled {
   z-index: 1;
 }
 
-.share-dialog-header {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 58px minmax(0, 1fr) 58px;
-  align-items: center;
-  gap: 12px;
-}
-
-.share-dialog-header h2 {
-  margin: 0;
-  font-size: clamp(2.5rem, 5vw, 3.35rem);
-  font-weight: 400;
-  line-height: 0.95;
-  text-align: center;
-}
-
-.share-app-icon {
-  width: 58px;
-  height: 58px;
-  border: 2px solid var(--outline);
-  border-radius: 17px;
-  box-shadow: 2px 2px 0 var(--outline);
-}
-
 .share-close-button {
-  width: 52px;
-  min-height: 52px;
-  justify-self: end;
-  background: var(--paper-strong);
-}
-
-.share-guide {
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 1.18rem;
-  line-height: 1.25;
-  text-align: center;
+  width: min(400px, 100%);
+  min-height: 54px;
+  border-radius: 15px;
+  box-shadow: 3px 3px 0 var(--outline);
+  font-size: 1.12rem;
 }
 
 .share-qr-frame {
-  width: min(400px, calc(100% - 30px));
+  width: min(400px, 100%);
   padding: 10px;
   border: 2px solid var(--outline);
   border-radius: 18px;
@@ -1149,22 +1118,6 @@ button:disabled {
   width: 100%;
   height: auto;
   display: block;
-}
-
-.share-link {
-  color: var(--ink);
-  font-size: 1.05rem;
-  font-weight: 800;
-  text-underline-offset: 4px;
-}
-
-.share-note {
-  max-width: 420px;
-  margin: 0;
-  color: var(--ink-soft);
-  font-size: 0.94rem;
-  line-height: 1.3;
-  text-align: center;
 }
 
 .setting-field {
@@ -1638,7 +1591,7 @@ button:disabled {
   .share-dialog {
     min-height: min(690px, calc(var(--dialog-viewport-height, 100dvh) - 16px));
     max-height: calc(var(--dialog-viewport-height, 100dvh) - 16px);
-    gap: 13px;
+    gap: 16px;
     padding: 20px 18px 24px;
     border-radius: 24px;
     box-shadow: 4px 5px 0 var(--shadow);
@@ -1649,30 +1602,9 @@ button:disabled {
     border-radius: 17px;
   }
 
-  .share-dialog-header {
-    grid-template-columns: 46px minmax(0, 1fr) 46px;
-    gap: 8px;
-  }
-
-  .share-dialog-header h2 {
-    font-size: 1.82rem;
-    line-height: 1;
-  }
-
-  .share-app-icon {
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
-  }
-
   .share-close-button {
-    width: 44px;
-    min-height: 44px;
-    padding: 9px;
-  }
-
-  .share-guide {
-    font-size: 1.02rem;
+    width: min(100%, 300px);
+    min-height: 50px;
   }
 
   .share-qr-frame {
@@ -1680,10 +1612,6 @@ button:disabled {
     padding: 8px;
     border-radius: 15px;
     box-shadow: 3px 3px 0 var(--outline);
-  }
-
-  .share-link {
-    font-size: 0.96rem;
   }
 }
 
