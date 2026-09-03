@@ -63,6 +63,7 @@ import {
   LocationIcon,
   MoonIcon,
   SearchIcon,
+  ShareIcon,
   SettingsIcon,
   SunIcon,
   SunriseIcon,
@@ -101,6 +102,8 @@ const defaultServices: AppServices = {
 
 const MAX_AUTOMATIC_DISTANCE_KM = 80
 const MAX_OFFLINE_CITY_DISTANCE_KM = 30
+const APP_SHARE_URL = 'https://halsab.github.io/salah-pwa/'
+const APP_SHARE_QR_SRC = `${import.meta.env.BASE_URL}share-qr.svg`
 
 type DisplaySchedule = PrayerDay | CalculatedPrayerSchedule
 type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
@@ -877,6 +880,59 @@ function SettingsDialog({ open, officialMode, settings, onClose, onChange }: Set
   )
 }
 
+function ShareDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useModalDialog(open, onClose, closeRef)
+  const layerRef = useDialogViewport(open)
+  if (!open) return null
+
+  return (
+    <div
+      ref={layerRef}
+      className="dialog-layer share-layer"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <section
+        ref={dialogRef}
+        aria-labelledby="share-dialog-title"
+        aria-modal="true"
+        className="share-dialog"
+        role="dialog"
+        tabIndex={-1}
+      >
+        <header className="share-dialog-header">
+          <img className="share-app-icon" src={`${import.meta.env.BASE_URL}app-icon.svg`} alt="" />
+          <h2 id="share-dialog-title">Поделиться Salah</h2>
+          <button
+            ref={closeRef}
+            className="icon-button share-close-button"
+            type="button"
+            aria-label="Закрыть"
+            onClick={onClose}
+          >
+            <CloseIcon />
+          </button>
+        </header>
+
+        <p className="share-guide">Наведите камеру телефона на QR-код</p>
+        <div className="share-qr-frame">
+          <img
+            className="share-qr"
+            src={APP_SHARE_QR_SRC}
+            width="512"
+            height="512"
+            alt="QR-код со ссылкой на Salah"
+          />
+        </div>
+        <a className="share-link" href={APP_SHARE_URL} target="_blank" rel="noreferrer">
+          halsab.github.io/salah-pwa
+        </a>
+        <p className="share-note">После первого открытия расписание будет доступно без интернета.</p>
+      </section>
+    </div>
+  )
+}
+
 function LoadingScreen() {
   return (
     <main className="page-shell loading-page">
@@ -913,12 +969,14 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const [error, setError] = useState<string | null>(null)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const automaticLocationAttempted = useRef(false)
   const followingToday = useRef(true)
   const cityCatalogLoad = useRef<Promise<void> | null>(null)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
+  const shareButtonRef = useRef<HTMLButtonElement>(null)
 
   const loadCities = useCallback(() => {
     if (cityCatalog || cityCatalogLoad.current) return
@@ -947,6 +1005,10 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
   const closeSettingsDialog = useCallback(() => {
     setSettingsDialogOpen(false)
     requestAnimationFrame(() => settingsButtonRef.current?.focus())
+  }, [])
+  const closeShareDialog = useCallback(() => {
+    setShareDialogOpen(false)
+    requestAnimationFrame(() => shareButtonRef.current?.focus())
   }, [])
 
   useEffect(() => {
@@ -1370,6 +1432,16 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         </div>
       </section>
 
+      <button
+        ref={shareButtonRef}
+        className="share-button"
+        type="button"
+        onClick={() => setShareDialogOpen(true)}
+      >
+        <ShareIcon />
+        <span>Поделиться</span>
+      </button>
+
       <LocationDialog
         locations={meta.locations}
         cityCatalog={cityCatalog}
@@ -1393,6 +1465,7 @@ export function App({ services = defaultServices }: { services?: AppServices }) 
         onClose={closeSettingsDialog}
         onChange={updateCalculationSettings}
       />
+      <ShareDialog open={shareDialogOpen} onClose={closeShareDialog} />
     </main>
   )
 }

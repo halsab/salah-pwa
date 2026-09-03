@@ -123,3 +123,14 @@ export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   )
 }
+
+export function ShareIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="m8.2 10.7 7.6-4.4M8.2 13.3l7.6 4.4" />
+    </Icon>
+  )
+}

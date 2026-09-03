@@ -48,6 +48,10 @@ test('после первого запуска расписание полнос
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
     await expect(page.getByRole('link', { name: 'ДУМ РТ' })).toBeVisible()
     await expect(page.getByText('Доступно офлайн')).toBeVisible()
+    await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
+    const qr = page.getByRole('img', { name: 'QR-код со ссылкой на Salah' })
+    await expect(qr).toBeVisible()
+    await expect.poll(() => qr.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(512)
   } finally {
     await context.setOffline(false)
   }

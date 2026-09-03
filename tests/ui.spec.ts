@@ -215,6 +215,40 @@ test.describe('адаптивность', () => {
     await expect(longRow.locator('.prayer-dots')).toHaveCSS('width', /(?:2[2-9]|[3-9]\d|\d{3,})px/)
   })
 
+  test('показывает крупный QR-код без переполнения на 319 px', async ({ page }) => {
+    await page.setViewportSize({ width: 319, height: 812 })
+    await page.goto('./')
+
+    const shareButton = page.getByRole('button', { name: 'Поделиться', exact: true })
+    expect(await shareButton.evaluate((element) => element.previousElementSibling?.className)).toBe('app-frame')
+    await shareButton.click()
+
+    const dialog = page.getByRole('dialog', { name: 'Поделиться Salah' })
+    const qr = dialog.getByRole('img', { name: 'QR-код со ссылкой на Salah' })
+    await expect(qr).toHaveAttribute('src', '/salah-pwa/share-qr.svg')
+
+    const layout = await dialog.evaluate((element) => {
+      const dialogBounds = element.getBoundingClientRect()
+      const qrBounds = element.querySelector('.share-qr')!.getBoundingClientRect()
+      return {
+        dialogLeft: dialogBounds.left,
+        dialogRight: dialogBounds.right,
+        dialogOverflow: element.scrollHeight - element.clientHeight,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        qrWidth: qrBounds.width,
+      }
+    })
+
+    expect(layout.dialogLeft).toBeGreaterThanOrEqual(0)
+    expect(layout.dialogRight).toBeLessThanOrEqual(319)
+    expect(layout.dialogOverflow).toBe(0)
+    expect(layout.pageOverflow).toBeLessThanOrEqual(0)
+    expect(layout.qrWidth).toBeGreaterThanOrEqual(230)
+
+    await dialog.getByRole('button', { name: 'Закрыть' }).click()
+    await expect(shareButton).toBeFocused()
+  })
+
   test('оставляет внутренний отступ у текущего намаза на 380 px', async ({ page }) => {
     await page.setViewportSize({ width: 380, height: 1324 })
     await page.goto('./')
@@ -268,7 +302,7 @@ test.describe('сенсорное управление', () => {
 
     await page.getByRole('dialog').getByRole('button', { name: 'Закрыть' }).tap()
     await page.getByRole('button', { name: 'Настройки автономного расчёта' }).tap()
-    const asrSelect = page.getByLabel('Аср')
+    const asrSelect = page.getByLabel('Аср', { exact: true })
     await asrSelect.focus()
     await expect(asrSelect).toHaveCSS('outline-style', 'none')
   })

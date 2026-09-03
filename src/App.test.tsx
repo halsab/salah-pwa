@@ -596,6 +596,31 @@ describe('Salah', () => {
     })
   })
 
+  it('открывает QR-код для приложения и возвращает фокус после закрытия', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    const shareButton = await screen.findByRole('button', { name: 'Поделиться' })
+    expect(document.querySelector('.app-frame')?.nextElementSibling).toBe(shareButton)
+
+    await user.click(shareButton)
+
+    const dialog = screen.getByRole('dialog', { name: 'Поделиться Salah' })
+    expect(within(dialog).getByRole('img', { name: 'QR-код со ссылкой на Salah' })).toHaveAttribute(
+      'src',
+      '/share-qr.svg',
+    )
+    expect(within(dialog).getByRole('link', { name: 'halsab.github.io/salah-pwa' })).toHaveAttribute(
+      'href',
+      'https://halsab.github.io/salah-pwa/',
+    )
+
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Поделиться Salah' })).not.toBeInTheDocument()
+    await waitFor(() => expect(shareButton).toHaveFocus())
+  })
+
   it('показывает восстановимую ошибку загрузки', async () => {
     const services = createServices({
       initialize: vi.fn().mockRejectedValue(new Error('offline')),
