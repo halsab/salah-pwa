@@ -889,7 +889,7 @@ function ShareDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
     <div
       ref={layerRef}
       className="dialog-layer share-layer"
-      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+      onPointerDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <section
         ref={dialogRef}
@@ -899,23 +899,25 @@ function ShareDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
         role="dialog"
         tabIndex={-1}
       >
-        <div className="share-qr-frame">
-          <img
-            className="share-qr"
-            src={APP_SHARE_QR_SRC}
-            width="512"
-            height="512"
-            alt="QR-код со ссылкой на Salah"
-          />
+        <div className="share-content">
+          <div className="share-qr-frame">
+            <img
+              className="share-qr"
+              src={APP_SHARE_QR_SRC}
+              width="512"
+              height="512"
+              alt="QR-код со ссылкой на Salah"
+            />
+          </div>
+          <button
+            ref={closeRef}
+            className="primary-button share-close-button"
+            type="button"
+            onClick={onClose}
+          >
+            Закрыть
+          </button>
         </div>
-        <button
-          ref={closeRef}
-          className="primary-button share-close-button"
-          type="button"
-          onClick={onClose}
-        >
-          Закрыть
-        </button>
       </section>
     </div>
   )

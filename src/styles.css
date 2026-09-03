@@ -1054,22 +1054,26 @@ button:disabled {
 }
 
 .dialog-layer.share-layer {
+  --share-dialog-max-height: calc(
+    var(--dialog-viewport-height, 100dvh)
+    - max(18px, env(safe-area-inset-top))
+    - max(18px, env(safe-area-inset-bottom))
+  );
   place-items: center;
   padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
 }
 
 .share-dialog {
   position: relative;
-  width: min(660px, 100%);
+  width: min(660px, 100%, calc(var(--share-dialog-max-height) * 11 / 12));
   min-width: 0;
-  min-height: min(720px, calc(var(--dialog-viewport-height, 100dvh) - 36px));
-  max-height: calc(var(--dialog-viewport-height, 100dvh) - 36px);
+  max-height: var(--share-dialog-max-height);
+  aspect-ratio: 11 / 12;
+  container-type: inline-size;
   display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 20px;
+  place-items: center;
   overflow: auto;
-  padding: 26px 34px 30px;
+  padding: clamp(14px, 4.8vw, 34px);
   border: 2px solid var(--outline);
   border-radius: 28px;
   color: var(--ink);
@@ -1097,17 +1101,36 @@ button:disabled {
   z-index: 1;
 }
 
+.share-content {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: min(6px, 1.02cqi);
+}
+
 .share-close-button {
-  width: min(400px, 100%);
-  min-height: 54px;
+  position: relative;
+  width: min(400px, calc(100% - 25px));
+  height: min(54px, 9.184cqi);
+  min-height: 0;
+  padding: 0;
   border-radius: 15px;
   box-shadow: 3px 3px 0 var(--outline);
   font-size: 1.12rem;
 }
 
+.share-close-button::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: max(44px, 100%);
+  content: '';
+}
+
 .share-qr-frame {
-  width: min(400px, 100%);
-  padding: 10px;
+  width: min(400px, calc(100% - 25px));
+  padding: clamp(4px, 1.4vw, 10px);
   border: 2px solid var(--outline);
   border-radius: 18px;
   background: #fff8ea;
@@ -1585,14 +1608,15 @@ button:disabled {
   }
 
   .dialog-layer.share-layer {
+    --share-dialog-max-height: calc(
+      var(--dialog-viewport-height, 100dvh)
+      - max(8px, env(safe-area-inset-top))
+      - max(8px, env(safe-area-inset-bottom))
+    );
     padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
   }
 
   .share-dialog {
-    min-height: min(690px, calc(var(--dialog-viewport-height, 100dvh) - 16px));
-    max-height: calc(var(--dialog-viewport-height, 100dvh) - 16px);
-    gap: 16px;
-    padding: 20px 18px 24px;
     border-radius: 24px;
     box-shadow: 4px 5px 0 var(--shadow);
   }
@@ -1602,14 +1626,7 @@ button:disabled {
     border-radius: 17px;
   }
 
-  .share-close-button {
-    width: min(100%, 300px);
-    min-height: 50px;
-  }
-
   .share-qr-frame {
-    width: min(100%, 300px);
-    padding: 8px;
     border-radius: 15px;
     box-shadow: 3px 3px 0 var(--outline);
   }

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -616,6 +616,20 @@ describe('Salah', () => {
     expect(within(dialog).queryByText(/после первого открытия/i)).not.toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
+
+    expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
+    await waitFor(() => expect(shareButton).toHaveFocus())
+  })
+
+  it('закрывает QR-код по касанию вне модалки', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    const shareButton = await screen.findByRole('button', { name: 'Поделиться' })
+    await user.click(shareButton)
+
+    const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
+    fireEvent.pointerDown(dialog.parentElement!, { pointerType: 'touch' })
 
     expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
     await waitFor(() => expect(shareButton).toHaveFocus())

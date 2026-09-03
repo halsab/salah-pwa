@@ -231,31 +231,49 @@ test.describe('адаптивность', () => {
     const dialog = page.getByRole('dialog', { name: 'QR-код Salah' })
     const qr = dialog.getByRole('img', { name: 'QR-код со ссылкой на Salah' })
     await expect(qr).toHaveAttribute('src', '/salah-pwa/share-qr.svg')
+    await dialog.evaluate(async (element) => {
+      await Promise.all(element.getAnimations().map((animation) => animation.finished))
+    })
 
     const layout = await dialog.evaluate((element) => {
       const dialogBounds = element.getBoundingClientRect()
+      const dialogStyle = getComputedStyle(element)
       const qrBounds = element.querySelector('.share-qr')!.getBoundingClientRect()
       const qrFrameBounds = element.querySelector('.share-qr-frame')!.getBoundingClientRect()
-      const closeButtonBounds = element.querySelector('.share-close-button')!.getBoundingClientRect()
+      const closeButton = element.querySelector('.share-close-button')!
+      const closeButtonBounds = closeButton.getBoundingClientRect()
       return {
+        closeHitAreaHeight: Number.parseFloat(getComputedStyle(closeButton, '::before').height),
         closeButtonWidth: closeButtonBounds.width,
+        dialogAspectRatio: dialogBounds.width / dialogBounds.height,
         dialogLeft: dialogBounds.left,
         dialogRight: dialogBounds.right,
         dialogOverflow: element.scrollHeight - element.clientHeight,
+        horizontalInset: qrFrameBounds.left - dialogBounds.left,
+        paddingBlockStart: Number.parseFloat(dialogStyle.paddingBlockStart),
+        paddingInlineStart: Number.parseFloat(dialogStyle.paddingInlineStart),
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
         qrFrameWidth: qrFrameBounds.width,
         qrWidth: qrBounds.width,
+        verticalInsetBottom: dialogBounds.bottom - closeButtonBounds.bottom,
+        verticalInsetTop: qrFrameBounds.top - dialogBounds.top,
       }
     })
 
     expect(layout.dialogLeft).toBeGreaterThanOrEqual(0)
     expect(layout.dialogRight).toBeLessThanOrEqual(319)
     expect(layout.dialogOverflow).toBe(0)
+    expect(Math.abs(layout.dialogAspectRatio - 11 / 12)).toBeLessThanOrEqual(0.01)
+    expect(Math.abs(layout.paddingBlockStart - layout.paddingInlineStart)).toBeLessThanOrEqual(0.1)
+    expect(Math.abs(layout.verticalInsetTop - layout.horizontalInset)).toBeLessThanOrEqual(1)
+    expect(Math.abs(layout.verticalInsetBottom - layout.horizontalInset)).toBeLessThanOrEqual(1)
     expect(layout.pageOverflow).toBeLessThanOrEqual(0)
     expect(layout.qrWidth).toBeGreaterThanOrEqual(230)
+    expect(layout.closeHitAreaHeight).toBeGreaterThanOrEqual(44)
     expect(Math.abs(layout.closeButtonWidth - layout.qrFrameWidth)).toBeLessThanOrEqual(1)
 
-    await dialog.getByRole('button', { name: 'Закрыть' }).click()
+    await page.locator('.share-layer').dispatchEvent('pointerdown', { pointerType: 'touch' })
+    await expect(dialog).toHaveCount(0)
     await expect(shareButton).toBeFocused()
   })
 
