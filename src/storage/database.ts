@@ -9,7 +9,7 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 3
+const DATABASE_VERSION = 4
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -66,6 +66,9 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       }
       if (oldVersion < 3) {
         // Запись координат расширена названием и источником без изменения структуры хранилища.
+      }
+      if (oldVersion < 4) {
+        // Таймзона добавляется при чтении старой записи, поэтому данные v3 не переписываются.
       }
     },
   })

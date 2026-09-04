@@ -19,6 +19,7 @@ const cities: City[] = [
     latitude: 55.7522,
     longitude: 37.6156,
     population: 10_381_222,
+    timeZone: 'Europe/Moscow',
   },
   {
     id: 745044,
@@ -28,6 +29,7 @@ const cities: City[] = [
     latitude: 41.0138,
     longitude: 28.9497,
     population: 15_701_602,
+    timeZone: 'Europe/Istanbul',
   },
   {
     id: 323786,
@@ -37,6 +39,7 @@ const cities: City[] = [
     latitude: 39.9199,
     longitude: 32.8543,
     population: 5_504_000,
+    timeZone: 'Europe/Istanbul',
   },
 ]
 
@@ -86,6 +89,7 @@ describe('searchCities', () => {
       latitude: 55.7522,
       longitude: 37.6156,
       population: 10_381_222,
+      timeZone: 'Europe/Moscow',
     }
     const trackedDataset = { ...dataset, cities: [trackedCity] }
 

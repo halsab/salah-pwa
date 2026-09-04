@@ -3,6 +3,7 @@ import {
   DEFAULT_CALCULATION_SETTINGS,
   type CalculationSettings,
 } from '../domain/prayerCalculation'
+import { getDeviceTimeZone, isValidTimeZone } from '../domain/locationTime'
 import type { PrayerDataset, SavedCoordinates } from '../domain/types'
 import {
   getDatasetMeta,
@@ -110,9 +111,7 @@ export async function initializePrayerRepository(): Promise<{
     throw new Error('В расписании нет населённых пунктов')
   }
 
-  const calculatedLocation = isSavedCoordinates(storedCoordinates)
-    ? storedCoordinates
-    : null
+  const calculatedLocation = restoreSavedCoordinates(storedCoordinates)
   const locationMode =
     storedMode === 'calculated' && calculatedLocation ? 'calculated' : 'official'
 
@@ -127,10 +126,10 @@ export async function initializePrayerRepository(): Promise<{
   }
 }
 
-function isSavedCoordinates(value: unknown): value is SavedCoordinates {
-  if (!value || typeof value !== 'object') return false
+function restoreSavedCoordinates(value: unknown): SavedCoordinates | null {
+  if (!value || typeof value !== 'object') return null
   const coordinates = value as Partial<SavedCoordinates>
-  return (
+  const fieldsAreValid =
     Number.isFinite(coordinates.latitude) &&
     Number.isFinite(coordinates.longitude) &&
     (coordinates.accuracy === null || Number.isFinite(coordinates.accuracy)) &&
@@ -140,8 +139,17 @@ function isSavedCoordinates(value: unknown): value is SavedCoordinates {
     (coordinates.nameSource === undefined ||
       ['geonames', 'nominatim'].includes(coordinates.nameSource)) &&
     (coordinates.source === undefined ||
-      ['gps', 'preset'].includes(coordinates.source))
-  )
+      ['gps', 'preset'].includes(coordinates.source)) &&
+    (coordinates.timeZone === undefined ||
+      (typeof coordinates.timeZone === 'string' &&
+        isValidTimeZone(coordinates.timeZone)))
+
+  if (!fieldsAreValid) return null
+
+  return {
+    ...(coordinates as SavedCoordinates),
+    timeZone: coordinates.timeZone ?? getDeviceTimeZone(),
+  }
 }
 
 function isCalculationSettings(value: unknown): value is CalculationSettings {
@@ -166,6 +174,9 @@ export const prayerRepository = {
     ])
   },
   saveCalculatedLocation: async (coordinates: SavedCoordinates) => {
+    if (!isValidTimeZone(coordinates.timeZone)) {
+      throw new Error('Невозможно сохранить населённый пункт: неизвестная таймзона')
+    }
     await Promise.all([
       setSetting('calculatedLocation', coordinates),
       setSetting('locationMode', 'calculated'),

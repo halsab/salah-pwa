@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { addDays, formatCompactDateLabel, formatDateLabel, getSystemDate } from './date'
 
 describe('getSystemDate', () => {
-  it('использует календарный день системного часового пояса', () => {
-    expect(getSystemDate(new Date(2026, 8, 1, 0, 30))).toBe('2026-09-01')
+  it('использует календарный день указанного часового пояса', () => {
+    const instant = new Date('2026-09-01T06:30:00.000Z')
+
+    expect(getSystemDate(instant, 'America/Los_Angeles')).toBe('2026-08-31')
+    expect(getSystemDate(instant, 'Pacific/Kiritimati')).toBe('2026-09-01')
   })
 })
 

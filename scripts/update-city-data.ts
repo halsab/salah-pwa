@@ -3,12 +3,61 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
-import { parseGeoNamesCities } from './parseGeoNamesCities'
+import {
+  enrichLegacyDataset,
+  parseGeoNamesCities,
+  type LegacyCityDataset,
+  type LegacyCompactCityRecord,
+} from './parseGeoNamesCities'
 
 const ARCHIVE_URL = 'https://download.geonames.org/export/dump/cities5000.zip'
 const SOURCE_URL = 'https://www.geonames.org/'
 const LICENSE_URL = 'https://creativecommons.org/licenses/by/4.0/'
 const OUTPUT_PATH = path.resolve('public/data/cities-current.json')
+
+type ExistingCityDataset = LegacyCityDataset | { schemaVersion: 2 }
+
+function isLegacyCompactCityRecord(
+  value: unknown,
+): value is LegacyCompactCityRecord {
+  return Array.isArray(value)
+    && value.length === 7
+    && Number.isInteger(value[0])
+    && typeof value[1] === 'string'
+    && typeof value[2] === 'string'
+    && typeof value[3] === 'string'
+    && typeof value[4] === 'number'
+    && typeof value[5] === 'number'
+    && typeof value[6] === 'number'
+}
+
+function parseExistingDataset(content: string): ExistingCityDataset {
+  const dataset: unknown = JSON.parse(content)
+  if (!dataset || typeof dataset !== 'object') {
+    throw new Error('Текущий набор городов имеет неверный формат')
+  }
+
+  if ('schemaVersion' in dataset && dataset.schemaVersion === 2) {
+    return { schemaVersion: 2 }
+  }
+
+  if (
+    'schemaVersion' in dataset
+    && dataset.schemaVersion === 1
+    && 'source' in dataset
+    && 'cities' in dataset
+    && Array.isArray(dataset.cities)
+    && dataset.cities.every(isLegacyCompactCityRecord)
+  ) {
+    return {
+      schemaVersion: 1,
+      source: dataset.source,
+      cities: dataset.cities,
+    }
+  }
+
+  throw new Error('Текущий набор городов имеет неподдерживаемую схему')
+}
 
 async function downloadArchive(destination: string): Promise<void> {
   const response = await fetch(ARCHIVE_URL)
@@ -34,22 +83,27 @@ async function main(): Promise<void> {
     const parsed = parseGeoNamesCities(content)
     if (parsed.cities.length === 0) throw new Error('GeoNames не вернул города')
 
-    const dataset = {
-      schemaVersion: 1,
-      source: {
-        name: 'GeoNames',
-        url: SOURCE_URL,
-        license: 'CC BY 4.0',
-        licenseUrl: LICENSE_URL,
-        updatedAt: parsed.updatedAt,
-      },
-      cities: parsed.cities,
-    }
+    const existingDataset = parseExistingDataset(
+      await readFile(OUTPUT_PATH, 'utf8'),
+    )
+    const dataset = existingDataset.schemaVersion === 1
+      ? enrichLegacyDataset(existingDataset, parsed.cities)
+      : {
+          schemaVersion: 2,
+          source: {
+            name: 'GeoNames',
+            url: SOURCE_URL,
+            license: 'CC BY 4.0',
+            licenseUrl: LICENSE_URL,
+            updatedAt: parsed.updatedAt,
+          },
+          cities: parsed.cities,
+        }
     await writeFile(OUTPUT_PATH, JSON.stringify(dataset))
 
     const size = (await readFile(OUTPUT_PATH)).byteLength
     process.stdout.write(
-      `Сохранено ${parsed.cities.length} городов (${(size / 1024 / 1024).toFixed(2)} МБ)\n`,
+      `Сохранено ${dataset.cities.length} городов (${(size / 1024 / 1024).toFixed(2)} МБ)\n`,
     )
   } finally {
     await rm(temporaryDirectory, { recursive: true, force: true })

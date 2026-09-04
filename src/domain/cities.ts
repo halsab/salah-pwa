@@ -8,6 +8,7 @@ export interface City {
   latitude: number
   longitude: number
   population: number
+  timeZone: string
 }
 
 export interface CityDatasetSource {

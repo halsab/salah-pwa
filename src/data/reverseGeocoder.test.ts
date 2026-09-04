@@ -18,6 +18,7 @@ describe('resolvePlaceName', () => {
         {
           latitude: 55.755826,
           longitude: 37.617306,
+          timeZone: 'Europe/Moscow',
           accuracy: 12,
           timestamp: 100,
         },
@@ -39,7 +40,13 @@ describe('resolvePlaceName', () => {
     )
     await expect(
       resolvePlaceName(
-        { latitude: 55.75, longitude: 48.74, accuracy: null, timestamp: 100 },
+        {
+          latitude: 55.75,
+          longitude: 48.74,
+          timeZone: 'Europe/Moscow',
+          accuracy: null,
+          timestamp: 100,
+        },
         villageFetcher,
       ),
     ).resolves.toBe('Иннополис')
@@ -49,7 +56,13 @@ describe('resolvePlaceName', () => {
     )
     await expect(
       resolvePlaceName(
-        { latitude: 55.75, longitude: 48.74, accuracy: null, timestamp: 100 },
+        {
+          latitude: 55.75,
+          longitude: 48.74,
+          timeZone: 'Europe/Moscow',
+          accuracy: null,
+          timestamp: 100,
+        },
         emptyFetcher,
       ),
     ).rejects.toThrow('Название населённого пункта не найдено')

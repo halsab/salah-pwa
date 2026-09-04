@@ -10,6 +10,10 @@ import {
 } from 'adhan'
 
 import { addDays } from './date'
+import {
+  createLocationClock,
+  zonedDateTimeToInstant,
+} from './locationTime'
 import type {
   CalculatedPrayerEntries,
   CalculatedPrayerKey,
@@ -44,6 +48,20 @@ export interface CalculationProfileOption {
   label: string
 }
 
+export type CalculationProfileCapability =
+  | { supported: true }
+  | { supported: false; reason: string }
+
+export class UnsupportedCalculationProfileError extends Error {
+  readonly profile: CalculationProfileId
+
+  constructor(profile: CalculationProfileId, reason: string) {
+    super(reason)
+    this.name = 'UnsupportedCalculationProfileError'
+    this.profile = profile
+  }
+}
+
 export const CALCULATION_PROFILES: readonly CalculationProfileOption[] = [
   { id: 'dumRt', label: 'ДУМ РТ' },
   { id: 'dumRf', label: 'ДУМ РФ' },
@@ -75,6 +93,9 @@ interface LocationCoordinates {
 
 const MINUTE = 60_000
 const DIRECT_ANGLE_MARGIN = 1_000
+const UMM_AL_QURA_CALENDAR = 'islamic-umalqura'
+const UMM_AL_QURA_UNAVAILABLE_REASON =
+  'Профиль «Умм аль-Кура» недоступен: календарь islamic-umalqura не поддерживается этим браузером.'
 
 function dateFromIso(date: string): Date {
   const [year = 0, month = 0, day = 0] = date.split('-').map(Number)
@@ -92,22 +113,44 @@ function dateFromIso(date: string): Date {
   return result
 }
 
-function isRamadan(date: Date): boolean {
-  try {
-    const month = new Intl.DateTimeFormat(
-      'en-u-ca-islamic-umalqura-nu-latn',
-      { month: 'numeric' },
-    ).format(date)
-    return Number.parseInt(month, 10) === 9
-  } catch {
-    return false
+export function getCalculationProfileCapability(
+  profile: CalculationProfileId,
+): CalculationProfileCapability {
+  if (profile !== 'ummAlQura') return { supported: true }
+
+  const calendar = new Intl.DateTimeFormat(
+    'en-u-ca-islamic-umalqura-nu-latn',
+    { month: 'numeric' },
+  ).resolvedOptions().calendar
+
+  return calendar === UMM_AL_QURA_CALENDAR
+    ? { supported: true }
+    : { supported: false, reason: UMM_AL_QURA_UNAVAILABLE_REASON }
+}
+
+function isRamadan(date: string, timeZone: string): boolean {
+  const instant = zonedDateTimeToInstant(date, '12:00', timeZone)
+  const month = new Intl.DateTimeFormat(
+    'en-u-ca-islamic-umalqura-nu-latn',
+    { month: 'numeric', timeZone },
+  ).format(instant)
+  return Number.parseInt(month, 10) === 9
+}
+
+function assertProfileSupported(profile: CalculationProfileId): void {
+  const capability = getCalculationProfileCapability(profile)
+  if (!capability.supported) {
+    throw new UnsupportedCalculationProfileError(profile, capability.reason)
   }
 }
 
 function profileParameters(
   profile: CalculationProfileId,
-  date: Date,
+  date: string,
+  timeZone: string,
 ): CalculationParameters {
+  assertProfileSupported(profile)
+
   if (profile === 'dumRt' || profile === 'dumRf') {
     const parameters = CalculationMethod.Other()
     parameters.fajrAngle = profile === 'dumRt' ? 18 : 16
@@ -124,7 +167,7 @@ function profileParameters(
     ummAlQura: CalculationMethod.UmmAlQura,
   }[profile]()
 
-  if (profile === 'ummAlQura' && isRamadan(date)) {
+  if (profile === 'ummAlQura' && isRamadan(date, timeZone)) {
     parameters.ishaInterval = 120
   }
   return parameters
@@ -235,16 +278,14 @@ function addMinutes(instant: Date, minutes: number): Date {
   return new Date(instant.getTime() + minutes * MINUTE)
 }
 
-export function formatSystemTime(instant: Date): PrayerTime {
-  const hours = String(instant.getHours()).padStart(2, '0')
-  const minutes = String(instant.getMinutes()).padStart(2, '0')
-  return `${hours}:${minutes}` as PrayerTime
-}
-
-function entry(instant: Date, estimated: boolean): CalculatedPrayerEntries['fajr'] {
+function entry(
+  instant: Date,
+  estimated: boolean,
+  formatTime: (instant: Date) => PrayerTime,
+): CalculatedPrayerEntries['fajr'] {
   return {
     instant: instant.getTime(),
-    time: formatSystemTime(instant),
+    time: formatTime(instant),
     estimated,
   }
 }
@@ -252,11 +293,13 @@ function entry(instant: Date, estimated: boolean): CalculatedPrayerEntries['fajr
 export function calculatePrayerSchedule(
   location: LocationCoordinates,
   date: string,
+  timeZone: string,
   settings: CalculationSettings = DEFAULT_CALCULATION_SETTINGS,
 ): CalculatedPrayerSchedule {
+  const locationClock = createLocationClock(timeZone)
   const calendarDate = dateFromIso(date)
   const coordinates = new Coordinates(location.latitude, location.longitude)
-  const parameters = profileParameters(settings.profile, calendarDate)
+  const parameters = profileParameters(settings.profile, date, timeZone)
   applyUserRules(parameters, settings)
 
   const polarResolutionApplied = hasPolarGap(coordinates, calendarDate)
@@ -326,13 +369,13 @@ export function calculatePrayerSchedule(
     settings.profile === 'dumRt' ? roundMinute(times.sunset, 'up') : times.maghrib
 
   const entries: CalculatedPrayerEntries = {
-    fajr: entry(fajr, fajrEstimated),
-    sunrise: entry(sunrise, polarResolutionApplied),
-    zenith: entry(zenith, polarResolutionApplied),
-    dhuhr: entry(dhuhr, polarResolutionApplied),
-    asr: entry(asr, polarResolutionApplied),
-    maghrib: entry(maghrib, polarResolutionApplied),
-    isha: entry(isha, ishaEstimated),
+    fajr: entry(fajr, fajrEstimated, locationClock.getTime),
+    sunrise: entry(sunrise, polarResolutionApplied, locationClock.getTime),
+    zenith: entry(zenith, polarResolutionApplied, locationClock.getTime),
+    dhuhr: entry(dhuhr, polarResolutionApplied, locationClock.getTime),
+    asr: entry(asr, polarResolutionApplied, locationClock.getTime),
+    maghrib: entry(maghrib, polarResolutionApplied, locationClock.getTime),
+    isha: entry(isha, ishaEstimated, locationClock.getTime),
   }
   const estimatedPrayers = (Object.keys(entries) as CalculatedPrayerKey[]).filter(
     (key) => entries[key].estimated,

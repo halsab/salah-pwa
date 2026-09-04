@@ -2,6 +2,7 @@ import { useRef, type RefObject } from 'react'
 
 import {
   CALCULATION_PROFILES,
+  type CalculationProfileCapability,
   type CalculationProfileId,
   type CalculationSettings,
   type HighLatitudeMethod,
@@ -16,6 +17,9 @@ interface SettingsDialogProps {
   settings: CalculationSettings
   focusMethodologyOnOpen: boolean
   methodologyTriggerRef: RefObject<HTMLButtonElement | null>
+  getCalculationProfileCapability: (
+    profile: CalculationProfileId,
+  ) => CalculationProfileCapability
   onClose: () => void
   onChange: (settings: CalculationSettings) => void
   onOpenMethodology: () => void
@@ -27,6 +31,7 @@ export function SettingsDialog({
   settings,
   focusMethodologyOnOpen,
   methodologyTriggerRef,
+  getCalculationProfileCapability,
   onClose,
   onChange,
   onOpenMethodology,
@@ -39,6 +44,7 @@ export function SettingsDialog({
   )
   const layerRef = useDialogViewport(open)
   if (!open) return null
+  const ummAlQuraCapability = getCalculationProfileCapability('ummAlQura')
 
   const update = <Key extends keyof CalculationSettings>(
     key: Key,
@@ -85,14 +91,28 @@ export function SettingsDialog({
           <span>Профиль</span>
           <select
             aria-label="Профиль"
+            aria-describedby={!ummAlQuraCapability.supported
+              ? 'umm-al-qura-capability'
+              : undefined}
             value={settings.profile}
             onChange={(event) => update('profile', event.target.value as CalculationProfileId)}
           >
             {CALCULATION_PROFILES.map((profile) => (
-              <option key={profile.id} value={profile.id}>{profile.label}</option>
+              <option
+                disabled={profile.id === 'ummAlQura' && !ummAlQuraCapability.supported}
+                key={profile.id}
+                value={profile.id}
+              >
+                {profile.label}
+              </option>
             ))}
           </select>
         </label>
+        {!ummAlQuraCapability.supported ? (
+          <p id="umm-al-qura-capability" className="settings-mode-note">
+            {ummAlQuraCapability.reason}
+          </p>
+        ) : null}
 
         <label className="setting-field">
           <span>Северные правила</span>

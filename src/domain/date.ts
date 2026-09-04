@@ -1,3 +1,5 @@
+import { getCivilDate, getDeviceTimeZone } from './locationTime'
+
 const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
   timeZone: 'UTC',
   weekday: 'long',
@@ -14,11 +16,8 @@ function toUtcDate(date: string): Date {
   return new Date(`${date}T12:00:00.000Z`)
 }
 
-export function getSystemDate(now: Date): string {
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+export function getSystemDate(now: Date, timeZone = getDeviceTimeZone()): string {
+  return getCivilDate(now, timeZone)
 }
 
 export function addDays(date: string, amount: number): string {

@@ -22,6 +22,7 @@ interface AppHeaderProps {
   officialMode: boolean
   selectedLocation: PrayerLocation | undefined
   calculatedLocationLabel: string
+  timeZoneOffset: string | null
   selectedDate: string
   today: string
   minDate: string | undefined
@@ -39,6 +40,7 @@ export function AppHeader({
   officialMode,
   selectedLocation,
   calculatedLocationLabel,
+  timeZoneOffset,
   selectedDate,
   today,
   minDate,
@@ -49,6 +51,13 @@ export function AppHeader({
   onDateInput,
   onShowDatePicker,
 }: AppHeaderProps) {
+  const locationLabel = officialMode
+    ? selectedLocation?.name ?? 'Выберите населённый пункт'
+    : calculatedLocationLabel
+  const displayLocationLabel = timeZoneOffset
+    ? `${locationLabel} · ${timeZoneOffset}`
+    : locationLabel
+
   return (
     <header className="app-header">
       <span className="spark spark-left" aria-hidden="true">✦</span>
@@ -63,11 +72,11 @@ export function AppHeader({
             type="button"
             onClick={onOpenLocation}
             aria-label={officialMode
-              ? `Населённый пункт: ${selectedLocation?.name ?? 'не выбран'}`
-              : `Местоположение: ${calculatedLocationLabel}`}
+              ? `Населённый пункт: ${displayLocationLabel}`
+              : `Местоположение: ${displayLocationLabel}`}
           >
             <LocationIcon />
-            <span>{officialMode ? selectedLocation?.name ?? 'Выберите населённый пункт' : calculatedLocationLabel}</span>
+            <span>{displayLocationLabel}</span>
             <ChevronIcon className="location-chevron" />
           </button>
           <button

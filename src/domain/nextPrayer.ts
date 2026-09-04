@@ -1,4 +1,5 @@
 import type { CalculatedPrayerSchedule } from './prayerCalculation'
+import { createLocationClock, DUM_RT_TIME_ZONE } from './locationTime'
 import type {
   CalculatedPrayerKey,
   PrayerDay,
@@ -7,7 +8,7 @@ import type {
   SchedulePrayerKey,
 } from './types'
 
-const MOSCOW_UTC_OFFSET = '+03:00'
+const OFFICIAL_SCHEDULE_CLOCK = createLocationClock(DUM_RT_TIME_ZONE)
 
 const OFFICIAL_EVENTS: ReadonlyArray<{
   key: PrayerKey
@@ -60,8 +61,7 @@ export interface NextPrayer {
 export type CurrentPrayer = Omit<NextPrayer, 'remainingSeconds'>
 
 function prayerInstant(date: string, time: PrayerTime): Date {
-  // Татарстан круглый год живёт по UTC+3, поэтому время источника не зависит от DST устройства.
-  return new Date(`${date}T${time}:00${MOSCOW_UTC_OFFSET}`)
+  return OFFICIAL_SCHEDULE_CLOCK.toInstant(date, time)
 }
 
 function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {

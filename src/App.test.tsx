@@ -56,6 +56,7 @@ const cityDataset: CityDataset = {
       latitude: 41.0138,
       longitude: 28.9497,
       population: 15_701_602,
+      timeZone: 'Europe/Istanbul',
     },
     {
       id: 524901,
@@ -65,6 +66,7 @@ const cityDataset: CityDataset = {
       latitude: 55.7522,
       longitude: 37.6156,
       population: 10_381_222,
+      timeZone: 'Europe/Moscow',
     },
   ],
 }
@@ -133,6 +135,8 @@ function createServices(
       accuracy: 500,
       timestamp: 1_788_265_600_000,
     }),
+    getDeviceTimeZone: () => 'Europe/Moscow',
+    getCalculationProfileCapability: () => ({ supported: true }),
     now: () => new Date('2026-09-01T10:00:00.000Z'),
     ...overrides,
   }
@@ -147,6 +151,65 @@ describe('Salah', () => {
     const version = screen.getByText('v26.4')
     expect(version).toBeVisible()
     expect(version).toHaveClass('app-version')
+  })
+
+  it('показывает только текущий UTC-сдвиг для города в другом часовом поясе', async () => {
+    const baseServices = createServices()
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue({
+        ...(await baseServices.initialize()),
+        locationMode: 'calculated',
+        calculatedLocation: {
+          latitude: 41.0138,
+          longitude: 28.9497,
+          timeZone: 'Europe/Istanbul',
+          accuracy: null,
+          timestamp: 1_788_256_800_000,
+          name: 'Istanbul, Турция',
+          cityId: 745044,
+          nameSource: 'geonames',
+          source: 'preset',
+        },
+      }),
+      getDeviceTimeZone: () => 'America/Los_Angeles',
+    })
+
+    render(<App services={services} />)
+
+    expect(await screen.findByRole('button', {
+      name: 'Местоположение: Istanbul, Турция · UTC+3',
+    })).toBeVisible()
+    const schedule = await screen.findByRole('list', { name: 'Времена намаза' })
+    expect(within(schedule).getByText('04:53')).toBeVisible()
+    expect(document.body).not.toHaveTextContent('Europe/Istanbul')
+    expect(document.querySelector('[aria-label*="Europe/Istanbul"]')).toBeNull()
+  })
+
+  it('скрывает UTC-сдвиг для канонически одинаковых часовых поясов', async () => {
+    const baseServices = createServices()
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue({
+        ...(await baseServices.initialize()),
+        locationMode: 'calculated',
+        calculatedLocation: {
+          latitude: 34.0522,
+          longitude: -118.2437,
+          timeZone: 'America/Los_Angeles',
+          accuracy: null,
+          timestamp: 1_788_256_800_000,
+          name: 'Los Angeles, США',
+          source: 'preset',
+        },
+      }),
+      getDeviceTimeZone: () => 'US/Pacific',
+    })
+
+    render(<App services={services} />)
+
+    expect(await screen.findByRole('button', {
+      name: 'Местоположение: Los Angeles, США',
+    })).toBeVisible()
+    expect(screen.queryByRole('button', { name: /Los Angeles.+UTC/ })).not.toBeInTheDocument()
   })
 
   it('показывает текущее событие, выделяет его и считает до следующего', async () => {
@@ -209,40 +272,60 @@ describe('Salah', () => {
   })
 
   it('после возврата в приложение переключает сегодняшний день и расписание', async () => {
-    let now = new Date('2026-09-01T10:00:00.000Z')
-    const services = createServices({ now: () => new Date(now) })
+    let now = new Date('2026-08-31T20:59:59.000Z')
+    const services = createServices({
+      getDeviceTimeZone: () => 'America/Los_Angeles',
+      now: () => new Date(now),
+    })
     render(<App services={services} />)
 
-    expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
+    expect((await screen.findAllByText('понедельник, 31 августа'))[0]).toBeVisible()
+    await waitFor(() => expect(services.getDay).toHaveBeenCalledTimes(3))
+    vi.mocked(services.getDay).mockClear()
 
     act(() => {
-      now = new Date('2026-09-02T10:00:00.000Z')
+      now = new Date('2026-08-31T21:00:00.000Z')
       document.dispatchEvent(new Event('visibilitychange'))
     })
 
-    expect(await screen.findByText('среда, 2 сентября')).toBeVisible()
+    expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
     await waitFor(() => {
-      expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-02')
+      expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-01')
     })
   })
 
-  it('после возврата сохраняет вручную выбранную дату', async () => {
-    let now = new Date('2026-09-01T10:00:00.000Z')
-    const services = createServices({ now: () => new Date(now) })
+  it('при полуночи выбранного места сохраняет вручную выбранную дату', async () => {
+    let now = new Date('2026-08-31T20:59:59.000Z')
+    const services = createServices({
+      getDeviceTimeZone: () => 'America/Los_Angeles',
+      now: () => new Date(now),
+    })
     const user = userEvent.setup()
     render(<App services={services} />)
 
-    await screen.findByText('вторник, 1 сентября')
+    await screen.findByText('понедельник, 31 августа')
     await user.click(screen.getByRole('button', { name: 'Предыдущий день' }))
-    expect((await screen.findAllByText('понедельник, 31 августа'))[0]).toBeVisible()
+    expect((await screen.findAllByText('воскресенье, 30 августа'))[0]).toBeVisible()
 
     act(() => {
-      now = new Date('2026-09-02T10:00:00.000Z')
+      now = new Date('2026-08-31T21:00:00.000Z')
       document.dispatchEvent(new Event('visibilitychange'))
     })
 
-    expect((await screen.findAllByText('понедельник, 31 августа'))[0]).toBeVisible()
+    expect((await screen.findAllByText('воскресенье, 30 августа'))[0]).toBeVisible()
     expect(screen.getAllByRole('button', { name: 'Сегодня' })[0]).toBeVisible()
+  })
+
+  it('использует московскую гражданскую дату для официальной Казани', async () => {
+    const services = createServices({
+      getDeviceTimeZone: () => 'America/Los_Angeles',
+      now: () => new Date('2026-08-31T21:30:00.000Z'),
+    })
+
+    render(<App services={services} />)
+
+    expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
+    expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-01')
   })
 
   it('меняет населённый пункт через доступный диалог', async () => {
@@ -420,6 +503,7 @@ describe('Salah', () => {
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       ...precise,
+      timeZone: 'Europe/Moscow',
       name: 'Moscow, Россия',
       cityId: 524901,
       nameSource: 'geonames',
@@ -448,6 +532,7 @@ describe('Salah', () => {
     expect(await screen.findByText('Фаджр')).toBeVisible()
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       ...coarse,
+      timeZone: 'Europe/Moscow',
       name: 'Moscow, Россия',
       cityId: 524901,
       nameSource: 'geonames',
@@ -473,6 +558,7 @@ describe('Salah', () => {
       getPosition: vi.fn()
         .mockResolvedValueOnce(coarse)
         .mockResolvedValueOnce(precise),
+      getDeviceTimeZone: () => 'America/Los_Angeles',
     })
     render(<App services={services} />)
 
@@ -484,6 +570,7 @@ describe('Salah', () => {
     expect(screen.getByRole('list', { name: 'Времена намаза' }).children).toHaveLength(7)
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       ...precise,
+      timeZone: 'America/Los_Angeles',
       source: 'gps',
     })
   })
@@ -503,6 +590,7 @@ describe('Salah', () => {
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       latitude: 41.0138,
       longitude: 28.9497,
+      timeZone: 'Europe/Istanbul',
       accuracy: null,
       timestamp: 1_788_256_800_000,
       name: 'Istanbul, Турция',
@@ -555,6 +643,7 @@ describe('Salah', () => {
     const calculatedLocation = {
       latitude: 55.7558,
       longitude: 37.6173,
+      timeZone: 'Europe/Moscow',
       accuracy: 12,
       timestamp: 200,
       name: 'Moscow, Россия',
@@ -613,6 +702,80 @@ describe('Salah', () => {
     })
   })
 
+  it('отключает профиль Умм аль-Кура и объясняет отсутствие поддержки календаря', async () => {
+    const user = userEvent.setup()
+    const services = createServices({
+      getCalculationProfileCapability: (profile) => profile === 'ummAlQura'
+        ? {
+            supported: false,
+            reason: 'Профиль «Умм аль-Кура» недоступен: календарь не поддерживается этим браузером.',
+          }
+        : { supported: true },
+    })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+    const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+
+    expect(within(dialog).getByRole('option', { name: 'Умм аль-Кура' })).toBeDisabled()
+    expect(within(dialog).getByText(
+      'Профиль «Умм аль-Кура» недоступен: календарь не поддерживается этим браузером.',
+    )).toBeVisible()
+  })
+
+  it('сохраняет причину ошибки для выбранного Умм аль-Кура и восстанавливается после смены профиля', async () => {
+    const reason =
+      'Профиль «Умм аль-Кура» недоступен: календарь islamic-umalqura не поддерживается этим браузером.'
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
+      function (this: Intl.DateTimeFormat) {
+        return { ...resolvedOptions.call(this), calendar: 'gregory' }
+      },
+    )
+    const baseServices = createServices()
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue({
+        ...(await baseServices.initialize()),
+        locationMode: 'calculated',
+        calculatedLocation: {
+          latitude: 21.4225,
+          longitude: 39.8262,
+          timeZone: 'Asia/Riyadh',
+          accuracy: null,
+          timestamp: 1_788_256_800_000,
+          name: 'Мекка, Саудовская Аравия',
+          source: 'preset',
+        },
+        calculationSettings: {
+          ...DEFAULT_CALCULATION_SETTINGS,
+          profile: 'ummAlQura',
+        },
+      }),
+      getCalculationProfileCapability: (profile) => profile === 'ummAlQura'
+        ? { supported: false, reason }
+        : { supported: true },
+    })
+    const user = userEvent.setup()
+
+    render(<App services={services} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(reason)
+    expect(services.saveCalculationSettings).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Настройки автономного расчёта' }))
+    const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    const profileSelect = within(dialog).getByLabelText('Профиль')
+    expect(profileSelect).toHaveValue('ummAlQura')
+    await user.selectOptions(profileSelect, 'dumRf')
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(screen.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
+    expect(services.saveCalculationSettings).toHaveBeenLastCalledWith({
+      ...DEFAULT_CALCULATION_SETTINGS,
+      profile: 'dumRf',
+    })
+  })
+
   it('объясняет источники, правила расчёта и часовой пояс', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
@@ -624,8 +787,8 @@ describe('Salah', () => {
     expect(within(dialog).getByText(/готовое расписание.+не пересчитывает/i)).toBeVisible()
     expect(within(dialog).getByText(/ДУМ РТ — 18°\/15°.+ДУМ РФ — 16°\/15°/i)).toBeVisible()
     expect(within(dialog).getByText(/120 минут до восхода.+90 минут после заката/i)).toBeVisible()
-    expect(within(dialog).getByText(/часовом поясе устройства/i)).toBeVisible()
-    expect(within(dialog).getByText(/город в другом часовом поясе.+сдвинуто/i)).toBeVisible()
+    expect(within(dialog).getByText(/часовом поясе выбранного места/i)).toBeVisible()
+    expect(within(dialog).getByText(/готового расписания ДУМ РТ.+московское время/i)).toBeVisible()
 
     const officialSourceLink = within(dialog).getByRole('link', { name: 'ДУМ РТ' })
     expect(officialSourceLink).toHaveAttribute(

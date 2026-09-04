@@ -1,13 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import { getZonedTime } from './locationTime'
 import {
   CALCULATION_PROFILES,
   DEFAULT_CALCULATION_SETTINGS,
+  UnsupportedCalculationProfileError,
   calculatePrayerSchedule,
+  getCalculationProfileCapability,
   type CalculationSettings,
 } from './prayerCalculation'
 
 const KAZAN = { latitude: 55.7946485, longitude: 49.1115022 }
+const MECCA = { latitude: 21.4225, longitude: 39.8262 }
 const MINUTE = 60_000
 
 function withSettings(
@@ -18,7 +22,11 @@ function withSettings(
 
 describe('calculatePrayerSchedule', () => {
   it('считает зимний день по профилю ДУМ РТ без северной подстановки', () => {
-    const schedule = calculatePrayerSchedule(KAZAN, '2026-01-15')
+    const schedule = calculatePrayerSchedule(
+      KAZAN,
+      '2026-01-15',
+      'Europe/Moscow',
+    )
 
     expect(Object.keys(schedule.entries)).toEqual([
       'fajr',
@@ -40,7 +48,11 @@ describe('calculatePrayerSchedule', () => {
   })
 
   it('летом применяет правило ДУМ РТ 120/90 только к Фаджру и Иша', () => {
-    const schedule = calculatePrayerSchedule(KAZAN, '2026-06-15')
+    const schedule = calculatePrayerSchedule(
+      KAZAN,
+      '2026-06-15',
+      'Europe/Moscow',
+    )
 
     expect(schedule.estimatedPrayers).toEqual(['fajr', 'isha'])
     expect(schedule.entries.sunrise.instant - schedule.entries.fajr.instant).toBeGreaterThanOrEqual(
@@ -55,11 +67,31 @@ describe('calculatePrayerSchedule', () => {
   })
 
   it('сохраняет астрономические времена у границы летнего правила', () => {
-    const direct = calculatePrayerSchedule(KAZAN, '2026-05-01')
-    const firstEveningFallback = calculatePrayerSchedule(KAZAN, '2026-05-05')
-    const adjusted = calculatePrayerSchedule(KAZAN, '2026-05-15')
-    const lastMorningFallback = calculatePrayerSchedule(KAZAN, '2026-08-08')
-    const restored = calculatePrayerSchedule(KAZAN, '2026-08-09')
+    const direct = calculatePrayerSchedule(
+      KAZAN,
+      '2026-05-01',
+      'Europe/Moscow',
+    )
+    const firstEveningFallback = calculatePrayerSchedule(
+      KAZAN,
+      '2026-05-05',
+      'Europe/Moscow',
+    )
+    const adjusted = calculatePrayerSchedule(
+      KAZAN,
+      '2026-05-15',
+      'Europe/Moscow',
+    )
+    const lastMorningFallback = calculatePrayerSchedule(
+      KAZAN,
+      '2026-08-08',
+      'Europe/Moscow',
+    )
+    const restored = calculatePrayerSchedule(
+      KAZAN,
+      '2026-08-09',
+      'Europe/Moscow',
+    )
 
     expect(direct.estimatedPrayers).not.toContain('fajr')
     expect(firstEveningFallback.estimatedPrayers).toEqual(['isha'])
@@ -69,10 +101,15 @@ describe('calculatePrayerSchedule', () => {
   })
 
   it('делает стандартный Аср раньше ханафитского', () => {
-    const hanafi = calculatePrayerSchedule(KAZAN, '2026-09-01')
+    const hanafi = calculatePrayerSchedule(
+      KAZAN,
+      '2026-09-01',
+      'Europe/Moscow',
+    )
     const standard = calculatePrayerSchedule(
       KAZAN,
       '2026-09-01',
+      'Europe/Moscow',
       withSettings({ asrMethod: 'standard' }),
     )
 
@@ -84,6 +121,7 @@ describe('calculatePrayerSchedule', () => {
       const schedule = calculatePrayerSchedule(
         { latitude: 41.0082, longitude: 28.9784 },
         '2026-09-01',
+        'Europe/Istanbul',
         withSettings({ profile: profile.id }),
       )
 
@@ -98,12 +136,18 @@ describe('calculatePrayerSchedule', () => {
     const dumRf = calculatePrayerSchedule(
       KAZAN,
       '2026-01-15',
+      'Europe/Moscow',
       withSettings({ profile: 'dumRf' }),
     )
-    const dumRt = calculatePrayerSchedule(KAZAN, '2026-01-15')
+    const dumRt = calculatePrayerSchedule(
+      KAZAN,
+      '2026-01-15',
+      'Europe/Moscow',
+    )
     const isna = calculatePrayerSchedule(
       KAZAN,
       '2026-01-15',
+      'Europe/Moscow',
       withSettings({ profile: 'northAmerica' }),
     )
 
@@ -118,6 +162,7 @@ describe('calculatePrayerSchedule', () => {
     const schedule = calculatePrayerSchedule(
       { latitude: 69.6492, longitude: 18.9553 },
       '2026-06-21',
+      'Europe/Oslo',
     )
     const instants = [
       schedule.entries.fajr.instant,
@@ -137,11 +182,79 @@ describe('calculatePrayerSchedule', () => {
     const schedule = calculatePrayerSchedule(
       { latitude: 78.2232, longitude: 15.6469 },
       '2026-12-21',
+      'Arctic/Longyearbyen',
       withSettings({ highLatitudeRule: 'nearestDay' }),
     )
 
     expect(schedule.polarResolutionApplied).toBe(true)
     expect(Number.isFinite(schedule.entries.sunrise.instant)).toBe(true)
     expect(Number.isFinite(schedule.entries.maghrib.instant)).toBe(true)
+  })
+
+  it('форматирует те же рассчитанные моменты в выбранной таймзоне', () => {
+    const moscow = calculatePrayerSchedule(KAZAN, '2026-01-15', 'Europe/Moscow')
+    const tokyo = calculatePrayerSchedule(KAZAN, '2026-01-15', 'Asia/Tokyo')
+
+    expect(tokyo.entries.fajr.instant).toBe(moscow.entries.fajr.instant)
+    expect(moscow.entries.fajr.time).toBe(
+      getZonedTime(new Date(moscow.entries.fajr.instant), 'Europe/Moscow'),
+    )
+    expect(tokyo.entries.fajr.time).toBe(
+      getZonedTime(new Date(tokyo.entries.fajr.instant), 'Asia/Tokyo'),
+    )
+    expect(tokyo.entries.fajr.time).not.toBe(moscow.entries.fajr.time)
+  })
+
+  it('использует интервал Иша 120 минут в Рамадан и 90 минут вне Рамадана', () => {
+    const settings = withSettings({ profile: 'ummAlQura' })
+    const ramadan = calculatePrayerSchedule(
+      MECCA,
+      '2026-02-18',
+      'Asia/Riyadh',
+      settings,
+    )
+    const outsideRamadan = calculatePrayerSchedule(
+      MECCA,
+      '2026-03-20',
+      'Asia/Riyadh',
+      settings,
+    )
+
+    expect(ramadan.entries.isha.instant - ramadan.entries.maghrib.instant).toBe(
+      120 * MINUTE,
+    )
+    expect(
+      outsideRamadan.entries.isha.instant - outsideRamadan.entries.maghrib.instant,
+    ).toBe(90 * MINUTE)
+  })
+
+  it('явно отклоняет Умм аль-Кура, если точный календарь недоступен', () => {
+    const reason =
+      'Профиль «Умм аль-Кура» недоступен: календарь islamic-umalqura не поддерживается этим браузером.'
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions
+    vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
+      function (this: Intl.DateTimeFormat) {
+        return { ...resolvedOptions.call(this), calendar: 'gregory' }
+      },
+    )
+
+    expect(getCalculationProfileCapability('ummAlQura')).toEqual({
+      supported: false,
+      reason,
+    })
+    let thrown: unknown
+    try {
+      calculatePrayerSchedule(
+        MECCA,
+        '2026-02-18',
+        'Asia/Riyadh',
+        withSettings({ profile: 'ummAlQura' }),
+      )
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(UnsupportedCalculationProfileError)
+    expect(thrown).toMatchObject({ profile: 'ummAlQura', message: reason })
   })
 })

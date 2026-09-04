@@ -10,6 +10,45 @@ import {
   setSetting,
 } from './database'
 
+async function createLegacyVersion3Database(
+  settings: ReadonlyArray<{ key: string; value: unknown }>,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('salah', 3)
+    request.onerror = () => reject(request.error)
+    request.onupgradeneeded = () => {
+      const database = request.result
+      database.createObjectStore('days', { keyPath: 'key' })
+      database.createObjectStore('meta')
+      database.createObjectStore('settings', { keyPath: 'key' })
+    }
+    request.onsuccess = () => {
+      const database = request.result
+      const transaction = database.transaction('settings', 'readwrite')
+      const store = transaction.objectStore('settings')
+      for (const setting of settings) store.put(setting)
+      transaction.onerror = () => reject(transaction.error)
+      transaction.oncomplete = () => {
+        database.close()
+        resolve()
+      }
+    }
+  })
+}
+
+async function getDatabaseVersion(): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const request = indexedDB.open('salah')
+    request.onerror = () => reject(request.error)
+    request.onsuccess = () => {
+      const database = request.result
+      const version = database.version
+      database.close()
+      resolve(version)
+    }
+  })
+}
+
 const dataset: PrayerDataset = {
   schemaVersion: 2,
   source: {
@@ -69,6 +108,7 @@ describe('database', () => {
       cityId: 524901,
       nameSource: 'geonames',
       source: 'gps',
+      timeZone: 'Europe/Moscow',
     } as const
     const calculationSettings = {
       profile: 'turkey',
@@ -83,5 +123,26 @@ describe('database', () => {
     expect(await getSetting('locationMode')).toBe('calculated')
     expect(await getSetting('calculatedLocation')).toEqual(coordinates)
     expect(await getSetting('calculationSettings')).toEqual(calculationSettings)
+  })
+
+  it('последовательно обновляет базу v3 до v4 без потери выбора', async () => {
+    const legacyCoordinates = {
+      latitude: 55.7558,
+      longitude: 37.6173,
+      accuracy: 18,
+      timestamp: 1_788_265_600_000,
+      name: 'Москва, Россия',
+      source: 'gps',
+    }
+    await createLegacyVersion3Database([
+      { key: 'calculatedLocation', value: legacyCoordinates },
+      { key: 'locationId', value: 'kazan' },
+      { key: 'locationMode', value: 'calculated' },
+    ])
+
+    expect(await getSetting('calculatedLocation')).toEqual(legacyCoordinates)
+    expect(await getSetting('locationId')).toBe('kazan')
+    expect(await getSetting('locationMode')).toBe('calculated')
+    expect(await getDatabaseVersion()).toBe(4)
   })
 })

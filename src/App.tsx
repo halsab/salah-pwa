@@ -13,8 +13,16 @@ import { formatCityLabel, type City } from './domain/cities'
 import { findNearestLocation } from './domain/location'
 import {
   DEFAULT_CALCULATION_SETTINGS,
+  getCalculationProfileCapability,
+  type CalculationProfileCapability,
+  type CalculationProfileId,
   type CalculationSettings,
 } from './domain/prayerCalculation'
+import {
+  DUM_RT_TIME_ZONE,
+  getDeviceTimeZone,
+  getUtcOffset,
+} from './domain/locationTime'
 import type { PrayerDay, SavedCoordinates } from './domain/types'
 import { LocationDialog } from './features/location/LocationDialog'
 import { useCityCatalog } from './features/location/useCityCatalog'
@@ -54,6 +62,10 @@ export interface AppServices {
   resolvePlaceName: (coordinates: SavedCoordinates) => Promise<string>
   getPermission: () => Promise<GeolocationPermission>
   getPosition: (accuracy: PositionAccuracy) => Promise<Coordinates>
+  getDeviceTimeZone: () => string
+  getCalculationProfileCapability: (
+    profile: CalculationProfileId,
+  ) => CalculationProfileCapability
   now: () => Date
 }
 
@@ -63,11 +75,17 @@ const defaultServices: AppServices = {
   resolvePlaceName,
   getPermission: getGeolocationPermission,
   getPosition: getCurrentPosition,
+  getDeviceTimeZone,
+  getCalculationProfileCapability,
   now: () => new Date(),
 }
 
 const MAX_AUTOMATIC_DISTANCE_KM = 80
 const MAX_OFFLINE_CITY_DISTANCE_KM = 30
+
+function canonicalTimeZone(timeZone: string): string {
+  return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone
+}
 
 function AppVersion({ version }: { version: string | undefined }) {
   return version ? <small className="app-version">{version}</small> : null
@@ -131,6 +149,10 @@ export function App({
   }, [retryCount, services])
 
   const { cityCatalog, cityCatalogStatus, loadCities } = useCityCatalog(services)
+  const deviceTimeZone = services.getDeviceTimeZone()
+  const selectedTimeZone = locationMode === 'official'
+    ? DUM_RT_TIME_ZONE
+    : calculatedLocation?.timeZone ?? deviceTimeZone
   const {
     selectedDate,
     currentTime,
@@ -138,7 +160,7 @@ export function App({
     changeDate,
     onDateInput,
     showDatePicker,
-  } = useScheduleDate(services)
+  } = useScheduleDate(services, selectedTimeZone)
   const {
     schedule,
     previousSchedule,
@@ -154,6 +176,7 @@ export function App({
     calculatedLocation,
     calculationSettings,
     selectedDate,
+    timeZone: selectedTimeZone,
   })
 
   const openLocationDialog = useCallback(() => {
@@ -254,6 +277,7 @@ export function App({
     }
     selectCalculatedLocation({
       ...bestPosition,
+      timeZone: nearestCity?.timeZone ?? services.getDeviceTimeZone(),
       source: 'gps',
       ...(nearestCity
         ? {
@@ -281,6 +305,7 @@ export function App({
     selectCalculatedLocation({
       latitude: city.latitude,
       longitude: city.longitude,
+      timeZone: city.timeZone,
       accuracy: null,
       timestamp: services.now().getTime(),
       name: formatCityLabel(city),
@@ -337,6 +362,9 @@ export function App({
     void services.saveCalculationSettings(settings)
   }
   const calculatedLocationLabel = calculatedLocation?.name ?? 'Текущее местоположение'
+  const timeZoneOffset = canonicalTimeZone(selectedTimeZone) === canonicalTimeZone(deviceTimeZone)
+    ? null
+    : getUtcOffset(currentTime, selectedTimeZone)
 
   return (
     <main className="page-shell">
@@ -347,6 +375,7 @@ export function App({
           officialMode={officialMode}
           selectedLocation={selectedLocation}
           calculatedLocationLabel={calculatedLocationLabel}
+          timeZoneOffset={timeZoneOffset}
           selectedDate={selectedDate}
           today={today}
           minDate={minDate}
@@ -410,6 +439,7 @@ export function App({
         settings={calculationSettings}
         focusMethodologyOnOpen={settingsFocusMethodology}
         methodologyTriggerRef={settingsMethodologyButtonRef}
+        getCalculationProfileCapability={services.getCalculationProfileCapability}
         onClose={closeSettingsDialog}
         onChange={updateCalculationSettings}
         onOpenMethodology={() => openMethodologyDialog('settings')}

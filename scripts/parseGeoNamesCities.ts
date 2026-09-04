@@ -1,4 +1,4 @@
-export type CompactCityRecord = [
+export type LegacyCompactCityRecord = [
   id: number,
   name: string,
   searchNames: string,
@@ -8,17 +8,42 @@ export type CompactCityRecord = [
   population: number,
 ]
 
+export type CompactCityRecord = [
+  ...LegacyCompactCityRecord,
+  timeZone: string,
+]
+
 interface ParsedCities {
   updatedAt: string
   cities: CompactCityRecord[]
 }
 
+export interface LegacyCityDataset<Source = unknown> {
+  schemaVersion: 1
+  source: Source
+  cities: LegacyCompactCityRecord[]
+}
+
 const CYRILLIC = /\p{Script=Cyrillic}/u
 const MAX_SEARCH_NAMES = 8
 const MAX_SEARCH_NAMES_LENGTH = 160
+const VALID_TIME_ZONES = new Set<string>()
 
 function roundCoordinate(value: string): number {
   return Number(Number(value).toFixed(4))
+}
+
+function assertValidTimeZone(timeZone: string, cityId: number): void {
+  if (VALID_TIME_ZONES.has(timeZone)) return
+
+  try {
+    new Intl.DateTimeFormat('en', { timeZone })
+    VALID_TIME_ZONES.add(timeZone)
+  } catch {
+    throw new Error(
+      `GeoNames вернул некорректный часовой пояс ${timeZone} для города ${cityId}`,
+    )
+  }
 }
 
 function getSearchNames(
@@ -57,6 +82,7 @@ export function parseGeoNamesCities(content: string): ParsedCities {
     const longitude = columns[5] ?? ''
     const countryCode = columns[8] ?? ''
     const population = Number(columns[14])
+    const timeZone = columns[17] ?? ''
     const modifiedAt = columns[18] ?? ''
 
     if (
@@ -69,6 +95,7 @@ export function parseGeoNamesCities(content: string): ParsedCities {
       continue
     }
 
+    assertValidTimeZone(timeZone, id)
     const searchNames = getSearchNames(name, asciiName, alternateNames)
     cities.push([
       id,
@@ -78,10 +105,64 @@ export function parseGeoNamesCities(content: string): ParsedCities {
       roundCoordinate(latitude),
       roundCoordinate(longitude),
       population,
+      timeZone,
     ])
     if (modifiedAt > updatedAt) updatedAt = modifiedAt
   }
 
   cities.sort((left, right) => right[6] - left[6])
   return { updatedAt, cities }
+}
+
+export function enrichLegacyCities(
+  legacyCities: LegacyCompactCityRecord[],
+  currentCities: CompactCityRecord[],
+): CompactCityRecord[] {
+  const timeZoneById = new Map<number, string>()
+  const timeZonesByCountry = new Map<string, Set<string>>()
+
+  for (const city of currentCities) {
+    const id = city[0]
+    const countryCode = city[3]
+    const timeZone = city[7]
+    assertValidTimeZone(timeZone, id)
+    timeZoneById.set(id, timeZone)
+
+    const countryTimeZones = timeZonesByCountry.get(countryCode) ?? new Set()
+    countryTimeZones.add(timeZone)
+    timeZonesByCountry.set(countryCode, countryTimeZones)
+  }
+
+  return legacyCities.map((city) => {
+    const id = city[0]
+    const countryCode = city[3]
+    const countryTimeZones = timeZonesByCountry.get(countryCode)
+    const timeZone = timeZoneById.get(id)
+      ?? (countryTimeZones?.size === 1
+        ? countryTimeZones.values().next().value
+        : undefined)
+
+    if (!timeZone) {
+      throw new Error(
+        `Не удалось однозначно определить часовой пояс для города ${id} (${countryCode})`,
+      )
+    }
+
+    return [...city, timeZone]
+  })
+}
+
+export function enrichLegacyDataset<Source>(
+  dataset: LegacyCityDataset<Source>,
+  currentCities: CompactCityRecord[],
+): {
+  schemaVersion: 2
+  source: Source
+  cities: CompactCityRecord[]
+} {
+  return {
+    schemaVersion: 2,
+    source: dataset.source,
+    cities: enrichLegacyCities(dataset.cities, currentCities),
+  }
 }

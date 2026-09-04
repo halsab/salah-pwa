@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { addDays } from '../../domain/date'
 import {
+  UnsupportedCalculationProfileError,
   calculatePrayerSchedule,
   type CalculationSettings,
   type CalculatedPrayerSchedule,
@@ -23,6 +24,7 @@ interface UsePrayerSchedulesOptions {
   calculatedLocation: SavedCoordinates | null
   calculationSettings: CalculationSettings
   selectedDate: string
+  timeZone: string
 }
 
 export function usePrayerSchedules({
@@ -33,6 +35,7 @@ export function usePrayerSchedules({
   calculatedLocation,
   calculationSettings,
   selectedDate,
+  timeZone,
 }: UsePrayerSchedulesOptions) {
   const [schedule, setSchedule] = useState<DisplaySchedule | null>(null)
   const [previousSchedule, setPreviousSchedule] = useState<DisplaySchedule | undefined>()
@@ -54,9 +57,24 @@ export function usePrayerSchedules({
     ]> => {
       if (locationMode === 'calculated' && calculatedLocation) {
         return [
-          calculatePrayerSchedule(calculatedLocation, addDays(selectedDate, -1), calculationSettings),
-          calculatePrayerSchedule(calculatedLocation, selectedDate, calculationSettings),
-          calculatePrayerSchedule(calculatedLocation, addDays(selectedDate, 1), calculationSettings),
+          calculatePrayerSchedule(
+            calculatedLocation,
+            addDays(selectedDate, -1),
+            timeZone,
+            calculationSettings,
+          ),
+          calculatePrayerSchedule(
+            calculatedLocation,
+            selectedDate,
+            timeZone,
+            calculationSettings,
+          ),
+          calculatePrayerSchedule(
+            calculatedLocation,
+            addDays(selectedDate, 1),
+            timeZone,
+            calculationSettings,
+          ),
         ]
       }
       const [officialPrevious, officialDay, officialTomorrow] = await Promise.all([
@@ -72,12 +90,16 @@ export function usePrayerSchedules({
       setPreviousSchedule(loadedPrevious)
       setSchedule(loadedSchedule)
       setTomorrow(loadedTomorrow)
-    }).catch(() => {
+    }).catch((error: unknown) => {
       if (!active) return
       setPreviousSchedule(undefined)
       setSchedule(null)
       setTomorrow(undefined)
-      setScheduleError('Не удалось загрузить расписание. Попробуйте ещё раз.')
+      setScheduleError(
+        error instanceof UnsupportedCalculationProfileError
+          ? error.message
+          : 'Не удалось загрузить расписание. Попробуйте ещё раз.',
+      )
     }).finally(() => {
       if (active) setScheduleLoading(false)
     })
@@ -93,6 +115,7 @@ export function usePrayerSchedules({
     scheduleRetryCount,
     selectedDate,
     services,
+    timeZone,
   ])
 
   return {

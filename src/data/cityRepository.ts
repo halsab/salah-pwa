@@ -4,6 +4,7 @@ import {
   type CityDataset,
   type CityDatasetSource,
 } from '../domain/cities'
+import { isValidTimeZone } from '../domain/locationTime'
 
 type CompactCityRecord = [
   id: number,
@@ -13,10 +14,11 @@ type CompactCityRecord = [
   latitude: number,
   longitude: number,
   population: number,
+  timeZone: string,
 ]
 
 interface CityDatasetFile {
-  schemaVersion: 1
+  schemaVersion: 2
   source: CityDatasetSource
   cities: CompactCityRecord[]
 }
@@ -38,14 +40,16 @@ function isSource(value: unknown): value is CityDatasetSource {
 function isCityRecord(value: unknown): value is CompactCityRecord {
   return (
     Array.isArray(value) &&
-    value.length === 7 &&
+    value.length === 8 &&
     Number.isInteger(value[0]) &&
     typeof value[1] === 'string' &&
     typeof value[2] === 'string' &&
     typeof value[3] === 'string' &&
     Number.isFinite(value[4]) &&
     Number.isFinite(value[5]) &&
-    Number.isFinite(value[6])
+    Number.isFinite(value[6]) &&
+    typeof value[7] === 'string' &&
+    isValidTimeZone(value[7])
   )
 }
 
@@ -55,7 +59,7 @@ export function parseCityDataset(value: unknown): CityDataset {
   }
   const file = value as Partial<CityDatasetFile>
   if (
-    file.schemaVersion !== 1 ||
+    file.schemaVersion !== 2 ||
     !isSource(file.source) ||
     !Array.isArray(file.cities) ||
     file.cities.length === 0 ||
@@ -65,7 +69,7 @@ export function parseCityDataset(value: unknown): CityDataset {
   }
 
   const cities: City[] = file.cities.map(
-    ([id, name, searchNames, countryCode, latitude, longitude, population]) => ({
+    ([
       id,
       name,
       searchNames,
@@ -73,6 +77,16 @@ export function parseCityDataset(value: unknown): CityDataset {
       latitude,
       longitude,
       population,
+      timeZone,
+    ]) => ({
+      id,
+      name,
+      searchNames,
+      countryCode,
+      latitude,
+      longitude,
+      population,
+      timeZone,
     }),
   )
 

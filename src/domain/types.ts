@@ -44,6 +44,7 @@ export interface PrayerLocation {
 export interface SavedCoordinates {
   latitude: number
   longitude: number
+  timeZone: string
   accuracy: number | null
   timestamp: number
   name?: string
