@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#184c3b" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#091410" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="Как Salah обрабатывает местоположение, локальные данные и внешние запросы."
+    />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%app-icon.svg" />
+    <link rel="stylesheet" href="/src/privacy.css" />
+    <title>Конфиденциальность — Salah</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#privacy-content">К содержанию</a>
+    <main id="privacy-content" class="privacy-shell">
+      <header class="paper-card privacy-hero">
+        <a class="back-link" href="../">← Вернуться в Salah</a>
+        <p class="eyebrow">Salah · политика проекта</p>
+        <h1>Конфиденциальность</h1>
+        <p class="lede">
+          Salah показывает времена намаза: готовое расписание ДУМ Республики Татарстан
+          и автономный расчёт для других мест.
+        </p>
+      </header>
+
+      <section class="paper-card" aria-labelledby="owner-title">
+        <h2 id="owner-title">Кто отвечает за проект</h2>
+        <p>Владелец проекта: GitHub-пользователь halsab.</p>
+        <p>
+          <a href="https://github.com/halsab/salah-pwa">Страница проекта и исходный код</a>
+          предназначена для просмотра проекта. Она не является каналом для конфиденциальных
+          обращений; отдельные имя, email или контактные данные не заявлены.
+        </p>
+        <p class="notice">
+          Salah не является официальным приложением ДУМ РТ
+          (Духовного управления мусульман Республики Татарстан).
+        </p>
+      </section>
+
+      <section class="paper-card" aria-labelledby="local-data-title">
+        <h2 id="local-data-title">Что остаётся в браузере</h2>
+        <p>
+          У приложения нет собственного сервера, аналитики и cookies. Координаты, настройки
+          и расписания сохраняются только в браузере: пользовательский выбор и проверенный
+          набор расписаний — в IndexedDB, а оболочка приложения, небольшие служебные файлы
+          и каталог городов после первого использования — в Cache Storage.
+        </p>
+        <p>
+          Эти данные можно удалить через настройки данных сайта в браузере. Отдельной кнопки
+          сброса внутри Salah нет.
+        </p>
+      </section>
+
+      <section class="paper-card" aria-labelledby="hosting-title">
+        <h2 id="hosting-title">Статический хостинг</h2>
+        <p>
+          Статические файлы размещены на GitHub Pages. При загрузке страницы GitHub может
+          получить IP-адрес, сведения о запросе и устройстве в соответствии с
+          <a
+            href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+          >политикой конфиденциальности GitHub</a>.
+        </p>
+      </section>
+
+      <section class="paper-card" aria-labelledby="location-title">
+        <h2 id="location-title">Геопозиция и Nominatim</h2>
+        <p>
+          Браузер передаёт позицию приложению только после разрешения. Salah не ведёт
+          непрерывное отслеживание местоположения.
+        </p>
+        <p>
+          Один reverse-запрос к Nominatim выполняется при автоматическом определении
+          местоположения — в том числе на старте при ранее разрешённой геопозиции — и после
+          явного нажатия «Уточнить название онлайн». Он нужен для названия места и проверки
+          кода региона.
+        </p>
+        <p>
+          Передаются только широта и долгота, округлённые до трёх знаков (0,001°).
+          Точность браузера и timestamp не передаются.
+        </p>
+        <p class="query-list" aria-label="Параметры запроса Nominatim">
+          <code>format=jsonv2</code>
+          <code>zoom=10</code>
+          <code>addressdetails=1</code>
+          <code>accept-language=ru</code>
+        </p>
+        <p>
+          Публичный сервис Nominatim получает IP-адрес и может журналировать технические
+          данные запроса согласно <a href="https://osmfoundation.org/wiki/Privacy_Policy">политике OSMF</a>.
+          Возвращённое название сохраняется локально, а код региона используется для выбора
+          между готовым и расчётным расписанием.
+        </p>
+      </section>
+
+      <section class="paper-card" aria-labelledby="sources-title">
+        <h2 id="sources-title">Источники и преобразования данных</h2>
+
+        <div class="source-block">
+          <h3>Расписание ДУМ РТ</h3>
+          <p>
+            Источник — <a href="https://dumrt.ru/ru/help-info/prayertime/">ДУМ РТ</a>.
+            Опубликованные таблицы разбираются, проверяются на полноту и дубли, объединяются
+            в JSON и сопровождаются manifest и SHA-256 для проверки перед сохранением.
+          </p>
+          <p>
+            Отдельная лицензия таблиц ДУМ РТ не указана, поэтому проект её не утверждает.
+          </p>
+        </div>
+
+        <div class="source-block">
+          <h3>Каталог GeoNames</h3>
+          <p>
+            Используются наборы <a href="https://download.geonames.org/export/dump/cities5000.zip">cities5000.zip</a>
+            и <a href="https://download.geonames.org/export/dump/alternateNamesV2.zip">alternateNamesV2.zip</a>
+            по лицензии <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
+          </p>
+          <p>
+            В каталог входят населённые пункты с населением от 5 000 человек. Координаты
+            округляются до четырёх знаков, выбираются действующие русские названия с
+            предпочтением preferred, строится нормализованный поисковый индекс, а данные
+            сохраняются как компактные записи.
+          </p>
+        </div>
+
+        <div class="source-block">
+          <h3>OpenStreetMap и Nominatim</h3>
+          <p>
+            Геокодирование использует данные
+            <a href="https://www.openstreetmap.org/copyright">OpenStreetMap / Nominatim</a>,
+            доступные по лицензии
+            <a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL</a>.
+            Возвращённое название сохраняется локально, код региона используется для
+            подтверждения территории.
+          </p>
+        </div>
+      </section>
+
+      <footer class="privacy-footer">
+        <a class="back-link" href="../">← Вернуться в Salah</a>
+        <small>Редакция от 4 сентября 2026 года</small>
+      </footer>
+    </main>
+  </body>
+</html>

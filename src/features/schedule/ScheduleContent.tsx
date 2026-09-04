@@ -27,6 +27,7 @@ import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
 
 type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
+const PRIVACY_URL = `${import.meta.env.BASE_URL}privacy/`
 
 const OFFICIAL_PRAYER_ROWS: ReadonlyArray<{
   key: PrayerKey
@@ -250,7 +251,7 @@ export function ScheduleContent({
                 >
                   Методика
                 </button>{' '}
-                · Доступно офлайн
+                · Доступно офлайн · <a href={PRIVACY_URL}>Конфиденциальность</a>
               </span>
             ) : (
               <span>
@@ -263,7 +264,7 @@ export function ScheduleContent({
                 >
                   Методика
                 </button>{' '}
-                · Доступно офлайн
+                · Доступно офлайн · <a href={PRIVACY_URL}>Конфиденциальность</a>
               </span>
             )}
             <span className="source-spark" aria-hidden="true">✦</span>

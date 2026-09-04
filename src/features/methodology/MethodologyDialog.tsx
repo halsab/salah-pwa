@@ -98,9 +98,11 @@ export function MethodologyDialog({
               (<a href={CC_BY_URL} target="_blank" rel="noreferrer">CC BY 4.0</a>).
             </p>
             <p>
-              Только после нажатия «Уточнить название онлайн» округлённые координаты
-              отправляются в <a href={NOMINATIM_URL} target="_blank" rel="noreferrer">Nominatim</a>,
-              который использует данные{' '}
+              При автоматическом определении местоположения, в том числе на старте с ранее
+              выданным разрешением, и после нажатия «Уточнить название онлайн» координаты,
+              округлённые до трёх знаков, отправляются в{' '}
+              <a href={NOMINATIM_URL} target="_blank" rel="noreferrer">Nominatim</a>.
+              Сервис используется для названия и кода региона на основе данных{' '}
               <a href={OPENSTREETMAP_URL} target="_blank" rel="noreferrer">OpenStreetMap</a>.
             </p>
           </section>
