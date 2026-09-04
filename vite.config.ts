@@ -15,7 +15,6 @@ export default defineConfig({
         description: 'Официальные времена ДУМ РТ и автономный расчёт намаза по GPS — без интернета.',
         lang: 'ru',
         display: 'standalone',
-        orientation: 'portrait-primary',
         background_color: '#f6eedf',
         theme_color: '#184c3b',
         start_url: './',

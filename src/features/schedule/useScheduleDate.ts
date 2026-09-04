@@ -14,7 +14,7 @@ export function useScheduleDate(services: ScheduleDateServices, timeZone: string
 
   const syncCurrentTime = useCallback(() => {
     const now = services.now()
-    setCurrentTime(now)
+    setCurrentTime((current) => current.getTime() === now.getTime() ? current : now)
     if (followingToday.current) {
       const currentDate = getSystemDate(now, timeZone)
       setSelectedDate((date) => date === currentDate ? date : currentDate)
@@ -22,19 +22,34 @@ export function useScheduleDate(services: ScheduleDateServices, timeZone: string
   }, [services, timeZone])
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') syncCurrentTime()
+    let timer: number | undefined
+    const scheduleNextMinute = () => {
+      const now = services.now().getTime()
+      const remainder = ((now % 60_000) + 60_000) % 60_000
+      const delay = remainder === 0 ? 60_000 : 60_000 - remainder
+      timer = window.setTimeout(() => {
+        syncCurrentTime()
+        scheduleNextMinute()
+      }, delay)
     }
-    const timer = window.setInterval(syncCurrentTime, 1_000)
+    const syncAndReschedule = () => {
+      syncCurrentTime()
+      if (timer !== undefined) window.clearTimeout(timer)
+      scheduleNextMinute()
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') syncAndReschedule()
+    }
     syncCurrentTime()
-    window.addEventListener('pageshow', syncCurrentTime)
+    scheduleNextMinute()
+    window.addEventListener('pageshow', syncAndReschedule)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('pageshow', syncCurrentTime)
+      if (timer !== undefined) window.clearTimeout(timer)
+      window.removeEventListener('pageshow', syncAndReschedule)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [syncCurrentTime])
+  }, [services, syncCurrentTime])
 
   const today = getSystemDate(currentTime, timeZone)
   const changeDate = (date: string) => {

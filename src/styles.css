@@ -1,6 +1,6 @@
 :root {
   color-scheme: light dark;
-  font-family: 'Neucha', cursive;
+  font-family: 'Alegreya Sans', sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --page: #184c3b;
@@ -119,6 +119,10 @@ button:disabled {
     max(24px, env(safe-area-inset-left));
 }
 
+.app-background {
+  display: contents;
+}
+
 .app-frame {
   position: relative;
   width: min(1180px, 100%);
@@ -151,7 +155,7 @@ button:disabled {
 .brand {
   margin: 0;
   font-size: clamp(3.75rem, 7vw, 5.7rem);
-  font-weight: 400;
+  font-weight: 700;
   line-height: 0.95;
   text-align: center;
   letter-spacing: 0.01em;
@@ -221,7 +225,7 @@ button:disabled {
   background: var(--primary-strong);
   box-shadow: 3px 3px 0 var(--outline);
   font-size: 1.08rem;
-  font-weight: 720;
+  font-weight: 500;
   text-align: left;
   transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
 }
@@ -303,7 +307,7 @@ button:disabled {
 .today-button {
   min-height: 54px;
   padding: 8px 18px;
-  font-weight: 750;
+  font-weight: 500;
   background: transparent;
 }
 
@@ -343,7 +347,7 @@ button:disabled {
 .current-label::after {
   color: var(--accent);
   font-size: 1.25em;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .current-label::before {
@@ -383,7 +387,7 @@ button:disabled {
   border-radius: 22px;
   background: var(--surface-wash);
   box-shadow: 3px 3px 0 var(--hairline);
-  font-weight: 560;
+  font-weight: 500;
 }
 
 .countdown-copy {
@@ -401,9 +405,10 @@ button:disabled {
 }
 
 .countdown-value {
-  font-family: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', 'Roboto Mono', monospace;
+  font-family: inherit;
   font-size: clamp(2.25rem, 4.2vw, 3.25rem);
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1;
   white-space: nowrap;
@@ -442,7 +447,8 @@ button:disabled {
 .selected-date-summary strong {
   color: var(--ink);
   font-size: clamp(2.4rem, 5vw, 4.6rem);
-  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
   line-height: 1.05;
   text-wrap: balance;
 }
@@ -501,7 +507,7 @@ button:disabled {
 .prayer-time {
   font-size: clamp(1.35rem, 2.2vw, 1.7rem);
   font-variant-numeric: tabular-nums;
-  font-weight: 660;
+  font-weight: 700;
 }
 
 .prayer-row[data-active='true'] {
@@ -532,7 +538,7 @@ button:disabled {
   border-radius: 50%;
   color: var(--ink-soft);
   font-size: 1.05rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .prayer-row[data-active='true'] .estimated-mark {
@@ -571,7 +577,7 @@ button:disabled {
 
 .source-note a {
   color: inherit;
-  font-weight: 800;
+  font-weight: 700;
   text-underline-offset: 3px;
 }
 
@@ -581,7 +587,7 @@ button:disabled {
   border: 0;
   color: inherit;
   background: transparent;
-  font-weight: 800;
+  font-weight: 500;
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
@@ -647,7 +653,7 @@ button:disabled {
   padding: 10px 22px;
   color: var(--on-primary);
   background: var(--primary-strong);
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .share-button {
@@ -664,7 +670,7 @@ button:disabled {
   background: var(--primary-strong);
   box-shadow: 3px 3px 0 var(--shadow);
   font-size: 1.12rem;
-  font-weight: 800;
+  font-weight: 500;
   transition: transform 160ms var(--ease-out), background-color 180ms var(--ease-out);
 }
 
@@ -764,7 +770,7 @@ button:disabled {
 
 .dialog-header h2 {
   font-size: 2rem;
-  font-weight: 400;
+  font-weight: 700;
   line-height: 1.05;
 }
 
@@ -814,7 +820,7 @@ button:disabled {
   border-radius: 15px;
   color: var(--on-primary);
   background: var(--primary-strong);
-  font-weight: 800;
+  font-weight: 500;
   transition: transform 160ms var(--ease-out);
 }
 
@@ -834,7 +840,7 @@ button:disabled {
   border-radius: 14px;
   color: var(--ink);
   background: transparent;
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .location-attribution {
@@ -851,7 +857,7 @@ button:disabled {
 
 .location-attribution a {
   color: inherit;
-  font-weight: 800;
+  font-weight: 700;
   text-underline-offset: 2px;
 }
 
@@ -879,7 +885,7 @@ button:disabled {
 .search-entry-button {
   width: 100%;
   color: var(--ink-soft);
-  font-weight: 720;
+  font-weight: 500;
   text-align: left;
 }
 
@@ -958,7 +964,7 @@ button:disabled {
   margin: 0 3px 8px;
   color: var(--ink-soft);
   font-size: 0.82rem;
-  font-weight: 850;
+  font-weight: 500;
   letter-spacing: 0.055em;
   text-transform: uppercase;
 }
@@ -981,7 +987,7 @@ button:disabled {
   padding: 9px 13px;
   border-width: 1.5px;
   border-radius: 12px;
-  font-weight: 720;
+  font-weight: 500;
   text-align: left;
   transition: transform 160ms var(--ease-out), background-color 160ms var(--ease-out);
 }
@@ -1006,7 +1012,7 @@ button:disabled {
 .city-option small {
   color: var(--ink-soft);
   font-size: 0.76rem;
-  font-weight: 650;
+  font-weight: 400;
 }
 
 .country-list {
@@ -1047,7 +1053,7 @@ button:disabled {
   border-radius: 12px;
   color: var(--ink);
   background: var(--paper-strong);
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .country-group {
@@ -1066,14 +1072,14 @@ button:disabled {
   gap: 12px;
   padding: 9px 13px;
   cursor: pointer;
-  font-weight: 800;
+  font-weight: 500;
   list-style-position: inside;
 }
 
 .country-group summary small {
   color: var(--ink-soft);
   font-size: 0.76rem;
-  font-weight: 650;
+  font-weight: 400;
 }
 
 .country-group[open] summary {
@@ -1146,7 +1152,7 @@ button:disabled {
 
 .methodology-content a {
   color: var(--ink);
-  font-weight: 800;
+  font-weight: 700;
   text-underline-offset: 3px;
 }
 
@@ -1217,6 +1223,15 @@ button:disabled {
   gap: clamp(12px, 2.4vw, 20px);
 }
 
+.share-copy-status {
+  min-height: 1.25rem;
+  margin: -4px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  line-height: 1.25;
+  text-align: center;
+}
+
 .share-close-button {
   width: min(400px, calc(100% - 36px));
   min-height: clamp(50px, 7.6vw, 54px);
@@ -1252,7 +1267,7 @@ button:disabled {
 }
 
 .setting-field > span {
-  font-weight: 800;
+  font-weight: 500;
 }
 
 .setting-field select {
@@ -1263,6 +1278,19 @@ button:disabled {
   border-radius: 12px;
   color: var(--ink);
   background: var(--paper-strong);
+}
+
+.setting-field select:disabled {
+  cursor: not-allowed;
+  color: var(--ink-soft);
+  background: var(--surface-wash-soft);
+  opacity: 0.62;
+}
+
+.location-control,
+.date-picker,
+.selected-date-summary strong {
+  font-variant-numeric: tabular-nums;
 }
 
 .methodology-settings-trigger {
@@ -1644,6 +1672,42 @@ button:disabled {
     aspect-ratio: auto;
     /* Компенсируем сужение QR и кнопки на 36px, чтобы визуальные поля были равны. */
     padding-block: calc(var(--share-dialog-padding) + 18px);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .share-dialog {
+    width: min(760px, 100%);
+    aspect-ratio: auto;
+    padding: max(12px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+  }
+
+  .share-content {
+    grid-template-columns: minmax(0, 1fr) minmax(190px, 0.72fr);
+    grid-template-rows: auto auto auto;
+    column-gap: 20px;
+    row-gap: 10px;
+  }
+
+  .share-qr-frame {
+    width: min(100%, calc(var(--share-dialog-max-height) - 48px));
+    grid-column: 1;
+    grid-row: 1 / 4;
+  }
+
+  .share-copy-button {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .share-copy-status {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .share-close-button:not(.share-copy-button) {
+    grid-column: 2;
+    grid-row: 3;
   }
 }
 

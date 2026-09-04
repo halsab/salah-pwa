@@ -48,7 +48,7 @@ describe('findNextPrayer', () => {
   })
 
   it.each([
-    ['suhurEnd', 'До сухура'],
+    ['suhurEnd', 'До конца сухура'],
     ['fajrJamaat', 'До утреннего в мечети'],
     ['sunrise', 'До восхода'],
     ['zenith', 'До зенита'],
@@ -89,7 +89,7 @@ describe('findNextPrayer', () => {
     expect(next).toMatchObject({
       key: 'suhurEnd',
       label: 'Завершение сухура',
-      countdownLabel: 'До сухура',
+      countdownLabel: 'До конца сухура',
       date: '2026-09-02',
       time: '02:21',
     })

@@ -1,7 +1,7 @@
-import type { RefObject } from 'react'
+import { useCallback, useState, type RefObject } from 'react'
 
 import { formatDateLabel } from '../../domain/date'
-import { findCurrentPrayer, findNextPrayer, formatRemainingTime } from '../../domain/nextPrayer'
+import { findCurrentPrayer, findNextPrayer } from '../../domain/nextPrayer'
 import {
   CALCULATION_PROFILES,
   type CalculationProfileId,
@@ -23,6 +23,7 @@ import {
   SunsetIcon,
 } from '../../ui/Icons'
 import { ASR_METHOD_LABELS } from '../../ui/calculationLabels'
+import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
 
 type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
@@ -124,6 +125,7 @@ interface ScheduleContentProps {
   selectedDate: string
   today: string
   currentTime: Date
+  now: () => Date
   officialMode: boolean
   calculationSettings: CalculationSettings
   officialScheduleUrl: string
@@ -142,6 +144,7 @@ export function ScheduleContent({
   selectedDate,
   today,
   currentTime,
+  now,
   officialMode,
   calculationSettings,
   officialScheduleUrl,
@@ -150,11 +153,21 @@ export function ScheduleContent({
   onRetrySchedule,
   onOpenMethodology,
 }: ScheduleContentProps) {
+  const [eventBoundaryTime, setEventBoundaryTime] = useState<Date | null>(null)
+  const effectiveCurrentTime = eventBoundaryTime
+    && eventBoundaryTime.getTime() > currentTime.getTime()
+    ? eventBoundaryTime
+    : currentTime
+  const handleEventBoundary = useCallback(() => {
+    const nextTime = now()
+    setEventBoundaryTime((current) =>
+      current?.getTime() === nextTime.getTime() ? current : nextTime)
+  }, [now])
   const nextPrayer = selectedDate === today && schedule
-    ? findNextPrayer(currentTime, schedule, tomorrow)
+    ? findNextPrayer(effectiveCurrentTime, schedule, tomorrow)
     : null
   const currentPrayer = selectedDate === today && schedule
-    ? findCurrentPrayer(currentTime, schedule, previousSchedule)
+    ? findCurrentPrayer(effectiveCurrentTime, schedule, previousSchedule)
     : null
   const calculatedSchedule = schedule && 'entries' in schedule ? schedule : null
   const profileLabel = calculationProfileLabel(calculationSettings.profile)
@@ -170,23 +183,20 @@ export function ScheduleContent({
           nextPrayer ? (
             <>
               <div className="current-prayer">
-                <p className="current-label">Сейчас</p>
+                <p className="current-label">
+                  {currentPrayer ? 'Последнее событие' : 'Сейчас'}
+                </p>
                 <p className="next-name">
                   {currentPrayer ? `${currentPrayer.label} · ${currentPrayer.time}` : 'До первого события'}
                 </p>
               </div>
-              <div
-                className="countdown"
-                role="timer"
-                aria-live="off"
-                aria-label={`${nextPrayer.countdownLabel}, осталось ${formatRemainingTime(nextPrayer.remainingSeconds)}`}
-              >
-                <ClockIcon />
-                <span className="countdown-copy">
-                  <span className="next-label">{nextPrayer.countdownLabel}</span>
-                  <span className="countdown-value">{formatRemainingTime(nextPrayer.remainingSeconds)}</span>
-                </span>
-              </div>
+              <ScheduleCountdown
+                key={`${nextPrayer.date}:${nextPrayer.key}:${nextPrayer.instant}`}
+                countdownLabel={nextPrayer.countdownLabel}
+                targetInstant={nextPrayer.instant}
+                now={now}
+                onElapsed={handleEventBoundary}
+              />
             </>
           ) : (
             <div className="no-next-prayer">

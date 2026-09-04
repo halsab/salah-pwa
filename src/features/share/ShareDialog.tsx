@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useDialogViewport, useModalDialog } from '../../ui/dialogHooks'
 
@@ -10,10 +10,36 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ open, onClose }: ShareDialogProps) {
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const copyOperationEpoch = useRef(0)
+  const copyRef = useRef<HTMLButtonElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useModalDialog(open, onClose, closeRef)
+  const dialogRef = useModalDialog(open, onClose, copyRef)
   const layerRef = useDialogViewport(open)
+
+  useEffect(() => {
+    copyOperationEpoch.current += 1
+    setCopyStatus('idle')
+    return () => {
+      copyOperationEpoch.current += 1
+    }
+  }, [open])
+
   if (!open) return null
+
+  const copyLink = async () => {
+    const operationEpoch = ++copyOperationEpoch.current
+    setCopyStatus('idle')
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API недоступен')
+      await navigator.clipboard.writeText(window.location.href)
+      if (!open || operationEpoch !== copyOperationEpoch.current) return
+      setCopyStatus('success')
+    } catch {
+      if (!open || operationEpoch !== copyOperationEpoch.current) return
+      setCopyStatus('error')
+    }
+  }
 
   return (
     <div
@@ -39,6 +65,26 @@ export function ShareDialog({ open, onClose }: ShareDialogProps) {
               alt="QR-код со ссылкой на Salah"
             />
           </div>
+          <button
+            ref={copyRef}
+            className="primary-button share-close-button share-copy-button"
+            type="button"
+            onClick={() => void copyLink()}
+          >
+            Скопировать ссылку
+          </button>
+          <p
+            className="share-copy-status"
+            aria-atomic="true"
+            aria-live="polite"
+            role="status"
+          >
+            {copyStatus === 'success'
+              ? 'Ссылка скопирована'
+              : copyStatus === 'error'
+                ? 'Не удалось скопировать ссылку'
+                : ''}
+          </p>
           <button
             ref={closeRef}
             className="primary-button share-close-button"

@@ -473,57 +473,68 @@ export function App({
   const timeZoneOffset = canonicalTimeZone(selectedTimeZone) === canonicalTimeZone(deviceTimeZone)
     ? null
     : getUtcOffset(currentTime, selectedTimeZone)
+  const dialogOpen = locationDialogOpen
+    || settingsDialogOpen
+    || methodologyDialogOpen
+    || shareDialogOpen
 
   return (
     <main className="page-shell">
-      <section className="app-frame">
-        <AppHeader
-          locationButtonRef={locationButtonRef}
-          settingsButtonRef={settingsButtonRef}
-          officialMode={officialMode}
-          selectedLocation={selectedLocation}
-          calculatedLocationLabel={calculatedLocationLabel}
-          timeZoneOffset={timeZoneOffset}
-          selectedDate={selectedDate}
-          today={today}
-          minDate={minDate}
-          maxDate={maxDate}
-          onOpenLocation={openLocationDialog}
-          onOpenSettings={openSettingsDialog}
-          onChangeDate={changeDate}
-          onDateInput={onDateInput}
-          onShowDatePicker={showDatePicker}
-        />
-
-        <ScheduleContent
-          schedule={schedule}
-          previousSchedule={previousSchedule}
-          tomorrow={tomorrow}
-          scheduleLoading={scheduleLoading}
-          scheduleError={scheduleError}
-          selectedDate={selectedDate}
-          today={today}
-          currentTime={currentTime}
-          officialMode={officialMode}
-          calculationSettings={calculationSettings}
-          officialScheduleUrl={meta.source.url}
-          methodologyButtonRef={footerMethodologyButtonRef}
-          onChangeDate={changeDate}
-          onRetrySchedule={retrySchedule}
-          onOpenMethodology={() => openMethodologyDialog('footer')}
-        />
-      </section>
-
-      <button
-        ref={shareButtonRef}
-        className="share-button"
-        type="button"
-        onClick={() => setShareDialogOpen(true)}
+      <div
+        className="app-background"
+        inert={dialogOpen || undefined}
+        aria-hidden={dialogOpen || undefined}
       >
-        <ShareIcon />
-        <span>Поделиться</span>
-      </button>
-      <AppVersion version={version} />
+        <section className="app-frame">
+          <AppHeader
+            locationButtonRef={locationButtonRef}
+            settingsButtonRef={settingsButtonRef}
+            officialMode={officialMode}
+            selectedLocation={selectedLocation}
+            calculatedLocationLabel={calculatedLocationLabel}
+            timeZoneOffset={timeZoneOffset}
+            selectedDate={selectedDate}
+            today={today}
+            minDate={minDate}
+            maxDate={maxDate}
+            onOpenLocation={openLocationDialog}
+            onOpenSettings={openSettingsDialog}
+            onChangeDate={changeDate}
+            onDateInput={onDateInput}
+            onShowDatePicker={showDatePicker}
+          />
+
+          <ScheduleContent
+            schedule={schedule}
+            previousSchedule={previousSchedule}
+            tomorrow={tomorrow}
+            scheduleLoading={scheduleLoading}
+            scheduleError={scheduleError}
+            selectedDate={selectedDate}
+            today={today}
+            currentTime={currentTime}
+            now={services.now}
+            officialMode={officialMode}
+            calculationSettings={calculationSettings}
+            officialScheduleUrl={meta.source.url}
+            methodologyButtonRef={footerMethodologyButtonRef}
+            onChangeDate={changeDate}
+            onRetrySchedule={retrySchedule}
+            onOpenMethodology={() => openMethodologyDialog('footer')}
+          />
+        </section>
+
+        <button
+          ref={shareButtonRef}
+          className="share-button"
+          type="button"
+          onClick={() => setShareDialogOpen(true)}
+        >
+          <ShareIcon />
+          <span>Поделиться</span>
+        </button>
+        <AppVersion version={version} />
+      </div>
 
       <LocationDialog
         locations={meta.locations}

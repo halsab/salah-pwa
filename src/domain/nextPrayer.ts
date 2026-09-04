@@ -18,7 +18,7 @@ const OFFICIAL_EVENTS: ReadonlyArray<{
   {
     key: 'suhurEnd',
     label: 'Завершение сухура',
-    countdownLabel: 'До сухура',
+    countdownLabel: 'До конца сухура',
   },
   {
     key: 'fajrJamaat',
@@ -55,10 +55,11 @@ export interface NextPrayer {
   countdownLabel: string
   date: string
   time: PrayerTime
+  instant: number
   remainingSeconds: number
 }
 
-export type CurrentPrayer = Omit<NextPrayer, 'remainingSeconds'>
+export type CurrentPrayer = Omit<NextPrayer, 'instant' | 'remainingSeconds'>
 
 function prayerInstant(date: string, time: PrayerTime): Date {
   return OFFICIAL_SCHEDULE_CLOCK.toInstant(date, time)
@@ -73,6 +74,7 @@ function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {
         ...event,
         date: day.date,
         time,
+        instant: instant.getTime(),
         remainingSeconds: Math.max(
           0,
           Math.ceil((instant.getTime() - now.getTime()) / 1_000),
@@ -95,6 +97,7 @@ function nextInCalculatedDay(
         ...event,
         date: day.date,
         time: entry.time,
+        instant: entry.instant,
         remainingSeconds: Math.max(
           0,
           Math.ceil((entry.instant - now.getTime()) / 1_000),

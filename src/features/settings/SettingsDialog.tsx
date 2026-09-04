@@ -49,7 +49,10 @@ export function SettingsDialog({
   const update = <Key extends keyof CalculationSettings>(
     key: Key,
     value: CalculationSettings[Key],
-  ) => onChange({ ...settings, [key]: value })
+  ) => {
+    if (officialMode) return
+    onChange({ ...settings, [key]: value })
+  }
 
   return (
     <div ref={layerRef} className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -79,6 +82,8 @@ export function SettingsDialog({
           <span>Аср</span>
           <select
             aria-label="Аср"
+            aria-disabled={officialMode}
+            disabled={officialMode}
             value={settings.asrMethod}
             onChange={(event) => update('asrMethod', event.target.value as CalculationSettings['asrMethod'])}
           >
@@ -91,9 +96,11 @@ export function SettingsDialog({
           <span>Профиль</span>
           <select
             aria-label="Профиль"
+            aria-disabled={officialMode}
             aria-describedby={!ummAlQuraCapability.supported
               ? 'umm-al-qura-capability'
               : undefined}
+            disabled={officialMode}
             value={settings.profile}
             onChange={(event) => update('profile', event.target.value as CalculationProfileId)}
           >
@@ -118,6 +125,8 @@ export function SettingsDialog({
           <span>Северные правила</span>
           <select
             aria-label="Северные правила"
+            aria-disabled={officialMode}
+            disabled={officialMode}
             value={settings.highLatitudeRule}
             onChange={(event) => update('highLatitudeRule', event.target.value as HighLatitudeMethod)}
           >

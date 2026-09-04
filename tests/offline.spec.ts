@@ -1,8 +1,10 @@
 import { expect, test } from '@playwright/test'
 
-test('весь интерфейс использует рукописный шрифт', async ({ page }) => {
+test('весь интерфейс использует локальный Alegreya Sans только в нужных начертаниях', async ({ page }) => {
   await page.goto('./')
   await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
+
+  await page.evaluate(() => document.fonts.ready)
 
   const bodyFont = await page.locator('body').evaluate((element) =>
     getComputedStyle(element).fontFamily,
@@ -13,6 +15,17 @@ test('весь интерфейс использует рукописный шр
   const decorationFont = await page.locator('.next-label').evaluate((element) =>
     getComputedStyle(element, '::before').fontFamily,
   )
+  const brandWeight = await page.getByRole('heading', { name: 'Salah' }).evaluate((element) =>
+    getComputedStyle(element).fontWeight,
+  )
+  const timeStyle = await page.locator('.prayer-time').first().evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      family: style.fontFamily,
+      numeric: style.fontVariantNumeric,
+      weight: style.fontWeight,
+    }
+  })
 
   await page.getByRole('button', { name: /Казань/ }).click()
   await page.getByRole('button', { name: 'Найти город или район' }).click()
@@ -21,8 +34,33 @@ test('весь интерфейс использует рукописный шр
   )
 
   for (const fontFamily of [bodyFont, buttonFont, decorationFont, inputFont]) {
-    expect(fontFamily).toContain('Neucha')
+    expect(fontFamily).toContain('Alegreya Sans')
   }
+  expect(brandWeight).toBe('700')
+  expect(timeStyle).toEqual({
+    family: expect.stringContaining('Alegreya Sans'),
+    numeric: 'tabular-nums',
+    weight: '700',
+  })
+
+  const alegreyaFaces = await page.evaluate(() => Array.from(document.fonts)
+    .filter(({ family }) => family.includes('Alegreya Sans'))
+    .map(({ style, weight }) => ({ style, weight })))
+  expect(new Set(alegreyaFaces.map(({ style }) => style))).toEqual(new Set(['normal']))
+  expect(new Set(alegreyaFaces.map(({ weight }) => weight))).toEqual(new Set(['400', '500', '700']))
+})
+
+test('web manifest не ограничивает ориентацию экрана', async ({ page }) => {
+  await page.goto('./')
+  const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href')
+  expect(manifestHref).toBeTruthy()
+
+  const manifest = await page.evaluate(async (href) => {
+    const response = await fetch(new URL(href!, window.location.href))
+    return response.json() as Promise<Record<string, unknown>>
+  }, manifestHref)
+
+  expect(manifest).not.toHaveProperty('orientation')
 })
 
 test('после первого запуска расписание полностью открывается без сети', async ({

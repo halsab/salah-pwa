@@ -215,6 +215,8 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', { name: /Казань/ })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Salah' })).toBeVisible()
     expect(await screen.findByText('До асра')).toBeVisible()
+    expect(screen.getByText('Последнее событие')).toBeVisible()
+    expect(screen.queryByText('Сейчас')).not.toBeInTheDocument()
     expect(screen.getByText('Зухр · 12:00')).toBeVisible()
     expect(screen.getByText('03:24:00')).toBeVisible()
 
@@ -242,6 +244,27 @@ describe('Salah', () => {
     const schedule = screen.getByRole('list', { name: 'Времена намаза' })
     expect(within(schedule).getByText('Зенит').closest('li')).toHaveAttribute('data-active', 'true')
     expect(within(schedule).getByText('Зухр').closest('li')).not.toHaveAttribute('data-active')
+  })
+
+  it('точно переключает текущее и следующее событие на его границе', async () => {
+    let now = new Date('2026-09-01T13:23:59.000Z')
+    const services = createServices({ now: () => new Date(now) })
+    render(<App services={services} />)
+
+    expect(await screen.findByText('Зухр · 12:00')).toBeVisible()
+    expect(screen.getByText('До асра')).toBeVisible()
+    expect(screen.getByText('00:00:01')).toBeVisible()
+
+    now = new Date(now.getTime() + 1_000)
+    await new Promise((resolve) => setTimeout(resolve, 1_100))
+
+    expect(screen.getByText('Аср · 16:24')).toBeVisible()
+    expect(screen.getByText('До магриба')).toBeVisible()
+    expect(screen.getByText('02:15:00')).toBeVisible()
+    expect(
+      screen.getByRole('list', { name: 'Времена намаза' })
+        .querySelector('[data-active="true"] .prayer-name'),
+    ).toHaveTextContent('Аср')
   })
 
   it('для утреннего намаза использует уточнённую подпись таймера', async () => {
@@ -616,18 +639,29 @@ describe('Salah', () => {
     }
   })
 
-  it('не сбрасывает поиск при секундном обновлении таймера', async () => {
+  it('обновляет секунды без корневого ререндера и не сбрасывает поиск', async () => {
     const user = userEvent.setup()
-    render(<App services={createServices()} />)
+    let now = new Date('2026-09-01T10:00:00.000Z')
+    const getDeviceTimeZone = vi.fn(() => 'Europe/Moscow')
+    const services = createServices({
+      getDeviceTimeZone,
+      now: () => new Date(now),
+    })
+    render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'челны')
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Казань' })).not.toBeInTheDocument()
+    expect(screen.getByText('03:24:00')).toBeVisible()
+    getDeviceTimeZone.mockClear()
 
+    now = new Date(now.getTime() + 1_000)
     await new Promise((resolve) => setTimeout(resolve, 1_100))
 
+    expect(screen.getByText('03:23:59')).toBeVisible()
+    expect(getDeviceTimeZone).not.toHaveBeenCalled()
     expect(screen.getByRole('searchbox')).toHaveValue('челны')
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
   })
@@ -993,10 +1027,17 @@ describe('Salah', () => {
     const services = createServices()
     render(<App services={services} />)
 
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    await user.type(screen.getByRole('searchbox'), 'Стамбул')
+    await user.click(await screen.findByRole('button', { name: 'Стамбул, Турция' }))
+    expect(await screen.findByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
+
     await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
     const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
-    expect(within(dialog).getByText(/Сейчас используется готовое расписание ДУМ РТ/i)).toBeVisible()
+    expect(within(dialog).getByText(/Сейчас расписание пересчитывается/i)).toBeVisible()
     const asrSelect = within(dialog).getByLabelText('Аср')
+    expect(asrSelect).toBeEnabled()
     expect(within(asrSelect).getByRole('option', { name: 'Ханафитский' })).toBeVisible()
     expect(within(asrSelect).getByRole('option', {
       name: 'Шафиитский, маликитский и ханбалитский',
@@ -1079,6 +1120,7 @@ describe('Salah', () => {
     const profileSelect = within(dialog).getByLabelText('Профиль')
     expect(profileSelect).toHaveValue('ummAlQura')
     await user.selectOptions(profileSelect, 'dumRf')
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
     expect(screen.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
@@ -1140,22 +1182,114 @@ describe('Salah', () => {
 
   it('открывает методику из настроек и возвращается к ним после закрытия', async () => {
     const user = userEvent.setup()
-    render(<App services={createServices()} />)
+    render(<App services={createServices()} version="v26.4" />)
 
     await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+    const background = document.querySelector<HTMLElement>('.app-background')
+    expect(background).not.toBeNull()
+    expect(background).toHaveAttribute('inert')
+    expect(background).toHaveAttribute('aria-hidden', 'true')
     const settingsDialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    const exposureStates: boolean[] = []
+    const observer = new MutationObserver(() => {
+      exposureStates.push(
+        !background?.hasAttribute('inert')
+        || background.getAttribute('aria-hidden') !== 'true',
+      )
+    })
+    observer.observe(background!, {
+      attributes: true,
+      attributeFilter: ['aria-hidden', 'inert'],
+    })
     await user.click(within(settingsDialog).getByRole('button', { name: 'Как рассчитывается время' }))
 
     expect(screen.queryByRole('dialog', { name: 'Настройки расчёта' })).not.toBeInTheDocument()
     const methodologyDialog = screen.getByRole('dialog', { name: 'Как рассчитывается время' })
+    expect(methodologyDialog.closest('[inert]')).toBeNull()
+    expect(background).toHaveAttribute('inert')
     await user.click(within(methodologyDialog).getByRole('button', { name: 'Закрыть' }))
 
     const reopenedSettings = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    expect(background).toHaveAttribute('inert')
+    expect(exposureStates).not.toContain(true)
+    observer.disconnect()
     await waitFor(() => {
       expect(
         within(reopenedSettings).getByRole('button', { name: 'Как рассчитывается время' }),
       ).toHaveFocus()
     })
+  })
+
+  it.each([
+    {
+      triggerName: /Казань/,
+      dialogName: 'Выбор местоположения',
+    },
+    {
+      triggerName: 'Настройки автономного расчёта',
+      dialogName: 'Настройки расчёта',
+    },
+    {
+      triggerName: 'Методика',
+      dialogName: 'Как рассчитывается время',
+    },
+    {
+      triggerName: 'Поделиться',
+      dialogName: 'QR-код Salah',
+    },
+  ])('делает единый фон inert для диалога $dialogName', async ({
+    triggerName,
+    dialogName,
+  }) => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} version="v26.4" />)
+
+    const trigger = await screen.findByRole('button', { name: triggerName })
+    const background = trigger.closest<HTMLElement>('.app-background')
+    expect(background).not.toBeNull()
+    expect(background).toContainElement(document.querySelector('.app-frame'))
+    expect(background).toContainElement(screen.getByRole('button', { name: 'Поделиться' }))
+    expect(background).toContainElement(screen.getByText('v26.4'))
+
+    const focusStates: boolean[] = []
+    trigger.addEventListener('focus', () => focusStates.push(background!.hasAttribute('inert')))
+    await user.click(trigger)
+
+    const dialog = screen.getByRole('dialog', { name: dialogName })
+    expect(background).toHaveAttribute('inert')
+    expect(background).toHaveAttribute('aria-hidden', 'true')
+    expect(dialog.closest('[inert]')).toBeNull()
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true))
+
+    await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
+
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(background).not.toHaveAttribute('inert')
+    expect(background).not.toHaveAttribute('aria-hidden')
+    expect(focusStates.at(-1)).toBe(false)
+  })
+
+  it('удерживает Tab в диалоге и закрывает его по Escape', async () => {
+    const user = userEvent.setup()
+    render(<App services={createServices()} />)
+
+    const shareButton = await screen.findByRole('button', { name: 'Поделиться' })
+    await user.click(shareButton)
+    const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
+    const copyButton = within(dialog).getByRole('button', { name: 'Скопировать ссылку' })
+    const closeButton = within(dialog).getByRole('button', { name: 'Закрыть' })
+
+    await waitFor(() => expect(copyButton).toHaveFocus())
+    await user.tab({ shift: true })
+    await waitFor(() => expect(closeButton).toHaveFocus())
+    await user.tab()
+    await waitFor(() => expect(copyButton).toHaveFocus())
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
+    await waitFor(() => expect(shareButton).toHaveFocus())
+    expect(shareButton.closest('.app-background')).not.toHaveAttribute('inert')
   })
 
   it('открывает QR-код для приложения и возвращает фокус после закрытия', async () => {
