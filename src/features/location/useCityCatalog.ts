@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 
 import type { CityCatalog, CityCatalogService } from '../../data/cityCatalog'
 
-export type CityCatalogStatus = 'idle' | 'loading' | 'ready' | 'error'
+export type CityCatalogStatus = 'idle' | 'loading' | 'ready' | 'offline' | 'error'
 
 interface CityCatalogServices {
   cities: CityCatalogService
@@ -17,9 +17,13 @@ export function useCityCatalog(services: CityCatalogServices) {
     if (cityCatalog || cityCatalogLoad.current) return
 
     setCityCatalogStatus('loading')
-    const load = services.cities.load().then((catalog) => {
-      setCityCatalog(catalog)
-      setCityCatalogStatus('ready')
+    const load = services.cities.load().then((result) => {
+      if (result.ok) {
+        setCityCatalog(result.value)
+        setCityCatalogStatus('ready')
+        return
+      }
+      setCityCatalogStatus(result.error.reason === 'offline' ? 'offline' : 'error')
     }).catch(() => {
       setCityCatalogStatus('error')
     }).finally(() => {

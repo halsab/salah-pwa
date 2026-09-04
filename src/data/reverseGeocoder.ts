@@ -1,7 +1,10 @@
+import type { DataFailure } from '../domain/errors'
+import { failure, success, type Result } from '../domain/result'
 import type { SavedCoordinates } from '../domain/types'
 
 const DEFAULT_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse'
-const REQUEST_TIMEOUT_MS = 8_000
+const DEFAULT_REQUEST_TIMEOUT_MS = 8_000
+const ISO_REGION_FIELD = 'ISO3166-2-lvl4'
 
 interface NominatimAddress {
   city?: string
@@ -12,33 +15,94 @@ interface NominatimAddress {
   county?: string
   state?: string
   country?: string
+  [ISO_REGION_FIELD]?: string
 }
 
-interface NominatimResponse {
-  address?: NominatimAddress
+export interface NominatimRegionEvidence {
+  source: 'nominatim'
+  regionCode?: string
 }
 
-function buildPlaceName(address: NominatimAddress): string | null {
+export interface ResolvedPlace {
+  name?: string
+  regionEvidence: NominatimRegionEvidence
+}
+
+export interface ReverseGeocoderOptions {
+  endpoint?: string
+  fetcher?: typeof fetch
+  timeoutMs?: number
+}
+
+const ADDRESS_NAME_FIELDS = [
+  'city',
+  'town',
+  'village',
+  'municipality',
+  'hamlet',
+  'county',
+  'state',
+  'country',
+] as const
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function parseAddress(value: unknown): NominatimAddress | null {
+  if (!isRecord(value)) return null
+
+  for (const field of ADDRESS_NAME_FIELDS) {
+    if (value[field] !== undefined && typeof value[field] !== 'string') {
+      return null
+    }
+  }
+  const regionCode = value[ISO_REGION_FIELD]
+  if (
+    regionCode !== undefined
+    && (typeof regionCode !== 'string' || regionCode.length === 0)
+  ) {
+    return null
+  }
+
+  return value as NominatimAddress
+}
+
+function buildPlaceName(address: NominatimAddress): string | undefined {
   const locality =
-    address.city ??
-    address.town ??
-    address.village ??
-    address.municipality ??
-    address.hamlet ??
-    address.county ??
-    address.state
+    address.city
+    ?? address.town
+    ?? address.village
+    ?? address.municipality
+    ?? address.hamlet
+    ?? address.county
+    ?? address.state
 
-  if (!locality) return null
+  if (!locality) return undefined
   return address.country && address.country !== locality
     ? `${locality}, ${address.country}`
     : locality
 }
 
+function dataFailure(reason: DataFailure['reason']): DataFailure {
+  return { kind: 'data', reason }
+}
+
+function isOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
 export async function resolvePlaceName(
   coordinates: SavedCoordinates,
-  fetcher: typeof fetch = fetch,
-): Promise<string> {
-  const endpoint = import.meta.env.VITE_REVERSE_GEOCODER_URL ?? DEFAULT_ENDPOINT
+  options: ReverseGeocoderOptions = {},
+): Promise<Result<ResolvedPlace, DataFailure>> {
+  if (isOffline()) return failure(dataFailure('offline'))
+
+  const endpoint = options.endpoint
+    ?? import.meta.env.VITE_REVERSE_GEOCODER_URL
+    ?? DEFAULT_ENDPOINT
+  const fetcher = options.fetcher ?? fetch
+  const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
   const url = new URL(endpoint)
   url.searchParams.set('format', 'jsonv2')
   url.searchParams.set('lat', coordinates.latitude.toFixed(3))
@@ -48,22 +112,46 @@ export async function resolvePlaceName(
   url.searchParams.set('accept-language', 'ru')
 
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    const response = await fetcher(url, {
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    })
-    if (!response.ok) {
-      throw new Error(`Сервис названий недоступен: ${response.status}`)
+    let response: Response
+    try {
+      response = await fetcher(url, {
+        // User-Agent управляется браузером; подменять его запрещённым заголовком нельзя.
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      })
+    } catch {
+      return failure(dataFailure(isOffline() ? 'offline' : 'unavailable'))
     }
 
-    const value = (await response.json()) as NominatimResponse
-    const placeName = value.address ? buildPlaceName(value.address) : null
-    if (!placeName) throw new Error('Название населённого пункта не найдено')
-    return placeName
+    if (!response.ok) return failure(dataFailure('unavailable'))
+
+    let value: unknown
+    try {
+      value = await response.json()
+    } catch {
+      return failure(dataFailure('invalid'))
+    }
+    if (!isRecord(value) || !('address' in value)) {
+      return failure(dataFailure('invalid'))
+    }
+
+    const address = parseAddress(value.address)
+    if (!address) return failure(dataFailure('invalid'))
+
+    const name = buildPlaceName(address)
+    const regionCode = address[ISO_REGION_FIELD]
+    const regionEvidence: NominatimRegionEvidence = regionCode
+      ? { source: 'nominatim', regionCode }
+      : { source: 'nominatim' }
+
+    return success({
+      ...(name ? { name } : {}),
+      regionEvidence,
+    })
   } finally {
-    window.clearTimeout(timeout)
+    globalThis.clearTimeout(timeout)
   }
 }

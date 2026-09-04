@@ -1,16 +1,27 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getDeviceTimeZone } from '../domain/locationTime'
+import type { Result } from '../domain/result'
 import type { PrayerDataset, SavedCoordinates } from '../domain/types'
 import {
   deleteSalahDatabase,
-  setSetting,
+  getLocationChoice,
+  replaceDataset,
+  saveLocationChoice,
   type DatasetMeta,
+  type LocationChoice,
 } from '../storage/database'
 import {
   initializePrayerRepository,
+  prayerRepository,
   shouldReplaceDataset,
 } from './prayerRepository'
+
+function unwrap<Value>(result: Result<Value, unknown>): Value {
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error('Ожидался успешный результат')
+  return result.value
+}
 
 const dataset = {
   schemaVersion: 2,
@@ -64,8 +75,26 @@ describe('shouldReplaceDataset', () => {
 
     expect(shouldReplaceDataset(currentMeta, dataset)).toBe(false)
   })
+})
 
-  it('явно дополняет старые сохранённые координаты таймзоной устройства', async () => {
+describe('initializePrayerRepository', () => {
+  it('возвращает default-выбор при отсутствии сохранённого выбора', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: true, json: async () => dataset }),
+    )
+
+    const state = unwrap(await initializePrayerRepository())
+
+    expect(state.locationChoice).toEqual({
+      mode: 'official',
+      locationId: 'kazan',
+      source: 'default',
+    })
+    expect(state.warning).toBeNull()
+  })
+
+  it('сохраняет миграцию старых координат без таймзоны', async () => {
     const legacyCoordinates = {
       latitude: 55.7558,
       longitude: 37.6173,
@@ -74,49 +103,136 @@ describe('shouldReplaceDataset', () => {
       name: 'Москва, Россия',
       source: 'gps',
     }
-    await setSetting(
-      'calculatedLocation',
-      legacyCoordinates as unknown as SavedCoordinates,
-    )
-    await setSetting('locationMode', 'calculated')
+    unwrap(await saveLocationChoice({
+      mode: 'calculated',
+      coordinates: legacyCoordinates,
+      source: 'automatic',
+    } as unknown as LocationChoice))
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => dataset }),
     )
 
-    const repository = await initializePrayerRepository()
+    const state = unwrap(await initializePrayerRepository())
 
-    expect(repository.locationMode).toBe('calculated')
-    expect(repository.calculatedLocation).toEqual({
-      ...legacyCoordinates,
-      timeZone: getDeviceTimeZone(),
+    expect(state.locationChoice).toEqual({
+      mode: 'calculated',
+      coordinates: {
+        ...legacyCoordinates,
+        timeZone: getDeviceTimeZone(),
+      },
+      source: 'automatic',
     })
   })
 
-  it.each([
-    ['массив', ['Europe/Moscow']],
-    ['объект String', Object('Europe/Moscow')],
-  ])('отклоняет сохранённую таймзону в виде %s', async (_kind, timeZone) => {
-    await setSetting(
-      'calculatedLocation',
-      {
+  it('заменяет повреждённый calculated-выбор безопасным default', async () => {
+    unwrap(await saveLocationChoice({
+      mode: 'calculated',
+      coordinates: {
         latitude: 55.7558,
         longitude: 37.6173,
         accuracy: 18,
         timestamp: 1_788_265_600_000,
         source: 'gps',
-        timeZone,
+        timeZone: ['Europe/Moscow'],
       } as unknown as SavedCoordinates,
-    )
-    await setSetting('locationMode', 'calculated')
+      source: 'automatic',
+    }))
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => dataset }),
     )
 
-    const repository = await initializePrayerRepository()
+    const state = unwrap(await initializePrayerRepository())
 
-    expect(repository.locationMode).toBe('official')
-    expect(repository.calculatedLocation).toBeNull()
+    expect(state.locationChoice).toEqual({
+      mode: 'official',
+      locationId: 'kazan',
+      source: 'default',
+    })
+  })
+
+  it('возвращает data failure, когда нет кеша и загрузка недоступна', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+
+    expect(await initializePrayerRepository()).toEqual({
+      ok: false,
+      error: { kind: 'data', reason: 'unavailable' },
+    })
+  })
+
+  it('использует кеш с типизированным update warning при ошибке обновления', async () => {
+    unwrap(await replaceDataset(dataset))
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+
+    const state = unwrap(await initializePrayerRepository())
+
+    expect(state.meta).toEqual({
+      schemaVersion: dataset.schemaVersion,
+      source: dataset.source,
+      locations: dataset.locations,
+    })
+    expect(state.warning).toEqual({ kind: 'update', reason: 'failed' })
+  })
+
+  it('возвращает storage failure при недоступном IndexedDB', async () => {
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        throw new Error('IndexedDB disabled')
+      },
+    })
+
+    expect(await initializePrayerRepository()).toEqual({
+      ok: false,
+      error: { kind: 'storage', reason: 'unavailable' },
+    })
+  })
+})
+
+describe('prayerRepository location writes', () => {
+  it('атомарно сохраняет режим, официальный id и источник выбора', async () => {
+    expect(
+      await prayerRepository.saveOfficialLocation('kazan', 'manual'),
+    ).toEqual({ ok: true, value: undefined })
+    expect(unwrap(await getLocationChoice())).toEqual({
+      mode: 'official',
+      locationId: 'kazan',
+      source: 'manual',
+    })
+  })
+
+  it('атомарно сохраняет режим, координаты и источник выбора', async () => {
+    const coordinates: SavedCoordinates = {
+      latitude: 55.7558,
+      longitude: 37.6173,
+      accuracy: 18,
+      timestamp: 1_788_265_600_000,
+      source: 'gps',
+      timeZone: 'Europe/Moscow',
+    }
+
+    expect(
+      await prayerRepository.saveCalculatedLocation(coordinates, 'automatic'),
+    ).toEqual({ ok: true, value: undefined })
+    expect(unwrap(await getLocationChoice())).toEqual({
+      mode: 'calculated',
+      coordinates,
+      source: 'automatic',
+    })
+  })
+
+  it('возвращает storage failure вместо исключения при ошибке записи', async () => {
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        throw new Error('IndexedDB disabled')
+      },
+    })
+
+    expect(
+      await prayerRepository.saveOfficialLocation('kazan', 'manual'),
+    ).toEqual({
+      ok: false,
+      error: { kind: 'storage', reason: 'unavailable' },
+    })
   })
 })

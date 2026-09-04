@@ -1,3 +1,5 @@
+import type { DataFailure } from '../domain/errors'
+import { failure, success, type Result } from '../domain/result'
 import {
   type CityCatalog,
   type CityCatalogService,
@@ -7,18 +9,22 @@ import {
 } from './cityCatalog'
 
 interface PendingRequest {
-  resolve: (value: CityWorkerResponse & { ok: true }) => void
-  reject: (error: Error) => void
+  resolve: (value: Result<unknown, DataFailure>) => void
 }
 
 let worker: Worker | null = null
 let nextRequestId = 0
-let catalogPromise: Promise<CityCatalog> | null = null
+let catalogPromise: Promise<Result<CityCatalog, DataFailure>> | null = null
 const pendingRequests = new Map<number, PendingRequest>()
 
-function failWorker(message: string): void {
-  const error = new Error(message)
-  for (const request of pendingRequests.values()) request.reject(error)
+function unavailableFailure(): DataFailure {
+  return { kind: 'data', reason: 'unavailable' }
+}
+
+function failWorker(): void {
+  for (const request of pendingRequests.values()) {
+    request.resolve(failure(unavailableFailure()))
+  }
   pendingRequests.clear()
   worker?.terminate()
   worker = null
@@ -38,47 +44,55 @@ function getWorker(): Worker {
 
     pendingRequests.delete(response.id)
     if (response.ok) {
-      pending.resolve(response)
+      pending.resolve(success(response.result))
     } else {
-      pending.reject(new Error(response.error))
+      pending.resolve(failure(response.error))
     }
   })
-  worker.addEventListener('error', (event) => {
-    failWorker(event.message || 'Не удалось открыть справочник городов')
+  worker.addEventListener('error', () => {
+    failWorker()
   })
   worker.addEventListener('messageerror', () => {
-    failWorker('Не удалось обработать справочник городов')
+    failWorker()
   })
   return worker
 }
 
-function request<T>(command: CityWorkerCommand): Promise<T> {
+function request<T>(command: CityWorkerCommand): Promise<Result<T, DataFailure>> {
   const id = nextRequestId
   nextRequestId += 1
 
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<Result<T, DataFailure>>((resolve) => {
     pendingRequests.set(id, {
-      resolve: (response) => resolve(response.result as T),
-      reject,
+      resolve: (result) => resolve(result as Result<T, DataFailure>),
     })
-    getWorker().postMessage({ ...command, id } satisfies CityWorkerRequest)
+    try {
+      getWorker().postMessage({ ...command, id } satisfies CityWorkerRequest)
+    } catch {
+      failWorker()
+    }
   })
 }
 
 export const cityCatalogService: CityCatalogService = {
   load: () => {
-    catalogPromise ??= request<CityCatalog>({ type: 'load' }).catch((error: unknown) => {
-      catalogPromise = null
-      throw error
+    if (catalogPromise) return catalogPromise
+
+    const loading = request<CityCatalog>({ type: 'load' }).then((result) => {
+      if (!result.ok && catalogPromise === loading) catalogPromise = null
+      return result
     })
+    catalogPromise = loading
     return catalogPromise
   },
   search: async (query) => {
-    await cityCatalogService.load()
+    const catalogResult = await cityCatalogService.load()
+    if (!catalogResult.ok) return failure(catalogResult.error)
     return request({ type: 'search', query })
   },
   findNearest: async (latitude, longitude, maxDistanceKm) => {
-    await cityCatalogService.load()
+    const catalogResult = await cityCatalogService.load()
+    if (!catalogResult.ok) return failure(catalogResult.error)
     return request({
       type: 'findNearest',
       latitude,

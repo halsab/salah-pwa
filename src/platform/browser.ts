@@ -1,3 +1,6 @@
+import type { GeolocationFailure } from '../domain/errors'
+import { failure, success, type Result } from '../domain/result'
+
 export type GeolocationPermission = PermissionState | 'unsupported'
 
 export interface Coordinates {
@@ -21,26 +24,39 @@ export async function getGeolocationPermission(): Promise<GeolocationPermission>
 
 export function getCurrentPosition(
   accuracy: PositionAccuracy = 'coarse',
-): Promise<Coordinates> {
+): Promise<Result<Coordinates, GeolocationFailure>> {
   if (!navigator.geolocation) {
-    return Promise.reject(new Error('Геолокация не поддерживается этим браузером'))
+    return Promise.resolve(failure({
+      kind: 'geolocation',
+      reason: 'unsupported',
+    }))
   }
 
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      ({ coords, timestamp }) =>
-        resolve({
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          accuracy: Number.isFinite(coords.accuracy) ? coords.accuracy : null,
-          timestamp,
-        }),
-      () => reject(new Error('Не удалось получить местоположение')),
-      accuracy === 'precise'
-        ? { enableHighAccuracy: true, timeout: 30_000, maximumAge: 0 }
-        : { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 },
-    )
+  return new Promise((resolve) => {
+    try {
+      navigator.geolocation.getCurrentPosition(
+        ({ coords, timestamp }) =>
+          resolve(success({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy: Number.isFinite(coords.accuracy) ? coords.accuracy : null,
+            timestamp,
+          })),
+        (error) => resolve(failure(mapPositionError(error))),
+        accuracy === 'precise'
+          ? { enableHighAccuracy: true, timeout: 30_000, maximumAge: 0 }
+          : { enableHighAccuracy: false, timeout: 10_000, maximumAge: 600_000 },
+      )
+    } catch {
+      resolve(failure({ kind: 'geolocation', reason: 'unavailable' }))
+    }
   })
+}
+
+function mapPositionError(error: GeolocationPositionError): GeolocationFailure {
+  if (error.code === 1) return { kind: 'geolocation', reason: 'denied' }
+  if (error.code === 3) return { kind: 'geolocation', reason: 'timeout' }
+  return { kind: 'geolocation', reason: 'unavailable' }
 }
 
 export function pulseHaptic(): void {

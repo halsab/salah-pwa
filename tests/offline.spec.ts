@@ -61,11 +61,20 @@ test('GPS-расписание вне Татарстана рассчитыва�
   context,
   page,
 }) => {
+  let cityCatalogRequests = 0
+  await page.route('**/data/cities-current.json', (route) => {
+    cityCatalogRequests += 1
+    return route.abort()
+  })
+  await page.route('https://nominatim.openstreetmap.org/**', (route) => route.abort())
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
   await page.goto('./')
 
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Определить автоматически' }).click()
   await expect(page.getByRole('button', { name: /Текущее местоположение/i })).toBeVisible()
+  expect(cityCatalogRequests).toBe(0)
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
   await expect(
     page
@@ -88,6 +97,7 @@ test('GPS-расписание вне Татарстана рассчитыва�
         .getByText('Фаджр', { exact: true }),
     ).toBeVisible()
     await expect(page.getByText(/Расчёт по настройкам · ДУМ РТ/)).toBeVisible()
+    expect(cityCatalogRequests).toBe(0)
   } finally {
     await context.setOffline(false)
   }
@@ -101,9 +111,9 @@ test('город из офлайн-справочника сохраняется
   await page.getByRole('button', { name: /Казань/ }).click()
   await page.getByRole('button', { name: 'Найти город или район' }).click()
   await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Istanbul, Турция' }).click()
+  await page.getByRole('button', { name: 'Стамбул, Турция' }).click()
 
-  await expect(page.getByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
@@ -112,12 +122,12 @@ test('город из офлайн-справочника сохраняется
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
-    await page.getByRole('button', { name: /Istanbul, Турция/ }).click()
+    await page.getByRole('button', { name: /Стамбул, Турция/ }).click()
     await page.getByRole('button', { name: 'Найти город или район' }).click()
     await page.getByRole('searchbox').fill('Москва')
-    await expect(page.getByRole('button', { name: 'Moscow, Россия' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Москва, Россия' })).toBeVisible()
   } finally {
     await context.setOffline(false)
   }

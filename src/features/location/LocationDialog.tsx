@@ -1,7 +1,6 @@
 import {
   memo,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -15,6 +14,8 @@ import {
   groupCitiesByCountry,
   type City,
 } from '../../domain/cities'
+import type { DataFailure } from '../../domain/errors'
+import type { Result } from '../../domain/result'
 import type { PrayerLocation, SavedCoordinates } from '../../domain/types'
 import {
   CheckIcon,
@@ -39,7 +40,7 @@ interface LocationDialogProps {
   onLocate: () => Promise<void>
   onReverse: () => Promise<void>
   onLoadCities: () => void
-  onSearchCities: (query: string) => Promise<City[]>
+  onSearchCities: (query: string) => Promise<Result<City[], DataFailure>>
 }
 
 interface LocationResultsProps {
@@ -98,7 +99,7 @@ function CollapsibleCityGroup({
     >
       <summary>
         <span>{group.name}</span>
-        <small>Городов: {group.cities.length}</small>
+        <small>Крупные города · {group.cities.length} из {group.totalCount}</small>
       </summary>
       {expanded ? (
         <ul className="location-list">
@@ -123,7 +124,18 @@ function CityCatalogState({
   status: CityCatalogStatus
   onRetry: () => void
 }) {
-  if (status === 'ready') return null
+  if (status === 'idle' || status === 'ready') return null
+
+  if (status === 'offline') {
+    return (
+      <div className="city-catalog-state" role="status">
+        <p>Нет сети, а каталог городов ещё не сохранён</p>
+        <button className="city-catalog-retry" type="button" onClick={onRetry}>
+          Повторить
+        </button>
+      </div>
+    )
+  }
 
   if (status === 'error') {
     return (
@@ -313,7 +325,6 @@ export const LocationDialog = memo(function LocationDialog({
   }, [onClose])
   const dialogRef = useModalDialog(open, closeDialog, searchRef)
   const layerRef = useDialogViewport(open)
-  const deferredSearch = useDeferredValue(search)
 
   useEffect(() => {
     if (!open) return
@@ -326,7 +337,7 @@ export const LocationDialog = memo(function LocationDialog({
   }, [open])
 
   useEffect(() => {
-    const query = deferredSearch.trim()
+    const query = search.trim()
     if (!open || !searchMode || !query || cityCatalogStatus !== 'ready') {
       setCityMatches([])
       setCitySearchPending(false)
@@ -338,16 +349,26 @@ export const LocationDialog = memo(function LocationDialog({
     setCityMatches([])
     setCitySearchPending(true)
     setCitySearchFailed(false)
-    void onSearchCities(query).then((matches) => {
-      if (active) setCityMatches(matches)
-    }).catch(() => {
-      if (active) setCitySearchFailed(true)
-    }).finally(() => {
-      if (active) setCitySearchPending(false)
-    })
+    const timeout = globalThis.setTimeout(() => {
+      void onSearchCities(query).then((result) => {
+        if (!active) return
+        if (result.ok) {
+          setCityMatches(result.value)
+        } else {
+          setCitySearchFailed(true)
+        }
+      }).catch(() => {
+        if (active) setCitySearchFailed(true)
+      }).finally(() => {
+        if (active) setCitySearchPending(false)
+      })
+    }, 200)
 
-    return () => { active = false }
-  }, [cityCatalogStatus, deferredSearch, onSearchCities, open, searchMode])
+    return () => {
+      active = false
+      globalThis.clearTimeout(timeout)
+    }
+  }, [cityCatalogStatus, onSearchCities, open, search, searchMode])
 
   if (!open) return null
 
@@ -371,6 +392,7 @@ export const LocationDialog = memo(function LocationDialog({
   const openSearch = () => {
     flushSync(() => setSearchMode(true))
     searchRef.current?.focus({ preventScroll: true })
+    onLoadCities()
   }
 
   return (
@@ -474,7 +496,7 @@ export const LocationDialog = memo(function LocationDialog({
           citySearchFailed={citySearchFailed}
           selectedOfficialId={selectedOfficialId}
           selectedCityId={selectedCityId}
-          query={searchMode ? deferredSearch : ''}
+          query={searchMode ? search : ''}
           onSelectOfficial={onSelectOfficial}
           onSelectCity={onSelectCity}
           onLoadCities={onLoadCities}

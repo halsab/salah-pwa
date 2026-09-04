@@ -4,13 +4,15 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { App, type AppServices } from './App'
 import type { CityCatalog } from './data/cityCatalog'
+import type { PrayerRepositoryState } from './data/prayerRepository'
 import {
-  findNearestCity,
   getCountryGroups,
   searchCities,
+  type City,
   type CityDataset,
 } from './domain/cities'
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
+import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
 
 const kazanToday: PrayerDay = {
@@ -48,27 +50,46 @@ const cityDataset: CityDataset = {
     updatedAt: '2026-08-31',
   },
   cities: [
-    {
-      id: 745044,
-      name: 'Istanbul',
-      searchNames: 'Стамбул Истанбул',
-      countryCode: 'TR',
-      latitude: 41.0138,
-      longitude: 28.9497,
-      population: 15_701_602,
-      timeZone: 'Europe/Istanbul',
-    },
-    {
-      id: 524901,
-      name: 'Moscow',
-      searchNames: 'Москва Москву',
-      countryCode: 'RU',
-      latitude: 55.7522,
-      longitude: 37.6156,
-      population: 10_381_222,
-      timeZone: 'Europe/Moscow',
-    },
+    [745044, 'Стамбул', 'стамбул истанбул istanbul турция', 'TR', '34', 41.0138, 28.9497, 15_701_602, 'Europe/Istanbul'],
+    [524901, 'Москва', 'москва москву moscow россия', 'RU', '48', 55.7522, 37.6156, 10_381_222, 'Europe/Moscow'],
+    [551487, 'Казань', 'казань kazan россия татарстан', 'RU', '73', 55.7946, 49.1115, 1_308_660, 'Europe/Moscow'],
   ],
+}
+
+const initializedState: PrayerRepositoryState = {
+  meta: {
+    schemaVersion: 2,
+    source: {
+      name: 'ДУМ Республики Татарстан',
+      url: 'https://dumrt.ru/ru/help-info/prayertime/',
+      updatedAt: '2025-12-27T10:49:04.000Z',
+      years: [2026],
+    },
+    locations: [
+      { id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 },
+      {
+        id: 'naberezhnye-chelny',
+        name: 'Набережные Челны',
+        latitude: 55.742,
+        longitude: 52.3992,
+      },
+    ],
+  },
+  locationChoice: { mode: 'official', locationId: 'kazan', source: 'default' },
+  calculationSettings: DEFAULT_CALCULATION_SETTINGS,
+  warning: null,
+}
+
+function initialized(overrides: Partial<PrayerRepositoryState> = {}) {
+  return success({ ...initializedState, ...overrides })
+}
+
+function deferred<Value>() {
+  let resolve!: (value: Value) => void
+  const promise = new Promise<Value>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
 }
 
 function createServices(
@@ -77,64 +98,38 @@ function createServices(
   const days = [kazanToday, kazanTomorrow, chelnyToday]
 
   return {
-    initialize: vi.fn().mockResolvedValue({
-      meta: {
-        schemaVersion: 2,
-        source: {
-          name: 'ДУМ Республики Татарстан',
-          url: 'https://dumrt.ru/ru/help-info/prayertime/',
-          updatedAt: '2025-12-27T10:49:04.000Z',
-          years: [2026],
-        },
-        locations: [
-          { id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 },
-          {
-            id: 'naberezhnye-chelny',
-            name: 'Набережные Челны',
-            latitude: 55.742,
-            longitude: 52.3992,
-          },
-        ],
-      },
-      locationId: 'kazan',
-      locationMode: 'official',
-      calculatedLocation: null,
-      calculationSettings: DEFAULT_CALCULATION_SETTINGS,
-    }),
+    initialize: vi.fn().mockResolvedValue(initialized()),
     cities: {
-      load: vi.fn().mockResolvedValue({
+      load: vi.fn().mockResolvedValue(success({
         source: cityDataset.source,
         countryGroups: getCountryGroups(cityDataset),
-      }),
+      })),
       search: vi.fn().mockImplementation((query: string) =>
-        Promise.resolve(searchCities(cityDataset, query)),
+        Promise.resolve(success(searchCities(cityDataset, query))),
       ),
-      findNearest: vi.fn().mockImplementation((
-        latitude: number,
-        longitude: number,
-        maxDistanceKm: number,
-      ) => Promise.resolve(
-        findNearestCity(latitude, longitude, cityDataset.cities, maxDistanceKm),
-      )),
+      findNearest: vi.fn().mockResolvedValue(success(null)),
     },
     getDay: vi
       .fn()
       .mockImplementation((locationId: string, date: string) =>
-        Promise.resolve(
+        Promise.resolve(success(
           days.find((day) => day.locationId === locationId && day.date === date),
-        ),
+        )),
       ),
-    saveOfficialLocation: vi.fn().mockResolvedValue(undefined),
-    saveCalculatedLocation: vi.fn().mockResolvedValue(undefined),
-    saveCalculationSettings: vi.fn().mockResolvedValue(undefined),
-    resolvePlaceName: vi.fn().mockResolvedValue('Москва, Россия'),
+    saveOfficialLocation: vi.fn().mockResolvedValue(success(undefined)),
+    saveCalculatedLocation: vi.fn().mockResolvedValue(success(undefined)),
+    saveCalculationSettings: vi.fn().mockResolvedValue(success(undefined)),
+    resolvePlaceName: vi.fn().mockResolvedValue(success({
+      name: 'Набережные Челны, Россия',
+      regionEvidence: { source: 'nominatim', regionCode: 'RU-TA' },
+    })),
     getPermission: vi.fn().mockResolvedValue('prompt'),
-    getPosition: vi.fn().mockResolvedValue({
+    getPosition: vi.fn().mockResolvedValue(success({
       latitude: 55.742,
       longitude: 52.3992,
       accuracy: 500,
       timestamp: 1_788_265_600_000,
-    }),
+    })),
     getDeviceTimeZone: () => 'Europe/Moscow',
     getCalculationProfileCapability: () => ({ supported: true }),
     now: () => new Date('2026-09-01T10:00:00.000Z'),
@@ -154,12 +149,12 @@ describe('Salah', () => {
   })
 
   it('показывает только текущий UTC-сдвиг для города в другом часовом поясе', async () => {
-    const baseServices = createServices()
     const services = createServices({
-      initialize: vi.fn().mockResolvedValue({
-        ...(await baseServices.initialize()),
-        locationMode: 'calculated',
-        calculatedLocation: {
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'calculated',
+          source: 'manual',
+          coordinates: {
           latitude: 41.0138,
           longitude: 28.9497,
           timeZone: 'Europe/Istanbul',
@@ -169,8 +164,9 @@ describe('Salah', () => {
           cityId: 745044,
           nameSource: 'geonames',
           source: 'preset',
+          },
         },
-      }),
+      })),
       getDeviceTimeZone: () => 'America/Los_Angeles',
     })
 
@@ -186,12 +182,12 @@ describe('Salah', () => {
   })
 
   it('скрывает UTC-сдвиг для канонически одинаковых часовых поясов', async () => {
-    const baseServices = createServices()
     const services = createServices({
-      initialize: vi.fn().mockResolvedValue({
-        ...(await baseServices.initialize()),
-        locationMode: 'calculated',
-        calculatedLocation: {
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'calculated',
+          source: 'manual',
+          coordinates: {
           latitude: 34.0522,
           longitude: -118.2437,
           timeZone: 'America/Los_Angeles',
@@ -199,8 +195,9 @@ describe('Salah', () => {
           timestamp: 1_788_256_800_000,
           name: 'Los Angeles, США',
           source: 'preset',
+          },
         },
-      }),
+      })),
       getDeviceTimeZone: () => 'US/Pacific',
     })
 
@@ -328,6 +325,144 @@ describe('Salah', () => {
     expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-01')
   })
 
+  it.each(['manual', 'default'] as const)(
+    'не запрашивает позицию для сохранённого выбора с источником %s',
+    async (source) => {
+      const services = createServices({
+        initialize: vi.fn().mockResolvedValue(initialized({
+          locationChoice: {
+            mode: 'official',
+            locationId: 'naberezhnye-chelny',
+            source,
+          },
+        })),
+        getPermission: vi.fn().mockResolvedValue('granted'),
+      })
+
+      render(<App services={services} />)
+
+      expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+      await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(1))
+      expect(services.getPermission).not.toHaveBeenCalled()
+      expect(services.getPosition).not.toHaveBeenCalled()
+    },
+  )
+
+  it('обновляет на старте только ранее автоматический выбор', async () => {
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'official',
+          locationId: 'kazan',
+          source: 'automatic',
+        },
+      })),
+      getPermission: vi.fn().mockResolvedValue('granted'),
+    })
+
+    render(<App services={services} />)
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(services.getPermission).toHaveBeenCalledTimes(1)
+    expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
+    expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith(
+      'naberezhnye-chelny',
+      'automatic',
+    )
+    expect(services.cities.load).not.toHaveBeenCalled()
+    expect(services.cities.search).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).not.toHaveBeenCalled()
+  })
+
+  it('игнорирует позднее разрешение startup permission после ручного выбора', async () => {
+    const permission = deferred<PermissionState>()
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'official',
+          locationId: 'kazan',
+          source: 'automatic',
+        },
+      })),
+      getPermission: vi.fn().mockReturnValue(permission.promise),
+    })
+    const user = userEvent.setup()
+    render(<App services={services} />)
+
+    await waitFor(() => expect(services.getPermission).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+    await act(async () => permission.resolve('granted'))
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(services.getPosition).not.toHaveBeenCalled()
+    expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
+  })
+
+  it('игнорирует поздние координаты после ручного выбора', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const services = createServices({
+      getPosition: vi.fn()
+        .mockReturnValueOnce(coarse.promise)
+        .mockResolvedValue(success({
+          latitude: 55.7946,
+          longitude: 49.1115,
+          accuracy: 10,
+          timestamp: 200,
+        })),
+    })
+    const user = userEvent.setup()
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
+    await waitFor(() => expect(services.getPosition).toHaveBeenCalledWith('coarse'))
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+    await act(async () => coarse.resolve(success({
+      latitude: 55.7946,
+      longitude: 49.1115,
+      accuracy: 500,
+      timestamp: 100,
+    })))
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(services.getPosition).toHaveBeenCalledTimes(1)
+    expect(services.resolvePlaceName).not.toHaveBeenCalled()
+    expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
+  })
+
+  it('игнорирует позднее подтверждение региона после ручного выбора', async () => {
+    const reverse = deferred<Awaited<ReturnType<AppServices['resolvePlaceName']>>>()
+    const position = success({
+      latitude: 55.7946,
+      longitude: 49.1115,
+      accuracy: 10,
+      timestamp: 200,
+    })
+    const services = createServices({
+      getPosition: vi.fn().mockResolvedValue(position),
+      resolvePlaceName: vi.fn().mockReturnValue(reverse.promise),
+    })
+    const user = userEvent.setup()
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
+    await waitFor(() => expect(services.resolvePlaceName).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+    await act(async () => reverse.resolve(success({
+      name: 'Казань, Россия',
+      regionEvidence: { source: 'nominatim', regionCode: 'RU-TA' },
+    })))
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
+  })
+
   it('меняет населённый пункт через доступный диалог', async () => {
     const user = userEvent.setup()
     const services = createServices()
@@ -342,7 +477,7 @@ describe('Salah', () => {
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(screen.getByText('16:37')).toBeVisible()
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny')
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
   })
 
   it('переключает шит в сфокусированный режим поиска', async () => {
@@ -377,7 +512,7 @@ describe('Salah', () => {
     await waitFor(() => expect(locationButton).toHaveFocus())
   })
 
-  it('загружает города только после открытия выбора местоположения', async () => {
+  it('не загружает города до фактического открытия поиска', async () => {
     const user = userEvent.setup()
     const services = createServices()
     render(<App services={services} />)
@@ -386,13 +521,16 @@ describe('Salah', () => {
     expect(services.cities.load).not.toHaveBeenCalled()
 
     await user.click(locationButton)
+    expect(services.cities.load).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
 
     expect(services.cities.load).toHaveBeenCalledTimes(1)
   })
 
   it('показывает короткий статус во время загрузки городов', async () => {
     const user = userEvent.setup()
-    let resolveCities!: (value: CityCatalog) => void
+    let resolveCities!: (value: ReturnType<typeof success<CityCatalog>>) => void
     const load = vi.fn().mockImplementation(() => new Promise((resolve) => {
       resolveCities = resolve
     }))
@@ -405,14 +543,77 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
 
     expect(screen.getByText('Загружаем города')).toBeVisible()
 
-    resolveCities!({
+    resolveCities!(success({
       source: cityDataset.source,
       countryGroups: getCountryGroups(cityDataset),
-    })
+    }))
     expect(await screen.findByText('Турция', { exact: true })).toBeVisible()
+  })
+
+  it('показывает специальную офлайн-ошибку только после попытки открыть поиск', async () => {
+    const user = userEvent.setup()
+    const services = createServices({
+      cities: {
+        ...createServices().cities,
+        load: vi.fn().mockResolvedValue(failure({ kind: 'data', reason: 'offline' })),
+      },
+    })
+
+    render(<App services={services} />)
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    expect(screen.queryByText('Нет сети, а каталог городов ещё не сохранён')).not.toBeInTheDocument()
+    expect(services.cities.load).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    expect(await screen.findByText('Нет сети, а каталог городов ещё не сохранён')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(services.cities.load).toHaveBeenCalledTimes(2)
+  })
+
+  it('показывает общую ошибку загрузки каталога при доступной сети', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
+    const user = userEvent.setup()
+    const services = createServices({
+      cities: {
+        ...createServices().cities,
+        load: vi.fn().mockResolvedValue(failure({ kind: 'data', reason: 'invalid' })),
+      },
+    })
+
+    try {
+      render(<App services={services} />)
+      await user.click(await screen.findByRole('button', { name: /Казань/ }))
+      await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+
+      expect(await screen.findByText('Города сейчас недоступны')).toBeVisible()
+      expect(screen.queryByText('Нет сети, а каталог городов ещё не сохранён')).not.toBeInTheDocument()
+    } finally {
+      online.mockRestore()
+    }
+  })
+
+  it('использует уже загруженный каталог после перехода офлайн', async () => {
+    const user = userEvent.setup()
+    const services = createServices()
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    await screen.findByText('Турция', { exact: true })
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false)
+
+    try {
+      await user.type(screen.getByRole('searchbox'), 'Стамбул')
+      expect(await screen.findByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
+      expect(screen.queryByText('Нет сети, а каталог городов ещё не сохранён')).not.toBeInTheDocument()
+      expect(services.cities.load).toHaveBeenCalledTimes(1)
+    } finally {
+      online.mockRestore()
+    }
   })
 
   it('не сбрасывает поиск при секундном обновлении таймера', async () => {
@@ -468,8 +669,17 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(services.getPosition).toHaveBeenCalledTimes(1)
-    expect(services.getPosition).toHaveBeenCalledWith('coarse')
+    expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
+    expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
+    expect(services.getPosition).toHaveBeenCalledTimes(2)
+    expect(services.getPermission).not.toHaveBeenCalled()
+    expect(services.cities.load).not.toHaveBeenCalled()
+    expect(services.cities.search).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).not.toHaveBeenCalled()
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith(
+      'naberezhnye-chelny',
+      'automatic',
+    )
   })
 
   it('вне Татарстана уточняет координаты и показывает семь рассчитанных времён', async () => {
@@ -483,15 +693,19 @@ describe('Salah', () => {
     const precise = { ...coarse, latitude: 55.7558, longitude: 37.6173, accuracy: 12, timestamp: 200 }
     const services = createServices({
       getPosition: vi.fn()
-        .mockResolvedValueOnce(coarse)
-        .mockResolvedValueOnce(precise),
+        .mockResolvedValueOnce(success(coarse))
+        .mockResolvedValueOnce(success(precise)),
+      resolvePlaceName: vi.fn().mockResolvedValue(success({
+        name: 'Москва, Россия',
+        regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
+      })),
     })
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
-    expect(await screen.findByRole('button', { name: /Moscow, Россия/i })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Москва, Россия/i })).toBeVisible()
     const schedule = screen.getByRole('list', { name: 'Времена намаза' })
     expect(within(schedule).getAllByRole('listitem')).toHaveLength(7)
     expect(within(schedule).getByText('Фаджр')).toBeVisible()
@@ -504,11 +718,13 @@ describe('Salah', () => {
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       ...precise,
       timeZone: 'Europe/Moscow',
-      name: 'Moscow, Россия',
-      cityId: 524901,
-      nameSource: 'geonames',
+      name: 'Москва, Россия',
+      nameSource: 'nominatim',
       source: 'gps',
-    })
+    }, 'automatic')
+    expect(services.cities.load).not.toHaveBeenCalled()
+    expect(services.cities.search).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).not.toHaveBeenCalled()
   })
 
   it('считает по грубым координатам, если точное определение не удалось', async () => {
@@ -521,8 +737,12 @@ describe('Salah', () => {
     }
     const services = createServices({
       getPosition: vi.fn()
-        .mockResolvedValueOnce(coarse)
-        .mockRejectedValueOnce(new Error('timeout')),
+        .mockResolvedValueOnce(success(coarse))
+        .mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'timeout' })),
+      resolvePlaceName: vi.fn().mockResolvedValue(failure({
+        kind: 'data',
+        reason: 'offline',
+      })),
     })
     render(<App services={services} />)
 
@@ -533,11 +753,8 @@ describe('Salah', () => {
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       ...coarse,
       timeZone: 'Europe/Moscow',
-      name: 'Moscow, Россия',
-      cityId: 524901,
-      nameSource: 'geonames',
       source: 'gps',
-    })
+    }, 'automatic')
   })
 
   it('рассчитывает по GPS без названия города, когда справочник недоступен', async () => {
@@ -549,21 +766,20 @@ describe('Salah', () => {
       timestamp: 100,
     }
     const precise = { ...coarse, latitude: 55.7558, longitude: 37.6173, accuracy: 12, timestamp: 200 }
-    const baseServices = createServices()
     const services = createServices({
-      cities: {
-        ...baseServices.cities,
-        load: vi.fn().mockRejectedValue(new Error('offline')),
-      },
       getPosition: vi.fn()
-        .mockResolvedValueOnce(coarse)
-        .mockResolvedValueOnce(precise),
+        .mockResolvedValueOnce(success(coarse))
+        .mockResolvedValueOnce(success(precise)),
+      resolvePlaceName: vi.fn().mockResolvedValue(failure({
+        kind: 'data',
+        reason: 'offline',
+      })),
       getDeviceTimeZone: () => 'America/Los_Angeles',
     })
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
-    expect(await screen.findByText('Города сейчас недоступны')).toBeVisible()
+    expect(services.cities.load).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
     expect(await screen.findByRole('button', { name: /Текущее местоположение/ })).toBeVisible()
@@ -572,7 +788,10 @@ describe('Salah', () => {
       ...precise,
       timeZone: 'America/Los_Angeles',
       source: 'gps',
-    })
+    }, 'automatic')
+    expect(services.cities.load).not.toHaveBeenCalled()
+    expect(services.cities.search).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).not.toHaveBeenCalled()
   })
 
   it('ищет и выбирает город из офлайн-справочника', async () => {
@@ -583,26 +802,73 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'Стамбул')
-    expect(screen.getByText('Турция', { exact: true })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Istanbul, Турция' }))
+    expect(await screen.findByText('Турция', { exact: true })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Стамбул, Турция' }))
 
-    expect(await screen.findByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       latitude: 41.0138,
       longitude: 28.9497,
       timeZone: 'Europe/Istanbul',
       accuracy: null,
       timestamp: 1_788_256_800_000,
-      name: 'Istanbul, Турция',
+      name: 'Стамбул, Турция',
       cityId: 745044,
       nameSource: 'geonames',
       source: 'preset',
+    }, 'manual')
+  })
+
+  it('назначает официальное расписание только городу GeoNames из RU.73', async () => {
+    const user = userEvent.setup()
+    const services = createServices()
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    await user.type(screen.getByRole('searchbox'), 'Казань')
+    await user.click(await screen.findByRole('button', { name: 'Казань, Россия' }))
+
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'manual')
+    expect(services.saveCalculatedLocation).not.toHaveBeenCalled()
+  })
+
+  it('не откатывает ручной выбор при отклонённом фоновом сохранении', async () => {
+    const user = userEvent.setup()
+    const services = createServices({
+      saveOfficialLocation: vi.fn().mockRejectedValue(new Error('idb unavailable')),
     })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    await user.type(screen.getByRole('searchbox'), 'челны')
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('не откатывает ручной выбор при typed-ошибке фонового сохранения', async () => {
+    const user = userEvent.setup()
+    const services = createServices({
+      saveOfficialLocation: vi.fn().mockResolvedValue(failure({
+        kind: 'storage',
+        reason: 'unavailable',
+      })),
+    })
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('показывает статус поиска и сохраняет группировку по странам', async () => {
     const user = userEvent.setup()
-    let resolveSearch!: (cities: CityDataset['cities']) => void
+    let resolveSearch!: (cities: ReturnType<typeof success<City[]>>) => void
     const search = vi.fn().mockImplementation(() => new Promise((resolve) => {
       resolveSearch = resolve
     }))
@@ -615,16 +881,16 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
-    await screen.findByText('Турция', { exact: true })
     await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'Москва')
 
     expect(await screen.findByText('Ищем города…', { selector: '.city-search-state p' })).toBeVisible()
-    resolveSearch!([cityDataset.cities[1]!])
+    await waitFor(() => expect(search).toHaveBeenCalledWith('Москва'))
+    resolveSearch!(success(searchCities(cityDataset, 'Москва')))
 
     expect(await screen.findByText('Россия', { exact: true })).toBeVisible()
     expect(screen.getByText('Найдено вариантов: 1')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Moscow, Россия' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Москва, Россия' })).toBeVisible()
   })
 
   it('показывает крупнейшие города подпунктами страны', async () => {
@@ -633,9 +899,12 @@ describe('Salah', () => {
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     const dialog = screen.getByRole('dialog', { name: 'Выбор местоположения' })
-    await user.click(within(dialog).getByText('Турция', { exact: true }))
+    await user.click(within(dialog).getByRole('button', { name: 'Найти город или район' }))
+    const searchDialog = screen.getByRole('dialog', { name: 'Поиск населённого пункта' })
+    await user.click(await within(searchDialog).findByText('Турция', { exact: true }))
 
-    expect(within(dialog).getByRole('button', { name: 'Istanbul, Турция' })).toBeVisible()
+    expect(within(searchDialog).getByText('Крупные города · 1 из 1')).toBeVisible()
+    expect(within(searchDialog).getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
   })
 
   it('отправляет округлённую геопозицию во внешний сервис только по кнопке и кеширует название', async () => {
@@ -651,13 +920,18 @@ describe('Salah', () => {
       nameSource: 'geonames' as const,
       source: 'gps' as const,
     }
-    const baseServices = createServices()
     const services = createServices({
-      initialize: vi.fn().mockResolvedValue({
-        ...(await baseServices.initialize()),
-        locationMode: 'calculated',
-        calculatedLocation,
-      }),
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'calculated',
+          source: 'manual',
+          coordinates: calculatedLocation,
+        },
+      })),
+      resolvePlaceName: vi.fn().mockResolvedValue(success({
+        name: 'Москва, Россия',
+        regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
+      })),
     })
     render(<App services={services} />)
 
@@ -672,9 +946,46 @@ describe('Salah', () => {
       ...calculatedLocation,
       name: 'Москва, Россия',
       nameSource: 'nominatim',
-    })
+    }, 'manual')
     expect(screen.getByText('Москва, Россия')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Название уточнено онлайн' })).toBeDisabled()
+  })
+
+  it('игнорирует позднее уточнение названия после нового ручного выбора', async () => {
+    const calculatedLocation = {
+      latitude: 55.7558,
+      longitude: 37.6173,
+      timeZone: 'Europe/Moscow',
+      accuracy: 12,
+      timestamp: 200,
+      source: 'gps' as const,
+    }
+    const reverse = deferred<Awaited<ReturnType<AppServices['resolvePlaceName']>>>()
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'calculated',
+          source: 'manual',
+          coordinates: calculatedLocation,
+        },
+      })),
+      resolvePlaceName: vi.fn().mockReturnValue(reverse.promise),
+    })
+    const user = userEvent.setup()
+    render(<App services={services} />)
+
+    await user.click(await screen.findByRole('button', { name: /Текущее местоположение/ }))
+    await user.click(screen.getByRole('button', { name: 'Уточнить название онлайн' }))
+    await waitFor(() => expect(services.resolvePlaceName).toHaveBeenCalledTimes(1))
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+    await act(async () => reverse.resolve(success({
+      name: 'Москва, Россия',
+      regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
+    })))
+
+    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(services.saveCalculatedLocation).not.toHaveBeenCalled()
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
   })
 
   it('сохраняет Аср, профиль и северное правило независимо', async () => {
@@ -732,12 +1043,12 @@ describe('Salah', () => {
         return { ...resolvedOptions.call(this), calendar: 'gregory' }
       },
     )
-    const baseServices = createServices()
     const services = createServices({
-      initialize: vi.fn().mockResolvedValue({
-        ...(await baseServices.initialize()),
-        locationMode: 'calculated',
-        calculatedLocation: {
+      initialize: vi.fn().mockResolvedValue(initialized({
+        locationChoice: {
+          mode: 'calculated',
+          source: 'manual',
+          coordinates: {
           latitude: 21.4225,
           longitude: 39.8262,
           timeZone: 'Asia/Riyadh',
@@ -745,12 +1056,13 @@ describe('Salah', () => {
           timestamp: 1_788_256_800_000,
           name: 'Мекка, Саудовская Аравия',
           source: 'preset',
+          },
         },
         calculationSettings: {
           ...DEFAULT_CALCULATION_SETTINGS,
           profile: 'ummAlQura',
         },
-      }),
+      })),
       getCalculationProfileCapability: (profile) => profile === 'ummAlQura'
         ? { supported: false, reason }
         : { supported: true },
@@ -887,7 +1199,7 @@ describe('Salah', () => {
 
   it('показывает восстановимую ошибку загрузки', async () => {
     const services = createServices({
-      initialize: vi.fn().mockRejectedValue(new Error('offline')),
+      initialize: vi.fn().mockResolvedValue(failure({ kind: 'data', reason: 'offline' })),
     })
     render(<App services={services} />)
 
@@ -901,7 +1213,9 @@ describe('Salah', () => {
     const baseServices = createServices()
     let shouldFail = true
     const getDay = vi.fn((locationId: string, date: string) => {
-      if (shouldFail) return Promise.reject(new Error('offline'))
+      if (shouldFail) {
+        return Promise.resolve(failure({ kind: 'storage' as const, reason: 'unavailable' as const }))
+      }
       return baseServices.getDay(locationId, date)
     })
     const services = createServices({ getDay })

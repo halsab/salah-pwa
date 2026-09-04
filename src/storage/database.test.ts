@@ -1,20 +1,22 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import type { Result } from '../domain/result'
 import type { PrayerDataset } from '../domain/types'
 import {
   deleteSalahDatabase,
   getDatasetMeta,
+  getLocationChoice,
   getPrayerDay,
-  getSetting,
   replaceDataset,
-  setSetting,
+  saveLocationChoice,
+  type LocationChoice,
 } from './database'
 
-async function createLegacyVersion3Database(
+async function createLegacyVersion4Database(
   settings: ReadonlyArray<{ key: string; value: unknown }>,
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('salah', 3)
+    const request = indexedDB.open('salah', 4)
     request.onerror = () => reject(request.error)
     request.onupgradeneeded = () => {
       const database = request.result
@@ -49,6 +51,12 @@ async function getDatabaseVersion(): Promise<number> {
   })
 }
 
+function unwrap<Value>(result: Result<Value, unknown>): Value {
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error('Ожидался успешный результат')
+  return result.value
+}
+
 const dataset: PrayerDataset = {
   schemaVersion: 2,
   source: {
@@ -77,55 +85,37 @@ const dataset: PrayerDataset = {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals()
   await deleteSalahDatabase()
 })
 
 describe('database', () => {
   it('атомарно сохраняет набор данных и читает день по городу и дате', async () => {
-    await replaceDataset(dataset)
+    unwrap(await replaceDataset(dataset))
 
-    expect(await getPrayerDay('kazan', '2026-09-01')).toEqual(dataset.days[0])
-    expect(await getDatasetMeta()).toEqual({
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
+      dataset.days[0],
+    )
+    expect(unwrap(await getDatasetMeta())).toEqual({
       schemaVersion: dataset.schemaVersion,
       source: dataset.source,
       locations: dataset.locations,
     })
   })
 
-  it('хранит пользовательский населённый пункт отдельно от расписания', async () => {
-    await setSetting('locationId', 'kazan')
+  it('сохраняет полный выбор локации одной записью', async () => {
+    const choice: LocationChoice = {
+      mode: 'official',
+      locationId: 'kazan',
+      source: 'manual',
+    }
 
-    expect(await getSetting('locationId')).toBe('kazan')
+    unwrap(await saveLocationChoice(choice))
+
+    expect(unwrap(await getLocationChoice())).toEqual(choice)
   })
 
-  it('хранит режим, GPS-координаты и независимые настройки расчёта', async () => {
-    const coordinates = {
-      latitude: 55.7558,
-      longitude: 37.6173,
-      accuracy: 18,
-      timestamp: 1_788_265_600_000,
-      name: 'Москва, Россия',
-      cityId: 524901,
-      nameSource: 'geonames',
-      source: 'gps',
-      timeZone: 'Europe/Moscow',
-    } as const
-    const calculationSettings = {
-      profile: 'turkey',
-      asrMethod: 'standard',
-      highLatitudeRule: 'seventhOfNight',
-    } as const
-
-    await setSetting('locationMode', 'calculated')
-    await setSetting('calculatedLocation', coordinates)
-    await setSetting('calculationSettings', calculationSettings)
-
-    expect(await getSetting('locationMode')).toBe('calculated')
-    expect(await getSetting('calculatedLocation')).toEqual(coordinates)
-    expect(await getSetting('calculationSettings')).toEqual(calculationSettings)
-  })
-
-  it('последовательно обновляет базу v3 до v4 без потери выбора', async () => {
+  it('мигрирует GPS-выбор v4 в автоматический calculated-выбор v5', async () => {
     const legacyCoordinates = {
       latitude: 55.7558,
       longitude: 37.6173,
@@ -134,15 +124,71 @@ describe('database', () => {
       name: 'Москва, Россия',
       source: 'gps',
     }
-    await createLegacyVersion3Database([
+    await createLegacyVersion4Database([
       { key: 'calculatedLocation', value: legacyCoordinates },
+      { key: 'locationMode', value: 'calculated' },
       { key: 'locationId', value: 'kazan' },
+    ])
+
+    expect(unwrap(await getLocationChoice())).toEqual({
+      mode: 'calculated',
+      coordinates: legacyCoordinates,
+      source: 'automatic',
+    })
+    expect(await getDatabaseVersion()).toBe(5)
+  })
+
+  it('мигрирует preset-выбор v4 в ручной calculated-выбор', async () => {
+    const legacyCoordinates = {
+      latitude: 41.0082,
+      longitude: 28.9784,
+      accuracy: null,
+      timestamp: 1_788_265_600_000,
+      source: 'preset',
+      timeZone: 'Europe/Istanbul',
+    }
+    await createLegacyVersion4Database([
+      { key: 'calculatedLocation', value: legacyCoordinates },
       { key: 'locationMode', value: 'calculated' },
     ])
 
-    expect(await getSetting('calculatedLocation')).toEqual(legacyCoordinates)
-    expect(await getSetting('locationId')).toBe('kazan')
-    expect(await getSetting('locationMode')).toBe('calculated')
-    expect(await getDatabaseVersion()).toBe(4)
+    expect(unwrap(await getLocationChoice())).toEqual({
+      mode: 'calculated',
+      coordinates: legacyCoordinates,
+      source: 'manual',
+    })
+  })
+
+  it('мигрирует каждый legacy official-выбор как ручной', async () => {
+    await createLegacyVersion4Database([
+      { key: 'locationId', value: 'naberezhnye-chelny' },
+      { key: 'locationMode', value: 'official' },
+    ])
+
+    expect(unwrap(await getLocationChoice())).toEqual({
+      mode: 'official',
+      locationId: 'naberezhnye-chelny',
+      source: 'manual',
+    })
+  })
+
+  it('не создаёт сохранённый выбор, если legacy-выбора не было', async () => {
+    await createLegacyVersion4Database([])
+
+    expect(unwrap(await getLocationChoice())).toBeUndefined()
+    expect(await getDatabaseVersion()).toBe(5)
+  })
+
+  it('возвращает типизированную ошибку недоступного IndexedDB', async () => {
+    vi.stubGlobal('indexedDB', {
+      open: () => {
+        throw new Error('IndexedDB disabled')
+      },
+    })
+
+    expect(await getDatasetMeta()).toEqual({
+      ok: false,
+      error: { kind: 'storage', reason: 'unavailable' },
+    })
   })
 })
