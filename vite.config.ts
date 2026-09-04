@@ -30,7 +30,10 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallback: 'index.html',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
-        globIgnores: ['**/data/cities-current.json'],
+        globIgnores: [
+          '**/data/cities-current.json',
+          '**/data/prayer-times-current.json',
+        ],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
           {

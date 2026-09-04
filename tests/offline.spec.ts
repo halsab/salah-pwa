@@ -29,16 +29,38 @@ test('после первого запуска расписание полнос
   context,
   page,
 }) => {
+  let prayerDatasetRequests = 0
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/data/prayer-times-current.json')) {
+      prayerDatasetRequests += 1
+    }
+  })
+
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  expect(prayerDatasetRequests).toBe(1)
 
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready
   })
+  prayerDatasetRequests = 0
   await page.reload()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  expect(prayerDatasetRequests).toBe(0)
+
+  const cachedPrayerDatasetRequests = await page.evaluate(async () => {
+    const cacheNames = await caches.keys()
+    const requests = (await Promise.all(cacheNames.map(async (name) => {
+      const cache = await caches.open(name)
+      return cache.keys()
+    }))).flat()
+    return requests
+      .map(({ url }) => url)
+      .filter((url) => new URL(url).pathname.endsWith('/data/prayer-times-current.json'))
+  })
+  expect(cachedPrayerDatasetRequests).toEqual([])
 
   await context.setOffline(true)
   try {

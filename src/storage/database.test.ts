@@ -7,8 +7,10 @@ import {
   getDatasetMeta,
   getLocationChoice,
   getPrayerDay,
+  getSetting,
   replaceDataset,
   saveLocationChoice,
+  type DatasetIdentity,
   type LocationChoice,
 } from './database'
 
@@ -29,6 +31,53 @@ async function createLegacyVersion4Database(
       const transaction = database.transaction('settings', 'readwrite')
       const store = transaction.objectStore('settings')
       for (const setting of settings) store.put(setting)
+      transaction.onerror = () => reject(transaction.error)
+      transaction.oncomplete = () => {
+        database.close()
+        resolve()
+      }
+    }
+  })
+}
+
+async function createVersion5Database(fixture: {
+  day?: PrayerDataset['days'][number]
+  meta?: {
+    schemaVersion: number
+    source: PrayerDataset['source']
+    locations: PrayerDataset['locations']
+  }
+  settings?: ReadonlyArray<{ key: string; value: unknown }>
+}): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('salah', 5)
+    request.onerror = () => reject(request.error)
+    request.onupgradeneeded = () => {
+      const database = request.result
+      database.createObjectStore('days', { keyPath: 'key' })
+      database.createObjectStore('meta')
+      database.createObjectStore('settings', { keyPath: 'key' })
+    }
+    request.onsuccess = () => {
+      const database = request.result
+      const transaction = database.transaction(
+        ['days', 'meta', 'settings'],
+        'readwrite',
+      )
+
+      if (fixture.day) {
+        transaction.objectStore('days').put({
+          ...fixture.day,
+          key: `${fixture.day.locationId}:${fixture.day.date}`,
+        })
+      }
+      if (fixture.meta) {
+        transaction.objectStore('meta').put(fixture.meta, 'current')
+      }
+      for (const setting of fixture.settings ?? []) {
+        transaction.objectStore('settings').put(setting)
+      }
+
       transaction.onerror = () => reject(transaction.error)
       transaction.oncomplete = () => {
         database.close()
@@ -84,6 +133,12 @@ const dataset: PrayerDataset = {
   ],
 }
 
+const identity: DatasetIdentity = {
+  version: '2-560476895b659c27',
+  url: 'prayer-times-current.json',
+  sha256: '560476895b659c27b1e75bfac7269dce3c548efdc283882eb5566bf9d153af9e',
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals()
   await deleteSalahDatabase()
@@ -91,7 +146,7 @@ afterEach(async () => {
 
 describe('database', () => {
   it('атомарно сохраняет набор данных и читает день по городу и дате', async () => {
-    unwrap(await replaceDataset(dataset))
+    unwrap(await replaceDataset(dataset, identity))
 
     expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
       dataset.days[0],
@@ -100,7 +155,95 @@ describe('database', () => {
       schemaVersion: dataset.schemaVersion,
       source: dataset.source,
       locations: dataset.locations,
+      identity,
     })
+  })
+
+  it('открывает настоящую v5 как v6 без потери расписания, meta и настроек', async () => {
+    const choice: LocationChoice = {
+      mode: 'official',
+      locationId: 'kazan',
+      source: 'manual',
+    }
+    const calculationSettings = {
+      profile: 'dumRt' as const,
+      asrMethod: 'hanafi' as const,
+      highLatitudeRule: 'dumRt' as const,
+    }
+    const legacyMeta = {
+      schemaVersion: dataset.schemaVersion,
+      source: dataset.source,
+      locations: dataset.locations,
+    }
+    await createVersion5Database({
+      day: dataset.days[0]!,
+      meta: legacyMeta,
+      settings: [
+        { key: 'locationChoice', value: choice },
+        { key: 'calculationSettings', value: calculationSettings },
+      ],
+    })
+
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
+      dataset.days[0],
+    )
+    expect(unwrap(await getDatasetMeta())).toEqual(legacyMeta)
+    expect(unwrap(await getLocationChoice())).toEqual(choice)
+    expect(unwrap(await getSetting('calculationSettings'))).toEqual(
+      calculationSettings,
+    )
+    expect(await getDatabaseVersion()).toBe(6)
+  })
+
+  it('читает legacy meta без идентичности артефакта для офлайн-fallback', async () => {
+    const legacyMeta = {
+      schemaVersion: dataset.schemaVersion,
+      source: dataset.source,
+      locations: dataset.locations,
+    }
+    await createVersion5Database({ meta: legacyMeta })
+
+    expect(unwrap(await getDatasetMeta())).toEqual(legacyMeta)
+  })
+
+  it('при сбое транзакции не показывает частично заменённые meta и дни', async () => {
+    unwrap(await replaceDataset(dataset, identity))
+    const partialDay = {
+      ...dataset.days[0],
+      locationId: 'aksubaevo',
+      date: '2026-09-02',
+    }
+    const uncloneableDay = {
+      ...dataset.days[0],
+      locationId: 'bugulma',
+      date: '2026-09-03',
+      uncloneable: () => undefined,
+    }
+    const failedDataset = {
+      ...dataset,
+      source: { ...dataset.source, updatedAt: '2026-01-02T00:00:00.000Z' },
+      days: [partialDay, uncloneableDay],
+    } as PrayerDataset
+    const failedIdentity: DatasetIdentity = {
+      ...identity,
+      version: '2-aaaaaaaaaaaaaaaa',
+      sha256: 'a'.repeat(64),
+    }
+
+    expect(await replaceDataset(failedDataset, failedIdentity)).toEqual({
+      ok: false,
+      error: { kind: 'storage', reason: 'unavailable' },
+    })
+    expect(unwrap(await getDatasetMeta())).toEqual({
+      schemaVersion: dataset.schemaVersion,
+      source: dataset.source,
+      locations: dataset.locations,
+      identity,
+    })
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
+      dataset.days[0],
+    )
+    expect(unwrap(await getPrayerDay('aksubaevo', '2026-09-02'))).toBeUndefined()
   })
 
   it('сохраняет полный выбор локации одной записью', async () => {
@@ -135,7 +278,7 @@ describe('database', () => {
       coordinates: legacyCoordinates,
       source: 'automatic',
     })
-    expect(await getDatabaseVersion()).toBe(5)
+    expect(await getDatabaseVersion()).toBe(6)
   })
 
   it('мигрирует preset-выбор v4 в ручной calculated-выбор', async () => {
@@ -176,7 +319,7 @@ describe('database', () => {
     await createLegacyVersion4Database([])
 
     expect(unwrap(await getLocationChoice())).toBeUndefined()
-    expect(await getDatabaseVersion()).toBe(5)
+    expect(await getDatabaseVersion()).toBe(6)
   })
 
   it('возвращает типизированную ошибку недоступного IndexedDB', async () => {

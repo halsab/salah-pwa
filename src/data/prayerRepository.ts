@@ -14,7 +14,11 @@ import {
 } from '../domain/prayerCalculation'
 import { failure, success, type Result } from '../domain/result'
 import { getDeviceTimeZone, isValidTimeZone } from '../domain/locationTime'
-import type { PrayerDataset, SavedCoordinates } from '../domain/types'
+import type {
+  PrayerDataset,
+  PrayerDatasetManifest,
+  SavedCoordinates,
+} from '../domain/types'
 import {
   getDatasetMeta,
   getLocationChoice,
@@ -23,11 +27,29 @@ import {
   replaceDataset,
   saveLocationChoice,
   setSetting,
+  type DatasetIdentity,
   type DatasetMeta,
   type LocationChoice,
 } from '../storage/database'
+import {
+  resolvePrayerDatasetUrl,
+  validatePrayerDatasetManifest,
+  verifyPrayerDatasetBytes,
+  type PrayerDatasetByteOperations,
+} from './prayerDatasetManifest'
 
-const DATA_URL = `${import.meta.env.BASE_URL}data/prayer-times-current.json`
+const MANIFEST_URL = `${import.meta.env.BASE_URL}data/prayer-times-manifest.json`
+
+type Fetcher = (
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) => Promise<Response>
+
+export type PrayerRepositoryInitializationOperations = Partial<
+  PrayerDatasetByteOperations
+> & {
+  fetch?: Fetcher
+}
 
 export interface PrayerRepositoryState {
   meta: DatasetMeta
@@ -36,72 +58,78 @@ export interface PrayerRepositoryState {
   warning: UpdateFailure | null
 }
 
-function isPrayerDataset(value: unknown): value is PrayerDataset {
-  if (!value || typeof value !== 'object') return false
-  const dataset = value as Partial<PrayerDataset>
-
-  return (
-    dataset.schemaVersion === 2
-    && Array.isArray(dataset.source?.years)
-    && dataset.source.years.length > 0
-    && dataset.source.years.every((year) => typeof year === 'number')
-    && typeof dataset.source.updatedAt === 'string'
-    && Array.isArray(dataset.locations)
-    && dataset.locations.length > 0
-    && Array.isArray(dataset.days)
-    && dataset.days.length > 0
-  )
-}
-
 function dataFailure(reason: DataFailure['reason']): DataFailure {
   return { kind: 'data', reason }
 }
 
-async function fetchBundledDataset(): Promise<
-  Result<PrayerDataset, DataFailure>
+function fetchFailure(): DataFailure {
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  return dataFailure(offline ? 'offline' : 'unavailable')
+}
+
+async function fetchManifest(fetcher: Fetcher): Promise<
+  Result<PrayerDatasetManifest, DataFailure>
 > {
   let response: Response
   try {
-    response = await fetch(DATA_URL)
+    response = await fetcher(MANIFEST_URL, { cache: 'no-store' })
   } catch {
-    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
-    return failure(dataFailure(offline ? 'offline' : 'unavailable'))
+    return failure(fetchFailure())
   }
 
   if (!response.ok) return failure(dataFailure('unavailable'))
 
   try {
-    const value: unknown = await response.json()
-    return isPrayerDataset(value)
-      ? success(value)
-      : failure(dataFailure('invalid'))
+    return validatePrayerDatasetManifest(await response.json() as unknown)
   } catch {
     return failure(dataFailure('invalid'))
   }
 }
 
-function toMeta(dataset: PrayerDataset): DatasetMeta {
+async function fetchVerifiedDataset(
+  fetcher: Fetcher,
+  manifest: PrayerDatasetManifest,
+  operations: Partial<PrayerDatasetByteOperations>,
+): Promise<Result<PrayerDataset, DataFailure>> {
+  let response: Response
+  try {
+    response = await fetcher(
+      resolvePrayerDatasetUrl(MANIFEST_URL, manifest),
+      { cache: 'no-store' },
+    )
+  } catch {
+    return failure(fetchFailure())
+  }
+
+  if (!response.ok) return failure(dataFailure('unavailable'))
+
+  let bytes: Uint8Array
+  try {
+    bytes = new Uint8Array(await response.arrayBuffer())
+  } catch {
+    return failure(fetchFailure())
+  }
+  return verifyPrayerDatasetBytes(bytes, manifest, operations)
+}
+
+function manifestIdentity(manifest: PrayerDatasetManifest): DatasetIdentity {
+  return {
+    version: manifest.version,
+    url: manifest.url,
+    sha256: manifest.sha256,
+  }
+}
+
+function toMeta(
+  dataset: PrayerDataset,
+  identity: DatasetIdentity,
+): DatasetMeta {
   return {
     schemaVersion: dataset.schemaVersion,
     source: dataset.source,
     locations: dataset.locations,
+    identity,
   }
-}
-
-export function shouldReplaceDataset(
-  cachedMeta: DatasetMeta | undefined,
-  dataset: PrayerDataset,
-): boolean {
-  const cachedYears = (cachedMeta?.source as Partial<PrayerDataset['source']> | undefined)
-    ?.years
-
-  return (
-    !cachedMeta
-    || cachedMeta.schemaVersion !== dataset.schemaVersion
-    || cachedMeta.source.updatedAt !== dataset.source.updatedAt
-    || !Array.isArray(cachedYears)
-    || cachedYears.join(',') !== dataset.source.years.join(',')
-  )
 }
 
 function defaultLocationChoice(meta: DatasetMeta): LocationChoice | undefined {
@@ -151,25 +179,42 @@ function restoreLocationChoice(
 
 export async function initializePrayerRepository(): Promise<
   Result<PrayerRepositoryState, DataFailure | StorageFailure>
-> {
+>
+export async function initializePrayerRepository(
+  operations: PrayerRepositoryInitializationOperations,
+): Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>>
+export async function initializePrayerRepository(
+  operations: PrayerRepositoryInitializationOperations = {},
+): Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>> {
   const cachedMetaResult = await getDatasetMeta()
   if (!cachedMetaResult.ok) return cachedMetaResult
 
   const cachedMeta = cachedMetaResult.value
   let meta = cachedMeta
   let warning: UpdateFailure | null = null
-  const bundledResult = await fetchBundledDataset()
+  const fetcher = operations.fetch
+    ?? ((input, init) => globalThis.fetch(input, init))
+  const manifestResult = await fetchManifest(fetcher)
 
-  if (bundledResult.ok) {
-    if (shouldReplaceDataset(cachedMeta, bundledResult.value)) {
-      const replacement = await replaceDataset(bundledResult.value)
-      if (!replacement.ok) return replacement
-    }
-    meta = toMeta(bundledResult.value)
-  } else if (!cachedMeta) {
-    return bundledResult
-  } else {
+  if (!manifestResult.ok) {
+    if (!cachedMeta) return manifestResult
     warning = { kind: 'update', reason: 'failed' }
+  } else if (cachedMeta?.identity?.sha256 !== manifestResult.value.sha256) {
+    const datasetResult = await fetchVerifiedDataset(
+      fetcher,
+      manifestResult.value,
+      operations,
+    )
+    if (datasetResult.ok) {
+      const identity = manifestIdentity(manifestResult.value)
+      const replacement = await replaceDataset(datasetResult.value, identity)
+      if (!replacement.ok) return replacement
+      meta = toMeta(datasetResult.value, identity)
+    } else if (!cachedMeta) {
+      return datasetResult
+    } else {
+      warning = { kind: 'update', reason: 'failed' }
+    }
   }
 
   if (!meta) return failure(dataFailure('unavailable'))

@@ -1,0 +1,63 @@
+import { readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { expect, test } from '@playwright/test'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const serviceWorkerPath = path.join(root, 'dist', 'sw.js')
+const reloadTimestampKey = 'salah:service-worker-reload-at'
+
+test.describe.configure({ mode: 'serial' })
+
+test('обновление service worker перезагружает приложение ровно один раз', async ({
+  baseURL,
+  browser,
+}) => {
+  const originalServiceWorker = await readFile(serviceWorkerPath)
+  const context = await browser.newContext({ baseURL })
+  const page = await context.newPage()
+
+  try {
+    await page.goto('./')
+    await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+    await page.evaluate(async () => navigator.serviceWorker.ready)
+    await page.reload()
+    await expect.poll(() => page.evaluate(() =>
+      Boolean(navigator.serviceWorker.controller))).toBe(true)
+
+    expect(await page.evaluate((key) => sessionStorage.getItem(key), reloadTimestampKey)).toBeNull()
+
+    let navigationCount = 0
+    page.on('framenavigated', (frame) => {
+      if (frame === page.mainFrame()) navigationCount += 1
+    })
+
+    const uniqueComment = Buffer.from(
+      `\n/* sw-update-smoke-${Date.now()} */\n`,
+      'utf8',
+    )
+    await writeFile(
+      serviceWorkerPath,
+      Buffer.concat([originalServiceWorker, uniqueComment]),
+    )
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.ready
+      await registration.update()
+    })
+
+    await expect.poll(() => navigationCount, { timeout: 15_000 }).toBe(1)
+    await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+    await page.waitForTimeout(1_000)
+    expect(navigationCount).toBe(1)
+  } finally {
+    try {
+      await context.close()
+    } finally {
+      await writeFile(serviceWorkerPath, originalServiceWorker)
+      expect(await readFile(serviceWorkerPath)).toEqual(originalServiceWorker)
+    }
+  }
+})

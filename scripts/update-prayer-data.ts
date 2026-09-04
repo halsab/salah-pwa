@@ -1,10 +1,13 @@
-import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { parseDumRtCsv, validateSchedule } from '../src/data/parseDumRtCsv'
 import type { PrayerDataset, PrayerDay } from '../src/domain/types'
 import { DUM_RT_LOCATIONS } from './dumRtLocations'
+import {
+  PRAYER_DATASET_FILE_NAME,
+  writePrayerDatasetArtifacts,
+} from './prayerDatasetArtifacts'
 import { selectCompleteDatasetYears } from './selectDatasetYear'
 
 const requestedYear = process.env.PRAYER_DATA_YEAR
@@ -69,9 +72,8 @@ async function main(): Promise<void> {
   }
 
   const outputDirectory = path.join(root, 'public', 'data')
-  const outputPath = path.join(outputDirectory, 'prayer-times-current.json')
-  await mkdir(outputDirectory, { recursive: true })
-  await writeFile(outputPath, `${JSON.stringify(dataset)}\n`, 'utf8')
+  const outputPath = path.join(outputDirectory, PRAYER_DATASET_FILE_NAME)
+  await writePrayerDatasetArtifacts(outputDirectory, dataset)
 
   console.log(
     `Сохранено ${dataset.days.length} строк для ${dataset.locations.length} населённых пунктов: ${outputPath}`,

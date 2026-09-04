@@ -74,3 +74,10 @@ export interface PrayerDataset {
   locations: PrayerLocation[]
   days: PrayerDay[]
 }
+
+export interface PrayerDatasetManifest {
+  schemaVersion: 1
+  version: string
+  url: 'prayer-times-current.json'
+  sha256: string
+}

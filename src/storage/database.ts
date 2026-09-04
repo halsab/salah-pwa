@@ -6,13 +6,14 @@ import type { CalculationSettings } from '../domain/prayerCalculation'
 import { failure, success, type Result } from '../domain/result'
 import type {
   PrayerDataset,
+  PrayerDatasetManifest,
   PrayerDay,
   PrayerLocation,
   SavedCoordinates,
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 5
+const DATABASE_VERSION = 6
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -54,10 +55,16 @@ interface PrayerDayRecord extends PrayerDay {
   key: string
 }
 
+export type DatasetIdentity = Pick<
+  PrayerDatasetManifest,
+  'version' | 'url' | 'sha256'
+>
+
 export interface DatasetMeta {
   schemaVersion: number
   source: PrayerDataset['source']
   locations: PrayerLocation[]
+  identity?: DatasetIdentity
 }
 
 interface SalahDatabase extends DBSchema {
@@ -159,6 +166,9 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
 
         void migration.catch(() => transaction.abort())
       }
+      if (oldVersion < 6) {
+        // Идентичность артефакта появится при следующей атомарной замене набора.
+      }
     },
   })
   databasePromise = opening
@@ -188,26 +198,46 @@ async function storageResult<Value>(
 
 export function replaceDataset(
   dataset: PrayerDataset,
+  identity: DatasetIdentity,
 ): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     const transaction = database.transaction(['days', 'meta'], 'readwrite')
     const dayStore = transaction.objectStore('days')
 
-    await dayStore.clear()
-    for (const day of dataset.days) {
-      void dayStore.put({ ...day, key: dayKey(day.locationId, day.date) })
-    }
+    try {
+      await dayStore.clear()
+      const dayWrites: Promise<IDBValidKey>[] = []
+      for (const day of dataset.days) {
+        const write = dayStore.put({
+          ...day,
+          key: dayKey(day.locationId, day.date),
+        })
+        // Обработчик нужен сразу: следующий put может синхронно прервать транзакцию.
+        void write.catch(() => undefined)
+        dayWrites.push(write)
+      }
+      await Promise.all(dayWrites)
 
-    await transaction.objectStore('meta').put(
-      {
-        schemaVersion: dataset.schemaVersion,
-        source: dataset.source,
-        locations: dataset.locations,
-      },
-      'current',
-    )
-    await transaction.done
+      await transaction.objectStore('meta').put(
+        {
+          schemaVersion: dataset.schemaVersion,
+          source: dataset.source,
+          locations: dataset.locations,
+          identity,
+        },
+        'current',
+      )
+      await transaction.done
+    } catch (error) {
+      try {
+        transaction.abort()
+      } catch {
+        // Транзакция уже могла автоматически откатиться после ошибки запроса.
+      }
+      await transaction.done.catch(() => undefined)
+      throw error
+    }
   })
 }
 
