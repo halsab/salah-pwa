@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('весь интерфейс использует локальный Alegreya Sans только в нужных начертаниях', async ({ page }) => {
   await page.goto('./')

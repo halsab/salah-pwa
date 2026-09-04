@@ -11,6 +11,18 @@ import {
 } from './locationTime'
 
 describe('location time', () => {
+  it.each([
+    ['UTC', '2026-01-01', '00:30'],
+    ['Europe/Moscow', '2026-01-01', '03:30'],
+    ['America/Los_Angeles', '2025-12-31', '16:30'],
+    ['Pacific/Kiritimati', '2026-01-01', '14:30'],
+  ] as const)('стабильно форматирует один instant в IANA-зоне %s', (zone, date, time) => {
+    const instant = new Date('2026-01-01T00:30:00.000Z')
+
+    expect(getCivilDate(instant, zone)).toBe(date)
+    expect(getZonedTime(instant, zone)).toBe(time)
+  })
+
   it('определяет предыдущий календарный день выбранного места', () => {
     const instant = new Date('2026-09-01T06:30:00.000Z')
 
@@ -30,6 +42,13 @@ describe('location time', () => {
       .toBe('UTC−5')
     expect(getUtcOffset(new Date('2026-03-08T07:00:00.000Z'), 'America/New_York'))
       .toBe('UTC−4')
+  })
+
+  it('пропускает несуществующий час на европейской DST-границе', () => {
+    expect(getZonedTime(new Date('2026-03-29T00:59:59.999Z'), 'Europe/Berlin'))
+      .toBe('01:59')
+    expect(getZonedTime(new Date('2026-03-29T01:00:00.000Z'), 'Europe/Berlin'))
+      .toBe('03:00')
   })
 
   it('создаёт часы только для поддерживаемой IANA-таймзоны', () => {

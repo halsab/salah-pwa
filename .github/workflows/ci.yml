@@ -86,14 +86,17 @@ jobs:
       - name: Проверить лицензии зависимостей
         run: npm run license:check
 
-      - name: Установить Chromium для offline smoke-test
-        run: npx playwright install --with-deps chromium
+      - name: Установить браузеры Playwright
+        run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Проверить Content Security Policy
         run: npm run security:csp
 
       - name: Проверить повторный запуск без сети
         run: npm run smoke:offline
+
+      - name: Проверить cross-browser интерфейс
+        run: npm run test:e2e
 
       - name: Проверить обновление service worker
         run: npm run smoke:sw-update

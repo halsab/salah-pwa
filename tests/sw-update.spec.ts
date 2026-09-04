@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { expect, test } from '@playwright/test'
+import { expect, FIXED_BROWSER_TIME, test } from './fixtures'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const serviceWorkerPath = path.join(root, 'dist', 'sw.js')
@@ -19,6 +19,8 @@ test('обновление service worker перезагружает прило�
   const page = await context.newPage()
 
   try {
+    await page.clock.setFixedTime(FIXED_BROWSER_TIME)
+    expect(await page.evaluate(() => Date.now())).toBe(FIXED_BROWSER_TIME.getTime())
     await page.goto('./')
     await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
@@ -35,7 +37,7 @@ test('обновление service worker перезагружает прило�
     })
 
     const uniqueComment = Buffer.from(
-      `\n/* sw-update-smoke-${Date.now()} */\n`,
+      `\n/* sw-update-smoke-${FIXED_BROWSER_TIME.toISOString()} */\n`,
       'utf8',
     )
     await writeFile(
@@ -50,7 +52,10 @@ test('обновление service worker перезагружает прило�
     await expect.poll(() => navigationCount, { timeout: 15_000 }).toBe(1)
     await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
-    await page.waitForTimeout(1_000)
+    await page.evaluate(async () => {
+      const registration = await navigator.serviceWorker.ready
+      await registration.update()
+    })
     expect(navigationCount).toBe(1)
   } finally {
     try {

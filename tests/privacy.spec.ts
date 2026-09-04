@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('статическая privacy page точно описывает данные и внешние запросы', async ({ page }) => {
   await page.goto('./privacy/')

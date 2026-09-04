@@ -19,6 +19,36 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
+      testIgnore: '**/sw-update.spec.ts',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      testIgnore: '**/sw-update.spec.ts',
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      testIgnore: '**/sw-update.spec.ts',
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      use: { ...devices['Desktop Safari'] },
+    },
+    {
+      name: 'mobile-safari-portrait',
+      testIgnore: '**/sw-update.spec.ts',
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      use: { ...devices['iPhone 13'] },
+    },
+    {
+      name: 'mobile-safari-landscape',
+      testIgnore: '**/sw-update.spec.ts',
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      use: { ...devices['iPhone 13 landscape'] },
+    },
+    {
+      name: 'chromium-sw',
+      testMatch: '**/sw-update.spec.ts',
       use: { ...devices['Desktop Chrome'] },
     },
   ],
