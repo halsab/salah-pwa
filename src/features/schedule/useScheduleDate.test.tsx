@@ -16,10 +16,10 @@ describe('useScheduleDate', () => {
       useScheduleDate(services, 'Europe/Moscow'))
     const initialTime = result.current.currentTime
 
-    act(() => vi.advanceTimersByTime(1_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
     expect(result.current.currentTime).toBe(initialTime)
 
-    act(() => vi.advanceTimersByTime(59_000))
+    act(() => { vi.advanceTimersByTime(59_000) })
     expect(result.current.currentTime.toISOString()).toBe(
       '2026-09-01T10:01:00.000Z',
     )
@@ -36,7 +36,7 @@ describe('useScheduleDate', () => {
       useScheduleDate(services, 'Europe/Moscow'))
 
     expect(result.current.selectedDate).toBe('2026-08-31')
-    act(() => vi.advanceTimersByTime(1_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
     expect(result.current.selectedDate).toBe('2026-09-01')
     expect(result.current.today).toBe('2026-09-01')
     unmount()

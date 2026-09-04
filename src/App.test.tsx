@@ -416,7 +416,10 @@ describe('Salah', () => {
     await waitFor(() => expect(services.getPermission).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => permission.resolve('granted'))
+    await act(async () => {
+      permission.resolve('granted')
+      await permission.promise
+    })
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(services.getPosition).not.toHaveBeenCalled()
@@ -443,12 +446,15 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
     await waitFor(() => expect(services.getPosition).toHaveBeenCalledWith('coarse'))
     await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => coarse.resolve(success({
-      latitude: 55.7946,
-      longitude: 49.1115,
-      accuracy: 500,
-      timestamp: 100,
-    })))
+    await act(async () => {
+      coarse.resolve(success({
+        latitude: 55.7946,
+        longitude: 49.1115,
+        accuracy: 500,
+        timestamp: 100,
+      }))
+      await coarse.promise
+    })
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(services.getPosition).toHaveBeenCalledTimes(1)
@@ -476,10 +482,13 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
     await waitFor(() => expect(services.resolvePlaceName).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => reverse.resolve(success({
-      name: 'Казань, Россия',
-      regionEvidence: { source: 'nominatim', regionCode: 'RU-TA' },
-    })))
+    await act(async () => {
+      reverse.resolve(success({
+        name: 'Казань, Россия',
+        regionEvidence: { source: 'nominatim', regionCode: 'RU-TA' },
+      }))
+      await reverse.promise
+    })
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
@@ -553,7 +562,7 @@ describe('Salah', () => {
 
   it('показывает короткий статус во время загрузки городов', async () => {
     const user = userEvent.setup()
-    let resolveCities!: (value: ReturnType<typeof success<CityCatalog>>) => void
+    let resolveCities: ((value: ReturnType<typeof success<CityCatalog>>) => void) | undefined
     const load = vi.fn().mockImplementation(() => new Promise((resolve) => {
       resolveCities = resolve
     }))
@@ -570,7 +579,8 @@ describe('Salah', () => {
 
     expect(screen.getByText('Загружаем города')).toBeVisible()
 
-    resolveCities!(success({
+    if (!resolveCities) throw new Error('Не создан resolver каталога')
+    resolveCities(success({
       source: cityDataset.source,
       countryGroups: getCountryGroups(cityDataset),
     }))
@@ -902,7 +912,7 @@ describe('Salah', () => {
 
   it('показывает статус поиска и сохраняет группировку по странам', async () => {
     const user = userEvent.setup()
-    let resolveSearch!: (cities: ReturnType<typeof success<City[]>>) => void
+    let resolveSearch: ((cities: ReturnType<typeof success<City[]>>) => void) | undefined
     const search = vi.fn().mockImplementation(() => new Promise((resolve) => {
       resolveSearch = resolve
     }))
@@ -920,7 +930,8 @@ describe('Salah', () => {
 
     expect(await screen.findByText('Ищем города…', { selector: '.city-search-state p' })).toBeVisible()
     await waitFor(() => expect(search).toHaveBeenCalledWith('Москва'))
-    resolveSearch!(success(searchCities(cityDataset, 'Москва')))
+    if (!resolveSearch) throw new Error('Не создан resolver поиска')
+    resolveSearch(success(searchCities(cityDataset, 'Москва')))
 
     expect(await screen.findByText('Россия', { exact: true })).toBeVisible()
     expect(screen.getByText('Найдено вариантов: 1')).toBeInTheDocument()
@@ -1012,10 +1023,13 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Уточнить название онлайн' }))
     await waitFor(() => expect(services.resolvePlaceName).toHaveBeenCalledTimes(1))
     await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => reverse.resolve(success({
-      name: 'Москва, Россия',
-      regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
-    })))
+    await act(async () => {
+      reverse.resolve(success({
+        name: 'Москва, Россия',
+        regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
+      }))
+      await reverse.promise
+    })
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(services.saveCalculatedLocation).not.toHaveBeenCalled()
@@ -1187,17 +1201,18 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
     const background = document.querySelector<HTMLElement>('.app-background')
     expect(background).not.toBeNull()
+    if (!background) throw new Error('Не найден фон приложения')
     expect(background).toHaveAttribute('inert')
     expect(background).toHaveAttribute('aria-hidden', 'true')
     const settingsDialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
     const exposureStates: boolean[] = []
     const observer = new MutationObserver(() => {
       exposureStates.push(
-        !background?.hasAttribute('inert')
+        !background.hasAttribute('inert')
         || background.getAttribute('aria-hidden') !== 'true',
       )
     })
-    observer.observe(background!, {
+    observer.observe(background, {
       attributes: true,
       attributeFilter: ['aria-hidden', 'inert'],
     })
@@ -1247,12 +1262,13 @@ describe('Salah', () => {
     const trigger = await screen.findByRole('button', { name: triggerName })
     const background = trigger.closest<HTMLElement>('.app-background')
     expect(background).not.toBeNull()
+    if (!background) throw new Error('Не найден фон приложения')
     expect(background).toContainElement(document.querySelector('.app-frame'))
     expect(background).toContainElement(screen.getByRole('button', { name: 'Поделиться' }))
     expect(background).toContainElement(screen.getByText('v26.4'))
 
     const focusStates: boolean[] = []
-    trigger.addEventListener('focus', () => focusStates.push(background!.hasAttribute('inert')))
+    trigger.addEventListener('focus', () => focusStates.push(background.hasAttribute('inert')))
     await user.click(trigger)
 
     const dialog = screen.getByRole('dialog', { name: dialogName })
@@ -1325,7 +1341,9 @@ describe('Salah', () => {
     await user.click(shareButton)
 
     const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
-    fireEvent.pointerDown(dialog.parentElement!, { pointerType: 'touch' })
+    const layer = dialog.parentElement
+    if (!layer) throw new Error('Не найден слой диалога')
+    fireEvent.pointerDown(layer, { pointerType: 'touch' })
 
     expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
     await waitFor(() => expect(shareButton).toHaveFocus())

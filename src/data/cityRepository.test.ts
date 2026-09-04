@@ -138,12 +138,13 @@ describe('loadCityDataset', () => {
 
 describe('cityCatalogService failures', () => {
   it('сохраняет structured DataFailure из worker response', async () => {
-    let worker!: WorkerStub
     class WorkerStub {
+      static instance: WorkerStub | undefined
+
       private listeners = new Map<string, (event: MessageEvent) => void>()
 
       constructor() {
-        worker = this
+        WorkerStub.instance = this
       }
 
       addEventListener(type: string, listener: (event: MessageEvent) => void) {
@@ -172,14 +173,14 @@ describe('cityCatalogService failures', () => {
       ok: false,
       error: { kind: 'data', reason: 'offline' },
     })
+    const worker = WorkerStub.instance
+    if (!worker) throw new Error('Не создан тестовый worker')
     worker.failTransport()
   })
 
   it('возвращает unavailable, если worker transport не создаётся', async () => {
-    class UnavailableWorker {
-      constructor() {
-        throw new Error('worker unavailable')
-      }
+    function UnavailableWorker() {
+      throw new Error('worker unavailable')
     }
     vi.stubGlobal('Worker', UnavailableWorker)
 

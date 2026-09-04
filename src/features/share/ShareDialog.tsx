@@ -10,33 +10,34 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ open, onClose }: ShareDialogProps) {
+  return open ? <OpenShareDialog onClose={onClose} /> : null
+}
+
+function OpenShareDialog({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
   const [copyStatus, setCopyStatus] = useState<'idle' | 'success' | 'error'>('idle')
   const copyOperationEpoch = useRef(0)
   const copyRef = useRef<HTMLButtonElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useModalDialog(open, onClose, copyRef)
-  const layerRef = useDialogViewport(open)
+  const dialogRef = useModalDialog(true, onClose, copyRef)
+  const layerRef = useDialogViewport(true)
 
   useEffect(() => {
-    copyOperationEpoch.current += 1
-    setCopyStatus('idle')
     return () => {
       copyOperationEpoch.current += 1
     }
-  }, [open])
-
-  if (!open) return null
+  }, [])
 
   const copyLink = async () => {
     const operationEpoch = ++copyOperationEpoch.current
     setCopyStatus('idle')
     try {
-      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API недоступен')
-      await navigator.clipboard.writeText(window.location.href)
-      if (!open || operationEpoch !== copyOperationEpoch.current) return
+      const clipboard = (navigator as { clipboard?: Clipboard }).clipboard
+      if (!clipboard) throw new Error('Clipboard API недоступен')
+      await clipboard.writeText(window.location.href)
+      if (operationEpoch !== copyOperationEpoch.current) return
       setCopyStatus('success')
     } catch {
-      if (!open || operationEpoch !== copyOperationEpoch.current) return
+      if (operationEpoch !== copyOperationEpoch.current) return
       setCopyStatus('error')
     }
   }

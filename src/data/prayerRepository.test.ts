@@ -87,13 +87,13 @@ function stubSuccessfulUpdate(
 }
 
 function initializeWithDigest(sha256 = HASH_A) {
-  return initializePrayerRepository({ digest: async () => sha256 })
+  return initializePrayerRepository({ digest: () => Promise.resolve(sha256) })
 }
 
 async function createLegacyVersion5PrayerCache(): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah', 5)
-    request.onerror = () => reject(request.error)
+    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
     request.onupgradeneeded = () => {
       const database = request.result
       database.createObjectStore('days', { keyPath: 'key' })
@@ -103,7 +103,8 @@ async function createLegacyVersion5PrayerCache(): Promise<void> {
     request.onsuccess = () => {
       const database = request.result
       const transaction = database.transaction(['days', 'meta'], 'readwrite')
-      const day = dataset.days[0]!
+      const day = dataset.days[0]
+      if (!day) throw new Error('Не найден тестовый день')
       transaction.objectStore('days').put({
         ...day,
         key: `${day.locationId}:${day.date}`,
@@ -113,7 +114,9 @@ async function createLegacyVersion5PrayerCache(): Promise<void> {
         source: dataset.source,
         locations: dataset.locations,
       }, 'current')
-      transaction.onerror = () => reject(transaction.error)
+      transaction.onerror = () => reject(
+        transaction.error ?? new Error('Не удалось записать IndexedDB'),
+      )
       transaction.oncomplete = () => {
         database.close()
         resolve()
@@ -250,7 +253,7 @@ describe('initializePrayerRepository', () => {
     unwrap(await replaceDataset(cachedDataset, cachedIdentity))
     const fetcher = vi.fn().mockResolvedValue(responseWithJson(manifestWithHash()))
     vi.stubGlobal('fetch', fetcher)
-    const digest = vi.fn(async () => HASH_A)
+    const digest = vi.fn(() => Promise.resolve(HASH_A))
     const decode = vi.fn((_bytes: Uint8Array) => '')
     const parse = vi.fn((_text: string) => dataset)
 
@@ -319,7 +322,7 @@ describe('initializePrayerRepository', () => {
     const parse = vi.fn((_text: string) => ({ broken: true }))
 
     const state = unwrap(await initializePrayerRepository({
-      digest: async () => 'c'.repeat(64),
+      digest: () => Promise.resolve('c'.repeat(64)),
       decode,
       parse,
     }))

@@ -69,6 +69,12 @@ const dataset: CityDataset = {
   cities: records,
 }
 
+function recordAt(index: number): CompactCityRecord {
+  const record = records[index]
+  if (!record) throw new Error(`Не найдена тестовая запись ${index}`)
+  return record
+}
+
 describe('findNearestCity', () => {
   it('находит и материализует ближайший город в допустимом радиусе', () => {
     expect(findNearestCity(55.7558, 37.6173, records, 30)).toEqual({
@@ -84,14 +90,14 @@ describe('findNearestCity', () => {
   })
 
   it('не материализует проигравшие записи', () => {
-    const distant = [...records[0]!] as CompactCityRecord
+    const distant = [...recordAt(0)] as CompactCityRecord
     Object.defineProperty(distant, 1, {
       get: () => {
         throw new Error('Проигравший город не должен материализоваться')
       },
     })
 
-    expect(findNearestCity(55.7558, 37.6173, [distant, records[1]!], 30)?.id)
+    expect(findNearestCity(55.7558, 37.6173, [distant, recordAt(1)], 30)?.id)
       .toBe(524901)
   })
 
@@ -125,7 +131,7 @@ describe('searchCities', () => {
 
   it('сканирует готовый ключ без второго полноразмерного индекса', () => {
     let searchKeyReads = 0
-    const tracked = [...records[0]!] as CompactCityRecord
+    const tracked = [...recordAt(0)] as CompactCityRecord
     Object.defineProperty(tracked, 2, {
       get: () => {
         searchKeyReads += 1
@@ -140,7 +146,7 @@ describe('searchCities', () => {
   })
 
   it('не материализует несовпавшие записи и ограничивает результат 60 городами', () => {
-    const hidden = [...records[1]!] as CompactCityRecord
+    const hidden = [...recordAt(1)] as CompactCityRecord
     hidden[2] = 'другой ключ'
     Object.defineProperty(hidden, 1, {
       get: () => {
@@ -177,13 +183,15 @@ describe('getCountryGroups', () => {
       1_000_000 - index,
       'Europe/Istanbul',
     ])
-    Object.defineProperty(turkey[5]!, 1, {
+    const sixthCity = turkey[5]
+    if (!sixthCity) throw new Error('Не найден шестой тестовый город')
+    Object.defineProperty(sixthCity, 1, {
       get: () => {
         throw new Error('Шестой город не должен материализоваться')
       },
     })
 
-    const groups = getCountryGroups({ ...dataset, cities: [records[1]!, ...turkey] })
+    const groups = getCountryGroups({ ...dataset, cities: [recordAt(1), ...turkey] })
     const group = groups.find(({ code }) => code === 'TR')
 
     expect(group?.cities.map(({ id }) => id)).toEqual([

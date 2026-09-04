@@ -38,18 +38,21 @@ jobs:
       VITE_APP_VERSION: ${{ inputs.app_version }}
     steps:
       - name: Скачать репозиторий
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ inputs.checkout_ref || github.sha }}
 
       - name: Подготовить Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version-file: .nvmrc
           cache: npm
 
       - name: Установить зависимости
         run: npm ci
+
+      - name: Проверить закрепление GitHub Actions
+        run: npm run actions:check
 
       - name: Проверить номер релизной сборки
         if: inputs.deploy
@@ -59,8 +62,14 @@ jobs:
             exit 1
           fi
 
-      - name: Запустить модульные и пользовательские тесты
+      - name: Проверить lint
+        run: npm run lint
+
+      - name: Запустить модульные тесты
         run: npm test
+
+      - name: Проверить покрытие тестами
+        run: npm run test:coverage
 
       - name: Проверить типы
         run: npm run typecheck
@@ -68,19 +77,34 @@ jobs:
       - name: Собрать production-версию
         run: npm run build
 
+      - name: Проверить бюджеты production-сборки
+        run: npm run build:check
+
+      - name: Проверить npm audit
+        run: npm run security:audit
+
+      - name: Проверить лицензии зависимостей
+        run: npm run license:check
+
       - name: Установить Chromium для offline smoke-test
         run: npx playwright install --with-deps chromium
+
+      - name: Проверить Content Security Policy
+        run: npm run security:csp
 
       - name: Проверить повторный запуск без сети
         run: npm run smoke:offline
 
+      - name: Проверить обновление service worker
+        run: npm run smoke:sw-update
+
       - name: Настроить GitHub Pages
         if: inputs.deploy
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Загрузить артефакт GitHub Pages
         if: inputs.deploy
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
 
@@ -98,4 +122,4 @@ jobs:
     steps:
       - name: Опубликовать
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

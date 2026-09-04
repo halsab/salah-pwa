@@ -3,6 +3,25 @@ import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "style-src-elem 'self'",
+  // inline style нужен dialogHooks для блокировки scroll и CSS-переменных visual viewport.
+  "style-src-attr 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self'",
+  "connect-src 'self' https://nominatim.openstreetmap.org",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "frame-src 'none'",
+  "media-src 'none'",
+  "form-action 'none'",
+].join('; ')
+
 export default defineConfig({
   base: '/salah-pwa/',
   build: {
@@ -14,6 +33,21 @@ export default defineConfig({
     },
   },
   plugins: [
+    {
+      name: 'production-content-security-policy',
+      apply: 'build',
+      transformIndexHtml: {
+        order: 'pre',
+        handler: () => [{
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: CONTENT_SECURITY_POLICY,
+          },
+          injectTo: 'head-prepend',
+        }],
+      },
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',

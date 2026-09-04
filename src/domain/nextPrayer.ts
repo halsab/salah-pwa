@@ -126,7 +126,8 @@ export function findNextPrayer(
 function currentInDay(now: Date, day: PrayerSchedule): CurrentPrayer | null {
   if ('entries' in day) {
     for (let index = CALCULATED_EVENTS.length - 1; index >= 0; index -= 1) {
-      const event = CALCULATED_EVENTS[index]!
+      const event = CALCULATED_EVENTS[index]
+      if (!event) continue
       const entry = day.entries[event.key]
       if (entry.instant <= now.getTime()) {
         return { ...event, date: day.date, time: entry.time }
@@ -134,7 +135,8 @@ function currentInDay(now: Date, day: PrayerSchedule): CurrentPrayer | null {
     }
   } else {
     for (let index = OFFICIAL_EVENTS.length - 1; index >= 0; index -= 1) {
-      const event = OFFICIAL_EVENTS[index]!
+      const event = OFFICIAL_EVENTS[index]
+      if (!event) continue
       const time = day[event.key]
       if (prayerInstant(day.date, time).getTime() <= now.getTime()) {
         return { ...event, date: day.date, time }

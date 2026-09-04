@@ -22,6 +22,7 @@ export function useScheduleDate(services: ScheduleDateServices, timeZone: string
   }, [services, timeZone])
 
   useEffect(() => {
+    let active = true
     let timer: number | undefined
     const scheduleNextMinute = () => {
       const now = services.now().getTime()
@@ -40,11 +41,14 @@ export function useScheduleDate(services: ScheduleDateServices, timeZone: string
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') syncAndReschedule()
     }
-    syncCurrentTime()
+    queueMicrotask(() => {
+      if (active) syncCurrentTime()
+    })
     scheduleNextMinute()
     window.addEventListener('pageshow', syncAndReschedule)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
+      active = false
       if (timer !== undefined) window.clearTimeout(timer)
       window.removeEventListener('pageshow', syncAndReschedule)
       document.removeEventListener('visibilitychange', handleVisibilityChange)

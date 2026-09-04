@@ -15,6 +15,11 @@ async function waitForAnimations(locator: Locator) {
   })
 }
 
+function required<Value>(value: Value | null | undefined, label: string): Value {
+  if (value == null) throw new Error(`Не найден ${label}`)
+  return value
+}
+
 async function expectInsideViewport(locator: Locator, page: Page) {
   await expect(locator).toBeVisible()
   await waitForAnimations(locator)
@@ -22,10 +27,12 @@ async function expectInsideViewport(locator: Locator, page: Page) {
   const viewport = page.viewportSize()
   expect(bounds).not.toBeNull()
   expect(viewport).not.toBeNull()
-  expect(bounds!.x).toBeGreaterThanOrEqual(-1)
-  expect(bounds!.y).toBeGreaterThanOrEqual(-1)
-  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport!.width + 1)
-  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport!.height + 1)
+  const visibleBounds = required(bounds, 'bounds элемента')
+  const visibleViewport = required(viewport, 'viewport')
+  expect(visibleBounds.x).toBeGreaterThanOrEqual(-1)
+  expect(visibleBounds.y).toBeGreaterThanOrEqual(-1)
+  expect(visibleBounds.x + visibleBounds.width).toBeLessThanOrEqual(visibleViewport.width + 1)
+  expect(visibleBounds.y + visibleBounds.height).toBeLessThanOrEqual(visibleViewport.height + 1)
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -53,7 +60,7 @@ async function expectControlTargetsAtLeast44Px(scope: Locator) {
       ? []
       : [{
           height: Math.round(bounds.height * 10) / 10,
-          label: element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 48),
+          label: element.getAttribute('aria-label') ?? element.textContent.trim().slice(0, 48),
           tag: element.tagName,
           width: Math.round(bounds.width * 10) / 10,
         }]
@@ -96,7 +103,10 @@ test.describe('мобильная компоновка', () => {
 
     expect(dateBounds).not.toBeNull()
     expect(todayBounds).not.toBeNull()
-    expect(Math.abs(todayBounds!.y - dateBounds!.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(
+      required(todayBounds, 'bounds кнопки Сегодня').y
+      - required(dateBounds, 'bounds даты').y,
+    )).toBeLessThanOrEqual(1)
   })
 
   test('выравнивает список по строке поиска и закрытия', async ({ page }) => {
@@ -126,10 +136,13 @@ test.describe('мобильная компоновка', () => {
     expect(Math.abs(inputMetrics.height - inputMetrics.lineHeight)).toBeLessThanOrEqual(1)
     expect(inputMetrics.paddingTop).toBe(0)
     expect(inputMetrics.paddingBottom).toBe(0)
-    expect(Math.abs(tabBounds!.x - searchBounds!.x)).toBeLessThanOrEqual(1)
+    const visibleTabBounds = required(tabBounds, 'bounds группы')
+    const visibleSearchBounds = required(searchBounds, 'bounds поиска')
+    expect(Math.abs(visibleTabBounds.x - visibleSearchBounds.x)).toBeLessThanOrEqual(1)
     expect(
       Math.abs(
-        tabBounds!.x + tabBounds!.width - (searchBounds!.x + searchBounds!.width),
+        visibleTabBounds.x + visibleTabBounds.width
+        - (visibleSearchBounds.x + visibleSearchBounds.width),
       ),
     ).toBeLessThanOrEqual(1)
   })
@@ -141,7 +154,9 @@ test.describe('мобильная компоновка', () => {
 
     const getLayout = () => page.locator('.location-results').evaluate((element) => {
       const scrollBounds = element.getBoundingClientRect()
-      const contentBounds = element.querySelector('.country-group')!.getBoundingClientRect()
+      const content = element.querySelector('.country-group')
+      if (!content) throw new Error('Не найдена группа стран')
+      const contentBounds = content.getBoundingClientRect()
       const styles = getComputedStyle(element)
       return {
         contentLeft: contentBounds.left,
@@ -175,7 +190,9 @@ test.describe('мобильная компоновка', () => {
 
     const layout = await page.locator('.methodology-content').evaluate((element) => {
       const scrollBounds = element.getBoundingClientRect()
-      const contentBounds = element.querySelector('.methodology-section')!.getBoundingClientRect()
+      const content = element.querySelector('.methodology-section')
+      if (!content) throw new Error('Не найден раздел методики')
+      const contentBounds = content.getBoundingClientRect()
       return {
         contentLeft: contentBounds.left,
         contentRight: contentBounds.right,
@@ -212,8 +229,10 @@ test.describe('мобильная компоновка', () => {
     await page.getByRole('button', { name: 'Найти город или район' }).click()
     await page.getByRole('searchbox').fill('Казань')
     await page.evaluate(() => {
-      Object.assign(window.visualViewport!, { height: 393 })
-      window.visualViewport!.dispatchEvent(new Event('resize'))
+      const viewport = window.visualViewport
+      if (!viewport) throw new Error('Не найден visual viewport')
+      Object.assign(viewport, { height: 393 })
+      viewport.dispatchEvent(new Event('resize'))
     })
 
     const layer = page.locator('.dialog-layer')
@@ -231,13 +250,19 @@ test.describe('мобильная компоновка', () => {
       })),
     ])
 
-    expect(layerBounds!.height).toBeGreaterThanOrEqual(851)
-    expect(Math.abs(dialogBounds!.y + dialogBounds!.height - (layerBounds!.y + layerBounds!.height))).toBeLessThanOrEqual(1)
-    expect(dialogBounds!.y + dialogBounds!.height).toBeGreaterThan(800)
+    const visibleLayerBounds = required(layerBounds, 'bounds слоя')
+    const visibleDialogBounds = required(dialogBounds, 'bounds диалога')
+    const visibleResultBounds = required(resultBounds, 'bounds результата')
+    expect(visibleLayerBounds.height).toBeGreaterThanOrEqual(851)
+    expect(Math.abs(
+      visibleDialogBounds.y + visibleDialogBounds.height
+      - (visibleLayerBounds.y + visibleLayerBounds.height),
+    )).toBeLessThanOrEqual(1)
+    expect(visibleDialogBounds.y + visibleDialogBounds.height).toBeGreaterThan(800)
     expect(resultsLayout.paddingBottom).toBeGreaterThanOrEqual(459)
     expect(resultBounds).not.toBeNull()
-    expect(resultBounds!.y).toBeGreaterThanOrEqual(0)
-    expect(resultBounds!.y + resultBounds!.height).toBeLessThanOrEqual(393)
+    expect(visibleResultBounds.y).toBeGreaterThanOrEqual(0)
+    expect(visibleResultBounds.y + visibleResultBounds.height).toBeLessThanOrEqual(393)
   })
 
   test('не выпускает клавиатурный фокус из диалога', async ({ page }) => {
@@ -267,7 +292,9 @@ test.describe('адаптивность', () => {
     })
     const countdownFitsContainer = await page.locator('.countdown').evaluate((element) => {
       const container = element.getBoundingClientRect()
-      const value = element.querySelector('.countdown-value')!.getBoundingClientRect()
+      const valueElement = element.querySelector('.countdown-value')
+      if (!valueElement) throw new Error('Не найден таймер')
+      const value = valueElement.getBoundingClientRect()
       return value.left >= container.left && value.right <= container.right
     })
 
@@ -319,15 +346,21 @@ test.describe('адаптивность', () => {
     const layout = await dialog.evaluate((element) => {
       const dialogBounds = element.getBoundingClientRect()
       const dialogStyle = getComputedStyle(element)
-      const qrBounds = element.querySelector('.share-qr')!.getBoundingClientRect()
-      const qrFrameBounds = element.querySelector('.share-qr-frame')!.getBoundingClientRect()
-      const closeButton = element.querySelector('.share-close-button')!
+      const qr = element.querySelector('.share-qr')
+      const qrFrame = element.querySelector('.share-qr-frame')
+      const closeButton = element.querySelector('.share-close-button')
+      const content = element.querySelector('.share-content')
+      if (!qr || !qrFrame || !closeButton || !content) {
+        throw new Error('Не найдены элементы share-диалога')
+      }
+      const qrBounds = qr.getBoundingClientRect()
+      const qrFrameBounds = qrFrame.getBoundingClientRect()
       const closeButtonBounds = closeButton.getBoundingClientRect()
       return {
         blockStartInset: qrFrameBounds.top - dialogBounds.top,
         closeButtonHeight: closeButtonBounds.height,
         closeButtonWidth: closeButtonBounds.width,
-        contentGap: Number.parseFloat(getComputedStyle(element.querySelector('.share-content')!).rowGap),
+        contentGap: Number.parseFloat(getComputedStyle(content).rowGap),
         dialogLeft: dialogBounds.left,
         dialogRight: dialogBounds.right,
         dialogOverflow: element.scrollHeight - element.clientHeight,
@@ -361,7 +394,9 @@ test.describe('адаптивность', () => {
     await page.goto('./')
 
     const inset = await page.locator('.next-name').evaluate((element) => {
-      const panel = element.closest('.next-prayer-panel')!.getBoundingClientRect()
+      const panelElement = element.closest('.next-prayer-panel')
+      if (!panelElement) throw new Error('Не найдена панель текущего намаза')
+      const panel = panelElement.getBoundingClientRect()
       return element.getBoundingClientRect().left - panel.left
     })
 
@@ -426,8 +461,9 @@ test.describe('Stage 5 production matrix', () => {
       const appFrame = page.locator('.app-frame')
       const appBounds = await appFrame.boundingBox()
       expect(appBounds).not.toBeNull()
-      expect(appBounds!.x).toBeGreaterThanOrEqual(-1)
-      expect(appBounds!.x + appBounds!.width).toBeLessThanOrEqual(viewport.width + 1)
+      const visibleAppBounds = required(appBounds, 'bounds приложения')
+      expect(visibleAppBounds.x).toBeGreaterThanOrEqual(-1)
+      expect(visibleAppBounds.x + visibleAppBounds.width).toBeLessThanOrEqual(viewport.width + 1)
 
       const typography = await page.locator([
         '.brand',
@@ -563,8 +599,11 @@ test.describe('Stage 5 production matrix', () => {
         .flatMap((sheet) => Array.from(sheet.cssRules))
         .map((rule) => rule.cssText)
         .join('\n')
-      const appStyle = getComputedStyle(document.querySelector('.app-frame')!)
-      const shareStyle = getComputedStyle(document.querySelector('.share-button')!)
+      const app = document.querySelector('.app-frame')
+      const share = document.querySelector('.share-button')
+      if (!app || !share) throw new Error('Не найдены основные поверхности')
+      const appStyle = getComputedStyle(app)
+      const shareStyle = getComputedStyle(share)
       return {
         animationDuration: appStyle.animationDuration,
         hasSafeAreaRules: css.includes('env(safe-area-inset-top)')

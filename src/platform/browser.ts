@@ -13,10 +13,11 @@ export interface Coordinates {
 export type PositionAccuracy = 'coarse' | 'precise'
 
 export async function getGeolocationPermission(): Promise<GeolocationPermission> {
-  if (!navigator.permissions) return 'unsupported'
+  const permissions = (navigator as { permissions?: Permissions }).permissions
+  if (!permissions) return 'unsupported'
 
   try {
-    return (await navigator.permissions.query({ name: 'geolocation' })).state
+    return (await permissions.query({ name: 'geolocation' })).state
   } catch {
     return 'unsupported'
   }
@@ -25,7 +26,8 @@ export async function getGeolocationPermission(): Promise<GeolocationPermission>
 export function getCurrentPosition(
   accuracy: PositionAccuracy = 'coarse',
 ): Promise<Result<Coordinates, GeolocationFailure>> {
-  if (!navigator.geolocation) {
+  const geolocation = (navigator as { geolocation?: Geolocation }).geolocation
+  if (!geolocation) {
     return Promise.resolve(failure({
       kind: 'geolocation',
       reason: 'unsupported',
@@ -34,7 +36,7 @@ export function getCurrentPosition(
 
   return new Promise((resolve) => {
     try {
-      navigator.geolocation.getCurrentPosition(
+      geolocation.getCurrentPosition(
         ({ coords, timestamp }) =>
           resolve(success({
             latitude: coords.latitude,

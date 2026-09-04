@@ -121,7 +121,7 @@ describe('prayer dataset artifacts', () => {
   it('проверяет согласованность текущего набора и manifest', async () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
     const bytes = await readFile(path.join(root, 'public/data/prayer-times-current.json'))
-    const checkedInManifest = JSON.parse(await readFile(
+    const checkedInManifest: unknown = JSON.parse(await readFile(
       path.join(root, 'public/data/prayer-times-manifest.json'),
       'utf8',
     ))

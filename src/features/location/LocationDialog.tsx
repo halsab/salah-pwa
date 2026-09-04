@@ -1,6 +1,5 @@
 import {
   memo,
-  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -294,14 +293,19 @@ const LocationResults = memo(function LocationResults({
   )
 })
 
-export const LocationDialog = memo(function LocationDialog({
+type OpenLocationDialogProps = Omit<LocationDialogProps, 'open'>
+
+export const LocationDialog = memo(function LocationDialog({ open, ...props }: LocationDialogProps) {
+  return open ? <OpenLocationDialog {...props} /> : null
+})
+
+function OpenLocationDialog({
   locations,
   cityCatalog,
   cityCatalogStatus,
   selectedOfficialId,
   selectedCityId,
   calculatedLocation,
-  open,
   onClose,
   onSelectOfficial,
   onSelectCity,
@@ -309,46 +313,28 @@ export const LocationDialog = memo(function LocationDialog({
   onReverse,
   onLoadCities,
   onSearchCities,
-}: LocationDialogProps) {
+}: OpenLocationDialogProps) {
   const [searchMode, setSearchMode] = useState(false)
   const [search, setSearch] = useState('')
   const [cityMatches, setCityMatches] = useState<City[]>([])
-  const [citySearchPending, setCitySearchPending] = useState(false)
+  const [completedCitySearch, setCompletedCitySearch] = useState<string | null>(null)
   const [citySearchFailed, setCitySearchFailed] = useState(false)
   const [locating, setLocating] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-  const closeDialog = useCallback(() => {
-    setSearchMode(false)
-    onClose()
-  }, [onClose])
-  const dialogRef = useModalDialog(open, closeDialog, searchRef)
-  const layerRef = useDialogViewport(open)
+  const dialogRef = useModalDialog(true, onClose, searchRef)
+  const layerRef = useDialogViewport(true)
+  const searchQuery = search.trim()
+  const citySearchPending = Boolean(searchQuery)
+    && cityCatalogStatus === 'ready'
+    && completedCitySearch !== searchQuery
 
   useEffect(() => {
-    if (!open) return
-    setSearchMode(false)
-    setSearch('')
-    setCityMatches([])
-    setCitySearchPending(false)
-    setCitySearchFailed(false)
-    setLocationError(null)
-  }, [open])
-
-  useEffect(() => {
-    const query = search.trim()
-    if (!open || !searchMode || !query || cityCatalogStatus !== 'ready') {
-      setCityMatches([])
-      setCitySearchPending(false)
-      setCitySearchFailed(false)
-      return
-    }
+    const query = searchQuery
+    if (!searchMode || !query || cityCatalogStatus !== 'ready') return
 
     let active = true
-    setCityMatches([])
-    setCitySearchPending(true)
-    setCitySearchFailed(false)
     const timeout = globalThis.setTimeout(() => {
       void onSearchCities(query).then((result) => {
         if (!active) return
@@ -357,10 +343,11 @@ export const LocationDialog = memo(function LocationDialog({
         } else {
           setCitySearchFailed(true)
         }
+        setCompletedCitySearch(query)
       }).catch(() => {
-        if (active) setCitySearchFailed(true)
-      }).finally(() => {
-        if (active) setCitySearchPending(false)
+        if (!active) return
+        setCitySearchFailed(true)
+        setCompletedCitySearch(query)
       })
     }, 200)
 
@@ -368,9 +355,7 @@ export const LocationDialog = memo(function LocationDialog({
       active = false
       globalThis.clearTimeout(timeout)
     }
-  }, [cityCatalogStatus, onSearchCities, open, search, searchMode])
-
-  if (!open) return null
+  }, [cityCatalogStatus, onSearchCities, searchMode, searchQuery])
 
   const runLocationAction = async (
     action: () => Promise<void>,
@@ -395,11 +380,18 @@ export const LocationDialog = memo(function LocationDialog({
     onLoadCities()
   }
 
+  const updateSearch = (value: string) => {
+    setSearch(value)
+    setCityMatches([])
+    setCompletedCitySearch(null)
+    setCitySearchFailed(false)
+  }
+
   return (
     <div
       ref={layerRef}
       className={`dialog-layer${searchMode ? ' location-search-layer' : ''}`}
-      onMouseDown={(event) => event.target === event.currentTarget && closeDialog()}
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <section
         ref={dialogRef}
@@ -420,7 +412,7 @@ export const LocationDialog = memo(function LocationDialog({
                   ref={searchRef}
                   type="search"
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
+                  onChange={(event) => updateSearch(event.target.value)}
                   placeholder="Найти город или район"
                   autoComplete="off"
                   autoCorrect="off"
@@ -428,7 +420,7 @@ export const LocationDialog = memo(function LocationDialog({
                   spellCheck={false}
                 />
               </label>
-              <button className="icon-button" type="button" aria-label="Закрыть" onClick={closeDialog}>
+              <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
                 <CloseIcon />
               </button>
             </div>
@@ -438,7 +430,7 @@ export const LocationDialog = memo(function LocationDialog({
             <div className="dialog-handle" aria-hidden="true" />
             <header className="dialog-header">
               <h2 id="location-dialog-title">Выбор местоположения</h2>
-              <button className="icon-button" type="button" aria-label="Закрыть" onClick={closeDialog}>
+              <button className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
                 <CloseIcon />
               </button>
             </header>
@@ -517,4 +509,4 @@ export const LocationDialog = memo(function LocationDialog({
       </section>
     </div>
   )
-})
+}

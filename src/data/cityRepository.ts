@@ -31,28 +31,33 @@ function isSource(value: unknown): value is CityDatasetSource {
 function isCityRecord(value: unknown): value is CompactCityRecord {
   if (!Array.isArray(value) || value.length !== 9) return false
 
-  const normalizedSearchKey = value[2]
+  const row: readonly unknown[] = value
+  const normalizedSearchKey = row[2]
   return (
-    Number.isInteger(value[0])
-    && value[0] > 0
-    && typeof value[1] === 'string'
-    && value[1].length > 0
+    Number.isInteger(row[0])
+    && typeof row[0] === 'number'
+    && row[0] > 0
+    && typeof row[1] === 'string'
+    && row[1].length > 0
     && typeof normalizedSearchKey === 'string'
     && normalizedSearchKey.length > 0
     && normalizeCitySearch(normalizedSearchKey) === normalizedSearchKey
-    && typeof value[3] === 'string'
-    && /^[A-Z]{2}$/.test(value[3])
-    && typeof value[4] === 'string'
-    && Number.isFinite(value[5])
-    && value[5] >= -90
-    && value[5] <= 90
-    && Number.isFinite(value[6])
-    && value[6] >= -180
-    && value[6] <= 180
-    && Number.isInteger(value[7])
-    && value[7] >= 5_000
-    && typeof value[8] === 'string'
-    && isValidTimeZone(value[8])
+    && typeof row[3] === 'string'
+    && /^[A-Z]{2}$/.test(row[3])
+    && typeof row[4] === 'string'
+    && typeof row[5] === 'number'
+    && Number.isFinite(row[5])
+    && row[5] >= -90
+    && row[5] <= 90
+    && typeof row[6] === 'number'
+    && Number.isFinite(row[6])
+    && row[6] >= -180
+    && row[6] <= 180
+    && Number.isInteger(row[7])
+    && typeof row[7] === 'number'
+    && row[7] >= 5_000
+    && typeof row[8] === 'string'
+    && isValidTimeZone(row[8])
   )
 }
 
@@ -91,7 +96,7 @@ export async function loadCityDataset(): Promise<Result<CityDataset, DataFailure
   } catch {
     return failure({
       kind: 'data',
-      reason: typeof navigator !== 'undefined' && navigator.onLine === false
+      reason: typeof navigator !== 'undefined' && !navigator.onLine
         ? 'offline'
         : 'unavailable',
     })
@@ -101,7 +106,8 @@ export async function loadCityDataset(): Promise<Result<CityDataset, DataFailure
   }
 
   try {
-    return success(parseCityDataset(await response.json()))
+    const value: unknown = await response.json()
+    return success(parseCityDataset(value))
   } catch {
     return failure({ kind: 'data', reason: 'invalid' })
   }

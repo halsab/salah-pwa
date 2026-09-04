@@ -63,7 +63,7 @@ function dataFailure(reason: DataFailure['reason']): DataFailure {
 }
 
 function fetchFailure(): DataFailure {
-  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  const offline = typeof navigator !== 'undefined' && !navigator.onLine
   return dataFailure(offline ? 'offline' : 'unavailable')
 }
 

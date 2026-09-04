@@ -6,7 +6,6 @@ import {
   CALCULATION_PROFILES,
   type CalculationProfileId,
   type CalculationSettings,
-  type CalculatedPrayerSchedule,
 } from '../../domain/prayerCalculation'
 import type {
   CalculatedPrayerKey,
@@ -80,7 +79,7 @@ function PrayerSchedule({
     <ol className="prayer-list" aria-label="Времена намаза">
       {rows.map(({ key, label, icon }) => {
         const entry = calculated
-          ? (schedule as CalculatedPrayerSchedule).entries[key as CalculatedPrayerKey]
+          ? schedule.entries[key as CalculatedPrayerKey]
           : null
         const time = entry?.time ?? (schedule as PrayerDay)[key as PrayerKey]
         const dateTime = entry

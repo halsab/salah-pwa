@@ -80,9 +80,9 @@ describe('prayer dataset manifest', () => {
 
   it('не декодирует и не разбирает байты до успешной сверки SHA-256', async () => {
     const order: string[] = []
-    const digest = vi.fn(async () => {
+    const digest = vi.fn(() => {
       order.push('digest')
-      return 'b'.repeat(64)
+      return Promise.resolve('b'.repeat(64))
     })
     const decode = vi.fn(() => {
       order.push('decode')
@@ -110,9 +110,9 @@ describe('prayer dataset manifest', () => {
       new TextEncoder().encode(JSON.stringify(dataset)),
       manifest,
       {
-        digest: async () => {
+        digest: () => {
           order.push('digest')
-          return HASH
+          return Promise.resolve(HASH)
         },
         decode: (bytes) => {
           order.push('decode')
@@ -131,7 +131,7 @@ describe('prayer dataset manifest', () => {
       new Uint8Array(),
       { ...manifest, version: `3-${HASH.slice(0, 16)}` },
       {
-        digest: async () => HASH,
+        digest: () => Promise.resolve(HASH),
         decode: () => JSON.stringify(dataset),
         parse: () => dataset,
       },

@@ -128,7 +128,7 @@ function LoadingScreen({ version }: { version: string | undefined }) {
 
 export function App({
   services = defaultServices,
-  version = import.meta.env.VITE_APP_VERSION,
+  version = import.meta.env.VITE_APP_VERSION as string | undefined,
 }: {
   services?: AppServices
   version?: string
@@ -158,8 +158,11 @@ export function App({
 
   useEffect(() => {
     let active = true
-    setLoading(true)
-    setError(null)
+    queueMicrotask(() => {
+      if (!active) return
+      setLoading(true)
+      setError(null)
+    })
     void services.initialize().then((result) => {
       if (!active) return
       if (!result.ok) {
@@ -199,7 +202,7 @@ export function App({
   const scheduleServices = useMemo(() => ({
     getDay: async (nextLocationId: string, date: string) => {
       const result = await services.getDay(nextLocationId, date)
-      if (!result.ok) throw result.error
+      if (!result.ok) throw new Error(result.error.reason)
       return result.value
     },
   }), [services])

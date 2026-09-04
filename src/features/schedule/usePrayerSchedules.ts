@@ -47,8 +47,11 @@ export function usePrayerSchedules({
   useEffect(() => {
     if (!meta) return
     let active = true
-    setScheduleLoading(true)
-    setScheduleError(null)
+    queueMicrotask(() => {
+      if (!active) return
+      setScheduleLoading(true)
+      setScheduleError(null)
+    })
 
     const loadSchedules = async (): Promise<[
       DisplaySchedule | undefined,
@@ -106,9 +109,7 @@ export function usePrayerSchedules({
     return () => { active = false }
   }, [
     calculatedLocation,
-    calculationSettings.asrMethod,
-    calculationSettings.highLatitudeRule,
-    calculationSettings.profile,
+    calculationSettings,
     locationId,
     locationMode,
     meta,

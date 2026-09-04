@@ -24,15 +24,15 @@ describe('ScheduleCountdown', () => {
 
     expect(screen.getByText('00:00:02')).toBeVisible()
     now = new Date(now.getTime() + 1_000)
-    act(() => vi.advanceTimersByTime(1_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
     expect(screen.getByText('00:00:01')).toBeVisible()
     expect(onElapsed).not.toHaveBeenCalled()
 
     now = new Date(now.getTime() + 1_000)
-    act(() => vi.advanceTimersByTime(1_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
     expect(onElapsed).toHaveBeenCalledTimes(1)
 
-    act(() => vi.advanceTimersByTime(5_000))
+    act(() => { vi.advanceTimersByTime(5_000) })
     expect(onElapsed).toHaveBeenCalledTimes(1)
     unmount()
     expect(vi.getTimerCount()).toBe(0)
@@ -56,13 +56,13 @@ describe('ScheduleCountdown', () => {
     expect(vi.getTimerCount()).toBe(1)
 
     now = new Date(now.getTime() + 30_000)
-    act(() => document.dispatchEvent(new Event('visibilitychange')))
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
 
     expect(screen.getByText('00:00:30')).toBeVisible()
     expect(vi.getTimerCount()).toBe(1)
 
     now = new Date(now.getTime() + 1_000)
-    act(() => vi.advanceTimersByTime(1_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
     expect(screen.getByText('00:00:29')).toBeVisible()
   })
 
@@ -81,7 +81,7 @@ describe('ScheduleCountdown', () => {
     )
 
     now = new Date(now.getTime() + 20_000)
-    act(() => window.dispatchEvent(new PageTransitionEvent('pageshow')))
+    act(() => { window.dispatchEvent(new PageTransitionEvent('pageshow')) })
 
     expect(screen.getByText('00:00:00')).toBeVisible()
     expect(onElapsed).toHaveBeenCalledTimes(1)

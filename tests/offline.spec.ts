@@ -54,9 +54,10 @@ test('web manifest не ограничивает ориентацию экран
   await page.goto('./')
   const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href')
   expect(manifestHref).toBeTruthy()
+  if (!manifestHref) throw new Error('Не найден manifest href')
 
   const manifest = await page.evaluate(async (href) => {
-    const response = await fetch(new URL(href!, window.location.href))
+    const response = await fetch(new URL(href, window.location.href))
     return response.json() as Promise<Record<string, unknown>>
   }, manifestHref)
 

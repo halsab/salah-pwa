@@ -92,7 +92,7 @@ describe('ShareDialog', () => {
     'игнорирует %s Clipboard-запрос после закрытия и повторного открытия',
     async (outcome) => {
       const user = userEvent.setup()
-      const request = deferred<void>()
+      const request = deferred<undefined>()
       setClipboard(vi.fn().mockReturnValue(request.promise))
       const { props, rerender } = renderDialog()
 
@@ -101,7 +101,7 @@ describe('ShareDialog', () => {
       rerender(<ShareDialog {...props} open />)
 
       await act(async () => {
-        if (outcome === 'resolved') request.resolve()
+        if (outcome === 'resolved') request.resolve(undefined)
         else request.reject(new Error('denied'))
         await request.promise.catch(() => undefined)
       })
@@ -123,7 +123,9 @@ describe('ShareDialog', () => {
     await waitFor(() => expect(copyButton).toHaveFocus())
 
     await user.click(screen.getByRole('button', { name: 'Закрыть' }))
-    fireEvent.pointerDown(dialog.parentElement!, { pointerType: 'touch' })
+    const layer = dialog.parentElement
+    if (!layer) throw new Error('Не найден слой диалога')
+    fireEvent.pointerDown(layer, { pointerType: 'touch' })
     fireEvent.keyDown(window, { key: 'Escape' })
 
     expect(props.onClose).toHaveBeenCalledTimes(3)

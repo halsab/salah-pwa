@@ -19,7 +19,7 @@ async function createLegacyVersion4Database(
 ): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah', 4)
-    request.onerror = () => reject(request.error)
+    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
     request.onupgradeneeded = () => {
       const database = request.result
       database.createObjectStore('days', { keyPath: 'key' })
@@ -31,7 +31,9 @@ async function createLegacyVersion4Database(
       const transaction = database.transaction('settings', 'readwrite')
       const store = transaction.objectStore('settings')
       for (const setting of settings) store.put(setting)
-      transaction.onerror = () => reject(transaction.error)
+      transaction.onerror = () => reject(
+        transaction.error ?? new Error('Не удалось записать IndexedDB'),
+      )
       transaction.oncomplete = () => {
         database.close()
         resolve()
@@ -51,7 +53,7 @@ async function createVersion5Database(fixture: {
 }): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah', 5)
-    request.onerror = () => reject(request.error)
+    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
     request.onupgradeneeded = () => {
       const database = request.result
       database.createObjectStore('days', { keyPath: 'key' })
@@ -78,7 +80,9 @@ async function createVersion5Database(fixture: {
         transaction.objectStore('settings').put(setting)
       }
 
-      transaction.onerror = () => reject(transaction.error)
+      transaction.onerror = () => reject(
+        transaction.error ?? new Error('Не удалось записать IndexedDB'),
+      )
       transaction.oncomplete = () => {
         database.close()
         resolve()
@@ -90,7 +94,7 @@ async function createVersion5Database(fixture: {
 async function getDatabaseVersion(): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     const request = indexedDB.open('salah')
-    request.onerror = () => reject(request.error)
+    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
     request.onsuccess = () => {
       const database = request.result
       const version = database.version
@@ -175,8 +179,10 @@ describe('database', () => {
       source: dataset.source,
       locations: dataset.locations,
     }
+    const day = dataset.days[0]
+    if (!day) throw new Error('Не найден тестовый день')
     await createVersion5Database({
-      day: dataset.days[0]!,
+      day,
       meta: legacyMeta,
       settings: [
         { key: 'locationChoice', value: choice },

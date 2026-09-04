@@ -65,7 +65,7 @@ function parseAddress(value: unknown): NominatimAddress | null {
     return null
   }
 
-  return value as NominatimAddress
+  return value
 }
 
 function buildPlaceName(address: NominatimAddress): string | undefined {
@@ -89,7 +89,7 @@ function dataFailure(reason: DataFailure['reason']): DataFailure {
 }
 
 function isOffline(): boolean {
-  return typeof navigator !== 'undefined' && navigator.onLine === false
+  return typeof navigator !== 'undefined' && !navigator.onLine
 }
 
 export async function resolvePlaceName(
@@ -99,7 +99,7 @@ export async function resolvePlaceName(
   if (isOffline()) return failure(dataFailure('offline'))
 
   const endpoint = options.endpoint
-    ?? import.meta.env.VITE_REVERSE_GEOCODER_URL
+    ?? (import.meta.env.VITE_REVERSE_GEOCODER_URL as string | undefined)
     ?? DEFAULT_ENDPOINT
   const fetcher = options.fetcher ?? fetch
   const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
@@ -130,7 +130,7 @@ export async function resolvePlaceName(
 
     let value: unknown
     try {
-      value = await response.json()
+      value = await response.json() as unknown
     } catch {
       return failure(dataFailure('invalid'))
     }

@@ -78,6 +78,50 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LocationDialog>> 
 afterEach(() => vi.useRealTimers())
 
 describe('LocationDialog', () => {
+  it('вызывает matchMedia с Window receiver', () => {
+    const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+    const matchMedia = vi.fn(function (this: Window) {
+      expect(this).toBe(window)
+      return { matches: false } as MediaQueryList
+    })
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: matchMedia,
+    })
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0)
+      return 1
+    })
+
+    try {
+      expect(() => renderDialog()).not.toThrow()
+      expect(matchMedia).toHaveBeenCalledWith('(pointer: coarse)')
+    } finally {
+      if (originalMatchMedia) {
+        Object.defineProperty(window, 'matchMedia', originalMatchMedia)
+      } else {
+        Reflect.deleteProperty(window, 'matchMedia')
+      }
+    }
+  })
+
+  it('сбрасывает поиск после внешнего закрытия и повторного открытия', () => {
+    const { props, rerender } = renderDialog({
+      cityCatalog: catalog,
+      cityCatalogStatus: 'ready',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Стамбул' } })
+    expect(screen.getByRole('searchbox')).toHaveValue('Стамбул')
+
+    rerender(<LocationDialog {...props} open={false} />)
+    rerender(<LocationDialog {...props} open />)
+
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Найти город или район' })).toBeVisible()
+  })
+
   it('в idle не показывает состояние каталога и загружает его только при входе в поиск', () => {
     const { props } = renderDialog()
 
@@ -106,22 +150,54 @@ describe('LocationDialog', () => {
     const searchbox = screen.getByRole('searchbox')
 
     fireEvent.change(searchbox, { target: { value: 'мо' } })
-    act(() => vi.advanceTimersByTime(199))
+    act(() => { vi.advanceTimersByTime(199) })
     expect(onSearchCities).not.toHaveBeenCalled()
+    expect(screen.getAllByText('Ищем города…')).not.toHaveLength(0)
+    expect(screen.queryByText('Ничего не нашли. Попробуйте другое название.')).not.toBeInTheDocument()
     fireEvent.change(searchbox, { target: { value: 'москва' } })
-    act(() => vi.advanceTimersByTime(200))
+    act(() => { vi.advanceTimersByTime(200) })
     expect(onSearchCities).toHaveBeenCalledTimes(1)
     expect(onSearchCities).toHaveBeenLastCalledWith('москва')
 
     fireEvent.change(searchbox, { target: { value: 'стамбул' } })
-    act(() => vi.advanceTimersByTime(200))
+    act(() => { vi.advanceTimersByTime(200) })
     expect(onSearchCities).toHaveBeenCalledTimes(2)
-    await act(async () => latest.resolve(success([istanbul])))
+    await act(async () => {
+      latest.resolve(success([istanbul]))
+      await latest.promise
+    })
     expect(screen.getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
 
-    await act(async () => older.resolve(success([moscow])))
+    await act(async () => {
+      older.resolve(success([moscow]))
+      await older.promise
+    })
     expect(screen.queryByRole('button', { name: 'Москва, Россия' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
+  })
+
+  it('сразу показывает pending, когда каталог готов после ввода запроса', () => {
+    vi.useFakeTimers()
+    const onSearchCities = vi.fn().mockResolvedValue(success([]))
+    const { props, rerender } = renderDialog({
+      cityCatalogStatus: 'loading',
+      onSearchCities,
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Стамбул' } })
+
+    rerender(
+      <LocationDialog
+        {...props}
+        cityCatalog={catalog}
+        cityCatalogStatus="ready"
+      />,
+    )
+    act(() => { vi.advanceTimersByTime(199) })
+
+    expect(onSearchCities).not.toHaveBeenCalled()
+    expect(screen.getAllByText('Ищем города…')).not.toHaveLength(0)
+    expect(screen.queryByText('Ничего не нашли. Попробуйте другое название.')).not.toBeInTheDocument()
   })
 
   it('показывает офлайн-сообщение только после неудавшейся попытки и честный размер обзора', () => {
@@ -164,4 +240,20 @@ describe('LocationDialog', () => {
       expect(screen.queryByRole('button', { name: 'Стамбул, Турция' })).not.toBeInTheDocument()
     },
   )
+
+  it('показывает ошибку, если поиск городов отклоняет promise', async () => {
+    renderDialog({
+      cityCatalog: catalog,
+      cityCatalogStatus: 'ready',
+      onSearchCities: vi.fn().mockRejectedValue(new Error('search failed')),
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Найти город или район' }))
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'Стамбул' } })
+
+    expect(await screen.findByText(
+      'Не удалось выполнить поиск городов.',
+      { selector: '.empty-search' },
+    )).toBeVisible()
+  })
 })

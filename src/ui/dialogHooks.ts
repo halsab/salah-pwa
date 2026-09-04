@@ -12,7 +12,9 @@ export function useModalDialog(
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     requestAnimationFrame(() => {
-      const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false
+      const coarsePointer = (
+        window as unknown as { matchMedia?: Window['matchMedia'] }
+      ).matchMedia?.('(pointer: coarse)').matches ?? false
       const focusTarget = coarsePointer ? dialogRef.current : initialFocusRef?.current ?? dialogRef.current
       focusTarget?.focus({ preventScroll: true })
     })
