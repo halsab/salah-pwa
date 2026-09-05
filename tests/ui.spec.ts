@@ -350,16 +350,19 @@ test.describe('адаптивность', () => {
       const dialogStyle = getComputedStyle(element)
       const qr = element.querySelector('.share-qr')
       const qrFrame = element.querySelector('.share-qr-frame')
-      const closeButton = element.querySelector('.share-close-button')
+      const copyButton = element.querySelector('.share-copy-button')
+      const closeButton = element.querySelector('.share-close-button:not(.share-copy-button)')
       const content = element.querySelector('.share-content')
-      if (!qr || !qrFrame || !closeButton || !content) {
+      if (!qr || !qrFrame || !copyButton || !closeButton || !content) {
         throw new Error('Не найдены элементы share-диалога')
       }
       const qrBounds = qr.getBoundingClientRect()
       const qrFrameBounds = qrFrame.getBoundingClientRect()
+      const copyButtonBounds = copyButton.getBoundingClientRect()
       const closeButtonBounds = closeButton.getBoundingClientRect()
       return {
         blockStartInset: qrFrameBounds.top - dialogBounds.top,
+        buttonGap: closeButtonBounds.top - copyButtonBounds.bottom,
         closeButtonHeight: closeButtonBounds.height,
         closeButtonWidth: closeButtonBounds.width,
         contentGap: Number.parseFloat(getComputedStyle(content).rowGap),
@@ -383,6 +386,7 @@ test.describe('адаптивность', () => {
     expect(layout.pageOverflow).toBeLessThanOrEqual(0)
     expect(layout.qrWidth).toBeGreaterThanOrEqual(220)
     expect(layout.contentGap).toBeGreaterThanOrEqual(12)
+    expect(Math.abs(layout.buttonGap - layout.contentGap)).toBeLessThanOrEqual(2)
     expect(layout.closeButtonHeight).toBeGreaterThanOrEqual(50)
     expect(Math.abs(layout.closeButtonWidth - layout.qrFrameWidth)).toBeLessThanOrEqual(1)
 
@@ -553,7 +557,7 @@ test.describe('Stage 5 production matrix', () => {
     await expect(locationButton).toBeFocused()
   })
 
-  test('копирует ссылку, объявляет успех и сохраняет фокус в share-dialog', async ({ context, page }) => {
+  test('копирует ссылку без видимого лейбла и сохраняет фокус в share-dialog', async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('./')
     await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
@@ -563,9 +567,17 @@ test.describe('Stage 5 production matrix', () => {
     await copyButton.click()
 
     await expect(dialog.getByRole('status')).toHaveText('Ссылка скопирована')
+    await expect(dialog.getByRole('status')).toHaveClass('sr-only')
     await expect(copyButton).toBeFocused()
     await expect(dialog).toBeVisible()
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url())
+  })
+
+  test('показывает номер локальной или релизной сборки', async ({ page }) => {
+    await page.goto('./')
+
+    await expect(page.locator('.app-version')).toBeVisible()
+    await expect(page.locator('.app-version')).toHaveText(/^v\d+(?:\.\d+)+$/)
   })
 
   test('объявляет ошибку Clipboard API без закрытия и потери фокуса', async ({ page }) => {

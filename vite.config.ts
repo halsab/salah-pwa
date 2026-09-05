@@ -1,7 +1,13 @@
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+const packageMetadata = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
+) as { version: string }
+const LOCAL_APP_VERSION = `v${packageMetadata.version}`
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
@@ -24,6 +30,9 @@ const CONTENT_SECURITY_POLICY = [
 
 export default defineConfig({
   base: '/salah-pwa/',
+  define: {
+    'import.meta.env.VITE_APP_PACKAGE_VERSION': JSON.stringify(LOCAL_APP_VERSION),
+  },
   build: {
     rollupOptions: {
       input: {

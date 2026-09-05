@@ -75,7 +75,7 @@ function OpenShareDialog({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
             Скопировать ссылку
           </button>
           <p
-            className="share-copy-status"
+            className={copyStatus === 'error' ? 'share-copy-status' : 'sr-only'}
             aria-atomic="true"
             aria-live="polite"
             role="status"

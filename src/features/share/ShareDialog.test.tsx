@@ -37,7 +37,7 @@ afterEach(() => {
 })
 
 describe('ShareDialog', () => {
-  it('копирует текущую ссылку и сообщает об успехе, не закрывая диалог', async () => {
+  it('копирует текущую ссылку и сообщает об успехе без видимого лейбла', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn().mockResolvedValue(undefined)
     setClipboard(writeText)
@@ -47,7 +47,9 @@ describe('ShareDialog', () => {
     await user.click(copyButton)
 
     expect(writeText).toHaveBeenCalledWith(window.location.href)
-    expect(await screen.findByRole('status')).toHaveTextContent('Ссылка скопирована')
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Ссылка скопирована')
+    expect(status).toHaveClass('sr-only')
     expect(props.onClose).not.toHaveBeenCalled()
     expect(copyButton).toHaveFocus()
   })
@@ -59,8 +61,10 @@ describe('ShareDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось скопировать ссылку')
-    expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite')
+    const status = await screen.findByRole('status')
+    expect(status).toHaveTextContent('Не удалось скопировать ссылку')
+    expect(status).toHaveAttribute('aria-live', 'polite')
+    expect(status).toHaveClass('share-copy-status')
     expect(props.onClose).not.toHaveBeenCalled()
   })
 
@@ -86,6 +90,7 @@ describe('ShareDialog', () => {
     rerender(<ShareDialog {...props} open />)
 
     expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    expect(screen.getByRole('status')).toHaveClass('sr-only')
   })
 
   it.each(['resolved', 'rejected'] as const)(
@@ -107,6 +112,7 @@ describe('ShareDialog', () => {
       })
 
       expect(screen.getByRole('status')).toBeEmptyDOMElement()
+      expect(screen.getByRole('status')).toHaveClass('sr-only')
     },
   )
 

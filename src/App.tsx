@@ -128,7 +128,8 @@ function LoadingScreen({ version }: { version: string | undefined }) {
 
 export function App({
   services = defaultServices,
-  version = import.meta.env.VITE_APP_VERSION as string | undefined,
+  version = (import.meta.env.VITE_APP_VERSION
+    || import.meta.env.VITE_APP_PACKAGE_VERSION) as string | undefined,
 }: {
   services?: AppServices
   version?: string
