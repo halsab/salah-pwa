@@ -1,10 +1,62 @@
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+const packageMetadata = JSON.parse(
+  readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
+) as { version: string }
+const LOCAL_APP_VERSION = `v${packageMetadata.version}`
+
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "script-src 'self'",
+  "style-src 'self'",
+  "style-src-elem 'self'",
+  // inline style нужен dialogHooks для блокировки scroll и CSS-переменных visual viewport.
+  "style-src-attr 'unsafe-inline'",
+  "font-src 'self'",
+  "img-src 'self'",
+  "connect-src 'self' https://nominatim.openstreetmap.org",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "frame-src 'none'",
+  "media-src 'none'",
+  "form-action 'none'",
+].join('; ')
+
 export default defineConfig({
   base: '/salah-pwa/',
+  define: {
+    'import.meta.env.VITE_APP_PACKAGE_VERSION': JSON.stringify(LOCAL_APP_VERSION),
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        app: fileURLToPath(new URL('./index.html', import.meta.url)),
+        privacy: fileURLToPath(new URL('./privacy/index.html', import.meta.url)),
+      },
+    },
+  },
   plugins: [
+    {
+      name: 'production-content-security-policy',
+      apply: 'build',
+      transformIndexHtml: {
+        order: 'pre',
+        handler: () => [{
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: CONTENT_SECURITY_POLICY,
+          },
+          injectTo: 'head-prepend',
+        }],
+      },
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',
@@ -15,7 +67,6 @@ export default defineConfig({
         description: 'Официальные времена ДУМ РТ и автономный расчёт намаза по GPS — без интернета.',
         lang: 'ru',
         display: 'standalone',
-        orientation: 'portrait-primary',
         background_color: '#f6eedf',
         theme_color: '#184c3b',
         start_url: './',
@@ -30,7 +81,10 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         navigateFallback: 'index.html',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
-        globIgnores: ['**/data/cities-current.json'],
+        globIgnores: [
+          '**/data/cities-current.json',
+          '**/data/prayer-times-current.json',
+        ],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
           {

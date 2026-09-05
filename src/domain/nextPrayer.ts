@@ -1,4 +1,5 @@
 import type { CalculatedPrayerSchedule } from './prayerCalculation'
+import { createLocationClock, DUM_RT_TIME_ZONE } from './locationTime'
 import type {
   CalculatedPrayerKey,
   PrayerDay,
@@ -7,7 +8,7 @@ import type {
   SchedulePrayerKey,
 } from './types'
 
-const MOSCOW_UTC_OFFSET = '+03:00'
+const OFFICIAL_SCHEDULE_CLOCK = createLocationClock(DUM_RT_TIME_ZONE)
 
 const OFFICIAL_EVENTS: ReadonlyArray<{
   key: PrayerKey
@@ -17,7 +18,7 @@ const OFFICIAL_EVENTS: ReadonlyArray<{
   {
     key: 'suhurEnd',
     label: 'Завершение сухура',
-    countdownLabel: 'До сухура',
+    countdownLabel: 'До конца сухура',
   },
   {
     key: 'fajrJamaat',
@@ -54,14 +55,14 @@ export interface NextPrayer {
   countdownLabel: string
   date: string
   time: PrayerTime
+  instant: number
   remainingSeconds: number
 }
 
-export type CurrentPrayer = Omit<NextPrayer, 'remainingSeconds'>
+export type CurrentPrayer = Omit<NextPrayer, 'instant' | 'remainingSeconds'>
 
 function prayerInstant(date: string, time: PrayerTime): Date {
-  // Татарстан круглый год живёт по UTC+3, поэтому время источника не зависит от DST устройства.
-  return new Date(`${date}T${time}:00${MOSCOW_UTC_OFFSET}`)
+  return OFFICIAL_SCHEDULE_CLOCK.toInstant(date, time)
 }
 
 function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {
@@ -73,6 +74,7 @@ function nextInOfficialDay(now: Date, day: PrayerDay): NextPrayer | null {
         ...event,
         date: day.date,
         time,
+        instant: instant.getTime(),
         remainingSeconds: Math.max(
           0,
           Math.ceil((instant.getTime() - now.getTime()) / 1_000),
@@ -95,6 +97,7 @@ function nextInCalculatedDay(
         ...event,
         date: day.date,
         time: entry.time,
+        instant: entry.instant,
         remainingSeconds: Math.max(
           0,
           Math.ceil((entry.instant - now.getTime()) / 1_000),
@@ -123,7 +126,8 @@ export function findNextPrayer(
 function currentInDay(now: Date, day: PrayerSchedule): CurrentPrayer | null {
   if ('entries' in day) {
     for (let index = CALCULATED_EVENTS.length - 1; index >= 0; index -= 1) {
-      const event = CALCULATED_EVENTS[index]!
+      const event = CALCULATED_EVENTS[index]
+      if (!event) continue
       const entry = day.entries[event.key]
       if (entry.instant <= now.getTime()) {
         return { ...event, date: day.date, time: entry.time }
@@ -131,7 +135,8 @@ function currentInDay(now: Date, day: PrayerSchedule): CurrentPrayer | null {
     }
   } else {
     for (let index = OFFICIAL_EVENTS.length - 1; index >= 0; index -= 1) {
-      const event = OFFICIAL_EVENTS[index]!
+      const event = OFFICIAL_EVENTS[index]
+      if (!event) continue
       const time = day[event.key]
       if (prayerInstant(day.date, time).getTime() <= now.getTime()) {
         return { ...event, date: day.date, time }

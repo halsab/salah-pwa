@@ -1,8 +1,10 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
-test('весь интерфейс использует рукописный шрифт', async ({ page }) => {
+test('весь интерфейс использует локальный Alegreya Sans только в нужных начертаниях', async ({ page }) => {
   await page.goto('./')
   await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
+
+  await page.evaluate(() => document.fonts.ready)
 
   const bodyFont = await page.locator('body').evaluate((element) =>
     getComputedStyle(element).fontFamily,
@@ -13,6 +15,17 @@ test('весь интерфейс использует рукописный шр
   const decorationFont = await page.locator('.next-label').evaluate((element) =>
     getComputedStyle(element, '::before').fontFamily,
   )
+  const brandWeight = await page.getByRole('heading', { name: 'Salah' }).evaluate((element) =>
+    getComputedStyle(element).fontWeight,
+  )
+  const timeStyle = await page.locator('.prayer-time').first().evaluate((element) => {
+    const style = getComputedStyle(element)
+    return {
+      family: style.fontFamily,
+      numeric: style.fontVariantNumeric,
+      weight: style.fontWeight,
+    }
+  })
 
   await page.getByRole('button', { name: /Казань/ }).click()
   await page.getByRole('button', { name: 'Найти город или район' }).click()
@@ -21,24 +34,72 @@ test('весь интерфейс использует рукописный шр
   )
 
   for (const fontFamily of [bodyFont, buttonFont, decorationFont, inputFont]) {
-    expect(fontFamily).toContain('Neucha')
+    expect(fontFamily).toContain('Alegreya Sans')
   }
+  expect(brandWeight).toBe('700')
+  expect(timeStyle).toEqual({
+    family: expect.stringContaining('Alegreya Sans'),
+    numeric: 'tabular-nums',
+    weight: '700',
+  })
+
+  const alegreyaFaces = await page.evaluate(() => Array.from(document.fonts)
+    .filter(({ family }) => family.includes('Alegreya Sans'))
+    .map(({ style, weight }) => ({ style, weight })))
+  expect(new Set(alegreyaFaces.map(({ style }) => style))).toEqual(new Set(['normal']))
+  expect(new Set(alegreyaFaces.map(({ weight }) => weight))).toEqual(new Set(['400', '500', '700']))
+})
+
+test('web manifest не ограничивает ориентацию экрана', async ({ page }) => {
+  await page.goto('./')
+  const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href')
+  expect(manifestHref).toBeTruthy()
+  if (!manifestHref) throw new Error('Не найден manifest href')
+
+  const manifest = await page.evaluate(async (href) => {
+    const response = await fetch(new URL(href, window.location.href))
+    return response.json() as Promise<Record<string, unknown>>
+  }, manifestHref)
+
+  expect(manifest).not.toHaveProperty('orientation')
 })
 
 test('после первого запуска расписание полностью открывается без сети', async ({
   context,
   page,
 }) => {
+  let prayerDatasetRequests = 0
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/data/prayer-times-current.json')) {
+      prayerDatasetRequests += 1
+    }
+  })
+
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  expect(prayerDatasetRequests).toBe(1)
 
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready
   })
+  prayerDatasetRequests = 0
   await page.reload()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  expect(prayerDatasetRequests).toBe(0)
+
+  const cachedPrayerDatasetRequests = await page.evaluate(async () => {
+    const cacheNames = await caches.keys()
+    const requests = (await Promise.all(cacheNames.map(async (name) => {
+      const cache = await caches.open(name)
+      return cache.keys()
+    }))).flat()
+    return requests
+      .map(({ url }) => url)
+      .filter((url) => new URL(url).pathname.endsWith('/data/prayer-times-current.json'))
+  })
+  expect(cachedPrayerDatasetRequests).toEqual([])
 
   await context.setOffline(true)
   try {
@@ -61,11 +122,20 @@ test('GPS-расписание вне Татарстана рассчитыва�
   context,
   page,
 }) => {
+  let cityCatalogRequests = 0
+  await page.route('**/data/cities-current.json', (route) => {
+    cityCatalogRequests += 1
+    return route.abort()
+  })
+  await page.route('https://nominatim.openstreetmap.org/**', (route) => route.abort())
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
   await page.goto('./')
 
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Определить автоматически' }).click()
   await expect(page.getByRole('button', { name: /Текущее местоположение/i })).toBeVisible()
+  expect(cityCatalogRequests).toBe(0)
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
   await expect(
     page
@@ -88,6 +158,7 @@ test('GPS-расписание вне Татарстана рассчитыва�
         .getByText('Фаджр', { exact: true }),
     ).toBeVisible()
     await expect(page.getByText(/Расчёт по настройкам · ДУМ РТ/)).toBeVisible()
+    expect(cityCatalogRequests).toBe(0)
   } finally {
     await context.setOffline(false)
   }
@@ -101,9 +172,9 @@ test('город из офлайн-справочника сохраняется
   await page.getByRole('button', { name: /Казань/ }).click()
   await page.getByRole('button', { name: 'Найти город или район' }).click()
   await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Istanbul, Турция' }).click()
+  await page.getByRole('button', { name: 'Стамбул, Турция' }).click()
 
-  await expect(page.getByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
@@ -112,12 +183,12 @@ test('город из офлайн-справочника сохраняется
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /Istanbul, Турция/ })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
-    await page.getByRole('button', { name: /Istanbul, Турция/ }).click()
+    await page.getByRole('button', { name: /Стамбул, Турция/ }).click()
     await page.getByRole('button', { name: 'Найти город или район' }).click()
     await page.getByRole('searchbox').fill('Москва')
-    await expect(page.getByRole('button', { name: 'Moscow, Россия' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Москва, Россия' })).toBeVisible()
   } finally {
     await context.setOffline(false)
   }

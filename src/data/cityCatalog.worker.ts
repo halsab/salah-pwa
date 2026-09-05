@@ -4,6 +4,8 @@ import {
   searchCities,
   type CityDataset,
 } from '../domain/cities'
+import type { DataFailure } from '../domain/errors'
+import { failure, type Result } from '../domain/result'
 import {
   type CityCatalog,
   type CityWorkerRequest,
@@ -19,13 +21,18 @@ const workerScope = self as unknown as {
   postMessage: (message: CityWorkerResponse) => void
 }
 
-let datasetPromise: Promise<CityDataset> | null = null
+let datasetPromise: Promise<Result<CityDataset, DataFailure>> | null = null
 
-function getDataset(): Promise<CityDataset> {
-  datasetPromise ??= loadCityDataset().catch((error: unknown) => {
-    datasetPromise = null
-    throw error
-  })
+function getDataset(): Promise<Result<CityDataset, DataFailure>> {
+  if (datasetPromise) return datasetPromise
+
+  const loading = loadCityDataset()
+    .catch(() => failure<DataFailure>({ kind: 'data', reason: 'unavailable' }))
+    .then((result) => {
+      if (!result.ok && datasetPromise === loading) datasetPromise = null
+      return result
+    })
+  datasetPromise = loading
   return datasetPromise
 }
 
@@ -38,7 +45,16 @@ function createCatalog(dataset: CityDataset): CityCatalog {
 
 workerScope.addEventListener('message', (event) => {
   const request = event.data
-  void getDataset().then((dataset) => {
+  void getDataset().then((datasetResult) => {
+    if (!datasetResult.ok) {
+      workerScope.postMessage({
+        id: request.id,
+        ok: false,
+        error: datasetResult.error,
+      })
+      return
+    }
+    const dataset = datasetResult.value
     let result: CityWorkerResponse & { ok: true }
 
     switch (request.type) {
@@ -63,11 +79,11 @@ workerScope.addEventListener('message', (event) => {
     }
 
     workerScope.postMessage(result)
-  }).catch((error: unknown) => {
+  }).catch(() => {
     workerScope.postMessage({
       id: request.id,
       ok: false,
-      error: error instanceof Error ? error.message : 'Не удалось загрузить города',
+      error: { kind: 'data', reason: 'unavailable' },
     })
   })
 })

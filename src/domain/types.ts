@@ -44,6 +44,7 @@ export interface PrayerLocation {
 export interface SavedCoordinates {
   latitude: number
   longitude: number
+  timeZone: string
   accuracy: number | null
   timestamp: number
   name?: string
@@ -72,4 +73,11 @@ export interface PrayerDataset {
   }
   locations: PrayerLocation[]
   days: PrayerDay[]
+}
+
+export interface PrayerDatasetManifest {
+  schemaVersion: 1
+  version: string
+  url: 'prayer-times-current.json'
+  sha256: string
 }

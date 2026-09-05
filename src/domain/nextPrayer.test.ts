@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { PrayerDay } from './types'
 import { findCurrentPrayer, findNextPrayer, formatRemainingTime } from './nextPrayer'
 import { calculatePrayerSchedule } from './prayerCalculation'
+import { DUM_RT_TIME_ZONE } from './locationTime'
 
 const today: PrayerDay = {
   locationId: 'kazan',
@@ -24,8 +25,30 @@ const tomorrow: PrayerDay = {
 }
 
 describe('findNextPrayer', () => {
+  it('явно использует московскую таймзону для официальных событий ДУМ РТ', () => {
+    expect(DUM_RT_TIME_ZONE).toBe('Europe/Moscow')
+
+    const current = findCurrentPrayer(
+      new Date('2026-09-01T15:38:59.500Z'),
+      today,
+    )
+    const next = findNextPrayer(
+      new Date('2026-09-01T15:38:59.500Z'),
+      today,
+      tomorrow,
+    )
+
+    expect(current).toMatchObject({ key: 'asr', date: '2026-09-01', time: '16:24' })
+    expect(next).toMatchObject({
+      key: 'maghrib',
+      date: '2026-09-01',
+      time: '18:39',
+      remainingSeconds: 1,
+    })
+  })
+
   it.each([
-    ['suhurEnd', 'До сухура'],
+    ['suhurEnd', 'До конца сухура'],
     ['fajrJamaat', 'До утреннего в мечети'],
     ['sunrise', 'До восхода'],
     ['zenith', 'До зенита'],
@@ -66,7 +89,7 @@ describe('findNextPrayer', () => {
     expect(next).toMatchObject({
       key: 'suhurEnd',
       label: 'Завершение сухура',
-      countdownLabel: 'До сухура',
+      countdownLabel: 'До конца сухура',
       date: '2026-09-02',
       time: '02:21',
     })
@@ -94,6 +117,7 @@ describe('findNextPrayer', () => {
     const schedule = calculatePrayerSchedule(
       { latitude: 55.7558, longitude: 37.6173 },
       '2026-09-01',
+      'Europe/Moscow',
     )
     const next = findNextPrayer(
       new Date(schedule.entries.fajr.instant - 1_000),
@@ -113,6 +137,7 @@ describe('findNextPrayer', () => {
     const schedule = calculatePrayerSchedule(
       { latitude: 55.7558, longitude: 37.6173 },
       '2026-09-01',
+      'Europe/Moscow',
     )
     const next = findNextPrayer(
       new Date(schedule.entries.sunrise.instant - 1_000),

@@ -1,0 +1,236 @@
+@import '@fontsource/alegreya-sans/cyrillic-400.css';
+@import '@fontsource/alegreya-sans/cyrillic-500.css';
+@import '@fontsource/alegreya-sans/cyrillic-700.css';
+@import '@fontsource/alegreya-sans/latin-400.css';
+@import '@fontsource/alegreya-sans/latin-500.css';
+@import '@fontsource/alegreya-sans/latin-700.css';
+
+:root {
+  color-scheme: light dark;
+  font-family: 'Alegreya Sans', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --page: #184c3b;
+  --paper: #f6eedf;
+  --paper-strong: #fff9ee;
+  --ink: #183d33;
+  --ink-soft: #526a62;
+  --outline: #153e34;
+  --accent: #be683c;
+  --shadow: rgb(9 34 27 / 34%);
+  --focus: #f1a15f;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #091410;
+    --paper: #16251f;
+    --paper-strong: #1c3028;
+    --ink: #f3ead9;
+    --ink-soft: #bdc9c2;
+    --outline: #c9d8cf;
+    --accent: #e79a6d;
+    --shadow: rgb(0 0 0 / 55%);
+    --focus: #ffc38c;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: var(--page);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  background: var(--page);
+  font-size: 1.08rem;
+  line-height: 1.55;
+}
+
+a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+a:focus-visible {
+  border-radius: 4px;
+  outline: 3px solid var(--focus);
+  outline-offset: 4px;
+}
+
+.skip-link {
+  position: fixed;
+  inset: 10px auto auto 10px;
+  z-index: 2;
+  translate: 0 -180%;
+  padding: 9px 14px;
+  border-radius: 8px;
+  color: var(--outline);
+  background: var(--paper-strong);
+}
+
+.skip-link:focus {
+  translate: 0;
+}
+
+.privacy-shell {
+  width: min(860px, 100%);
+  display: grid;
+  gap: 18px;
+  margin-inline: auto;
+  padding:
+    max(24px, env(safe-area-inset-top))
+    max(18px, env(safe-area-inset-right))
+    max(30px, env(safe-area-inset-bottom))
+    max(18px, env(safe-area-inset-left));
+}
+
+.paper-card {
+  padding: clamp(22px, 5vw, 42px);
+  border: 2px solid var(--outline);
+  border-radius: 24px;
+  background-color: var(--paper);
+  background-image: url('/paper-texture.svg');
+  box-shadow: 6px 6px 0 var(--shadow), inset 0 0 0 4px var(--paper);
+}
+
+.privacy-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.privacy-hero::after {
+  position: absolute;
+  inset: 8px;
+  border: 1px solid var(--outline);
+  border-radius: 17px;
+  content: '';
+  pointer-events: none;
+}
+
+.back-link {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  min-height: 44px;
+  align-content: center;
+}
+
+.eyebrow {
+  margin: 22px 0 7px;
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+h1 {
+  max-width: 12ch;
+  margin-bottom: 15px;
+  font-size: clamp(3rem, 10vw, 5.4rem);
+  font-weight: 700;
+  hyphens: auto;
+  letter-spacing: -0.035em;
+  line-height: 0.9;
+  overflow-wrap: break-word;
+}
+
+h2 {
+  margin-bottom: 15px;
+  font-size: clamp(1.7rem, 4vw, 2.25rem);
+  line-height: 1;
+}
+
+h3 {
+  margin-bottom: 8px;
+  font-size: 1.3rem;
+  line-height: 1.1;
+}
+
+p:last-child {
+  margin-bottom: 0;
+}
+
+.lede {
+  max-width: 55ch;
+  margin-bottom: 0;
+  color: var(--ink-soft);
+  font-size: clamp(1.2rem, 3vw, 1.45rem);
+  line-height: 1.35;
+}
+
+.notice {
+  padding: 12px 14px;
+  border: 1px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--paper-strong);
+  font-weight: 500;
+}
+
+.query-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+code {
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--outline) 38%, transparent);
+  border-radius: 7px;
+  background: var(--paper-strong);
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.source-block + .source-block {
+  margin-top: 22px;
+  padding-top: 22px;
+  border-top: 1px solid color-mix(in srgb, var(--outline) 28%, transparent);
+}
+
+.privacy-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 4px 5px;
+  color: color-mix(in srgb, var(--paper-strong) 82%, var(--page));
+}
+
+.privacy-footer small {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  body {
+    font-size: 1rem;
+  }
+
+  .paper-card {
+    border-radius: 18px;
+    box-shadow: 4px 4px 0 var(--shadow), inset 0 0 0 3px var(--paper);
+  }
+
+  .privacy-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

@@ -1,4 +1,6 @@
 import type { City, CityDatasetSource, CountryCityGroup } from '../domain/cities'
+import type { DataFailure } from '../domain/errors'
+import type { Result } from '../domain/result'
 
 export interface CityCatalog {
   source: CityDatasetSource
@@ -6,13 +8,13 @@ export interface CityCatalog {
 }
 
 export interface CityCatalogService {
-  load: () => Promise<CityCatalog>
-  search: (query: string) => Promise<City[]>
+  load: () => Promise<Result<CityCatalog, DataFailure>>
+  search: (query: string) => Promise<Result<City[], DataFailure>>
   findNearest: (
     latitude: number,
     longitude: number,
     maxDistanceKm: number,
-  ) => Promise<City | null>
+  ) => Promise<Result<City | null, DataFailure>>
 }
 
 export type CityWorkerCommand =
@@ -29,4 +31,4 @@ export type CityWorkerRequest = CityWorkerCommand & { id: number }
 
 export type CityWorkerResponse =
   | { id: number; ok: true; result: CityCatalog | City[] | City | null }
-  | { id: number; ok: false; error: string }
+  | { id: number; ok: false; error: DataFailure }

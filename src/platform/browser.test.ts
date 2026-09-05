@@ -20,10 +20,13 @@ describe('getCurrentPosition', () => {
     })
 
     await expect(getCurrentPosition('coarse')).resolves.toEqual({
-      latitude: 55.8,
-      longitude: 49.1,
-      accuracy: 750,
-      timestamp: 123,
+      ok: true,
+      value: {
+        latitude: 55.8,
+        longitude: 49.1,
+        accuracy: 750,
+        timestamp: 123,
+      },
     })
     expect(getPosition.mock.calls[0]?.[2]).toEqual({
       enableHighAccuracy: false,
@@ -49,6 +52,35 @@ describe('getCurrentPosition', () => {
       enableHighAccuracy: true,
       timeout: 30_000,
       maximumAge: 0,
+    })
+  })
+
+  it.each([
+    [1, 'denied'],
+    [2, 'unavailable'],
+    [3, 'timeout'],
+  ] as const)('типизирует ошибку PositionError с кодом %s как %s', async (code, reason) => {
+    const getPosition = vi.fn((
+      _success: PositionCallback,
+      error?: PositionErrorCallback,
+      _options?: PositionOptions,
+    ) => error?.({ code, message: 'browser error' } as GeolocationPositionError))
+    vi.stubGlobal('navigator', {
+      geolocation: { getCurrentPosition: getPosition },
+    })
+
+    await expect(getCurrentPosition()).resolves.toEqual({
+      ok: false,
+      error: { kind: 'geolocation', reason },
+    })
+  })
+
+  it('отличает отсутствие browser geolocation API', async () => {
+    vi.stubGlobal('navigator', {})
+
+    await expect(getCurrentPosition()).resolves.toEqual({
+      ok: false,
+      error: { kind: 'geolocation', reason: 'unsupported' },
     })
   })
 })
