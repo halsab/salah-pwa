@@ -10,6 +10,28 @@ interface GeolocationObservation {
   watchPosition: number
 }
 
+const istanbulCityDataset = {
+  schemaVersion: 3,
+  source: {
+    name: 'GeoNames',
+    url: 'https://www.geonames.org/',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    updatedAt: '2026-09-01',
+  },
+  cities: [[
+    745044,
+    'Стамбул',
+    'стамбул istanbul истанбул турция',
+    'TR',
+    '34',
+    41.0138,
+    28.9497,
+    15_701_602,
+    'Europe/Istanbul',
+  ]],
+}
+
 async function observeGeolocation(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const calls: GeolocationObservation = {
@@ -138,6 +160,9 @@ test('ручной город сохраняется при доступной �
   })
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
+  await page.route('**/data/cities-current.json', (route) => route.fulfill({
+    json: istanbulCityDataset,
+  }))
 
   await page.goto('./')
   await page.getByRole('button', { name: /Казань/ }).click()
