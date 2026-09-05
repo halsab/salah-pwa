@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import { expect, FIXED_BROWSER_TIME, test } from './fixtures'
+import { expect, test } from './fixtures'
 
 test.use({ timezoneId: 'America/Los_Angeles' })
 
@@ -8,28 +8,6 @@ interface GeolocationObservation {
   permissionQueries: number
   getCurrentPosition: number
   watchPosition: number
-}
-
-const istanbulCityDataset = {
-  schemaVersion: 3,
-  source: {
-    name: 'GeoNames',
-    url: 'https://www.geonames.org/',
-    license: 'CC BY 4.0',
-    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
-    updatedAt: '2026-09-01',
-  },
-  cities: [[
-    745044,
-    'Стамбул',
-    'стамбул istanbul истанбул турция',
-    'TR',
-    '34',
-    41.0138,
-    28.9497,
-    15_701_602,
-    'Europe/Istanbul',
-  ]],
 }
 
 async function observeGeolocation(page: Page): Promise<void> {
@@ -160,40 +138,26 @@ test('ручной город сохраняется при доступной �
   })
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
-  await page.route('**/data/cities-current.json', (route) => route.fulfill({
-    json: istanbulCityDataset,
-  }))
 
   await page.goto('./')
   await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Стамбул, Турция' }).click()
-  await expect(page.getByRole('button', { name: /Стамбул, Турция · UTC\+3/ })).toBeVisible()
+  await page.locator('.official-country-group summary').click()
+  await page.getByRole('button', { name: 'Набережные Челны' }).click()
+  await expect(page.getByRole('button', { name: /Набережные Челны · UTC\+3/ })).toBeVisible()
 
   expect(await page.evaluate(async () => (
     await navigator.permissions.query({ name: 'geolocation' })
   ).state)).toBe('granted')
   const savedChoice = {
-    mode: 'calculated',
+    mode: 'official',
+    locationId: 'naberezhnye-chelny',
     source: 'manual',
-    coordinates: {
-      latitude: 41.0138,
-      longitude: 28.9497,
-      timeZone: 'Europe/Istanbul',
-      accuracy: null,
-      timestamp: FIXED_BROWSER_TIME.getTime(),
-      name: 'Стамбул, Турция',
-      cityId: 745044,
-      nameSource: 'geonames',
-      source: 'preset',
-    },
   }
   await expect.poll(() => readSavedLocationChoice(page)).toEqual(savedChoice)
 
   await page.reload()
 
-  await expect(page.getByRole('button', { name: /Стамбул, Турция · UTC\+3/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Набережные Челны · UTC\+3/ })).toBeVisible()
   await waitForPostMountBoundary(page)
   expect(await getGeolocationObservation(page)).toEqual({
     permissionQueries: 0,
