@@ -1,3 +1,6 @@
+import { settingsServices, type TestSettingsServices } from './test/settingsServices'
+import { automaticPreferences, manualCalculation } from './domain/sourcePreferences'
+import { selectionFromSettings } from './domain/calculationSettings'
 import geometry from '../public/data/tatarstan-boundary.json'
 import { parseCoverageGeometry } from './domain/localGeography'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -57,7 +60,7 @@ const cityDataset: CityDataset = {
   ],
 }
 
-const initializedState: PrayerRepositoryState = {
+const initializedState = {
   meta: {
     schemaVersion: 2,
     source: {
@@ -77,12 +80,12 @@ const initializedState: PrayerRepositoryState = {
     ],
   },
   locationChoice: { mode: 'official', locationId: 'kazan', source: 'default' },
-  calculationSettings: DEFAULT_CALCULATION_SETTINGS,
-  warning: null,
-}
+  preferences: automaticPreferences(),
+  dataState: 'ready', update: { status: 'idle' }, checkedAt: null,
+} satisfies PrayerRepositoryState
 
-function initialized(overrides: Partial<PrayerRepositoryState> = {}) {
-  return success({ ...initializedState, ...overrides })
+function initialized(overrides: Partial<PrayerRepositoryState> & { calculationSettings?: typeof DEFAULT_CALCULATION_SETTINGS } = {}) {
+  return success({ ...initializedState, ...overrides, ...(overrides.calculationSettings ? { preferences: manualCalculation(selectionFromSettings(overrides.calculationSettings)) } : {}) })
 }
 
 function deferred<Value>() {
@@ -94,8 +97,8 @@ function deferred<Value>() {
 }
 
 function createServices(
-  overrides: Partial<AppServices> = {},
-): AppServices {
+  overrides: Partial<AppServices & TestSettingsServices> = {},
+): AppServices & TestSettingsServices {
   const days = [kazanToday, kazanTomorrow, chelnyToday]
 
   return {
@@ -117,9 +120,10 @@ function createServices(
           dates.map((date) => days.find((day) => day.locationId === locationId && day.date === date)),
         )),
       ),
-    saveOfficialLocation: vi.fn().mockResolvedValue(success(undefined)),
-    saveCalculatedLocation: vi.fn().mockResolvedValue(success(undefined)),
-    saveCalculationSettings: vi.fn().mockResolvedValue(success(undefined)),
+    ...settingsServices(overrides),
+    refresh: vi.fn().mockResolvedValue(initializedState),
+    subscribe: vi.fn(() => () => {}),
+    invalidateAndDrain: vi.fn().mockResolvedValue(undefined),
     loadGeography: vi.fn().mockResolvedValue(parseCoverageGeometry(geometry)),
     getPermission: vi.fn().mockResolvedValue('prompt'),
     getPosition: vi.fn().mockResolvedValue(success({
@@ -686,7 +690,7 @@ describe('Salah', () => {
     expect(within(schedule).getByText('Фаджр')).toBeVisible()
     expect(within(schedule).queryByText(/сухура/i)).not.toBeInTheDocument()
     expect(within(schedule).queryByText(/в мечетях/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/Расчёт по настройкам · ДУМ РТ/i)).toBeVisible()
+    expect(screen.getByText(/Расчёт по настройкам · Muslim World League/i)).toBeVisible()
     expect(screen.getByRole('button', { name: 'Методика' })).toBeVisible()
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
@@ -1256,4 +1260,67 @@ describe('согласованность контекста в интерфей�
     expect(screen.queryByText('16:37')).not.toBeInTheDocument()
     expect(screen.getByRole('timer')).toBeVisible()
   })
+})
+
+it('selects manual calculation independently of city and returns to automatic in one action', async () => {
+  const user = userEvent.setup()
+  const services = createServices()
+  render(<App services={services} />)
+  await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+  expect(screen.getByLabelText('Источник')).toHaveValue('automatic')
+  await user.selectOptions(screen.getByLabelText('Профиль'), 'karachi')
+  expect(screen.getByLabelText('Источник')).toHaveValue('calculated')
+  await user.click(screen.getByRole('button', { name: 'Закрыть' }))
+  expect(await screen.findByText('Фаджр')).toBeVisible()
+  expect(screen.queryByText('Утренний намаз в мечетях')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: /Казань/ }))
+  await user.click(screen.getByText('Татарстан', { exact: true }))
+  await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+  await user.click(screen.getByRole('button', { name: 'Настройки автономного расчёта' }))
+  expect(screen.getByLabelText('Источник')).toHaveValue('calculated')
+  await user.click(screen.getByRole('button', { name: 'Вернуться к автоматическому выбору' }))
+  expect(screen.getByLabelText('Источник')).toHaveValue('automatic')
+  await user.click(screen.getByRole('button', { name: 'Закрыть' }))
+  expect(await screen.findByText('Утренний намаз в мечетях')).toBeVisible()
+  expect(vi.mocked(services.saveSettings).mock.lastCall?.[0].sourcePreferences).toMatchObject({ mode: 'automatic' })
+})
+
+it('allows calculated cold start without meta while the official refresh is hanging', async () => {
+  const user = userEvent.setup()
+  const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ meta: null, dataState: 'not-loaded' })), refresh: vi.fn<AppServices['refresh']>(() => new Promise(() => {})) })
+  render(<App services={services} />)
+  await user.click(await screen.findByRole('button', { name: /Казань/ }))
+  await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
+  await user.type(screen.getByRole('searchbox'), 'Стамбул')
+  await user.click(await screen.findByRole('button', { name: 'Стамбул, Стамбул, Турция' }))
+  expect(await screen.findByText('Фаджр')).toBeVisible()
+  expect(screen.getByText(/Расчёт по настройкам · Турция/)).toBeVisible()
+  expect(services.getDays).not.toHaveBeenCalled()
+})
+
+it.each(['rejection', 'result'] as const)('shows one nonblocking persistence notice for %s and retry writes current settings', async kind => {
+  const user = userEvent.setup()
+  const save = vi.fn<AppServices['saveSettings']>().mockImplementationOnce(() => kind === 'rejection' ? Promise.reject(new Error('quota')) : Promise.resolve(failure({ kind: 'storage', reason: 'unavailable' }))).mockResolvedValue(success(undefined))
+  const services = createServices({ saveSettings: save })
+  render(<App services={services} />)
+  await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+  await user.selectOptions(screen.getByLabelText('Профиль'), 'karachi')
+  expect(await screen.findByText('Изменение действует сейчас, но сохранить его не удалось')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Повторить' }))
+  await waitFor(() => expect(screen.queryByText('Изменение действует сейчас, но сохранить его не удалось')).not.toBeInTheDocument())
+  expect(save.mock.lastCall?.[0].sourcePreferences).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'karachi' } } })
+  expect(screen.getByLabelText('Источник')).toHaveValue('calculated')
+})
+
+it('automatic expiration calculates but manual official expiration remains explicitly unavailable', async () => {
+  const user = userEvent.setup()
+  render(<App services={createServices()} />)
+  await screen.findByText('Утренний намаз в мечетях')
+  fireEvent.change(screen.getByLabelText('Выбрать дату'), { target: { value: '2027-01-01' } })
+  expect(await screen.findByText('Фаджр')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Настройки автономного расчёта' }))
+  await user.selectOptions(screen.getByLabelText('Источник'), 'dumRt')
+  await user.click(screen.getByRole('button', { name: 'Закрыть' }))
+  expect(await screen.findByRole('alert')).toHaveTextContent('не покрывает это место или дату')
+  expect(screen.queryByText('Фаджр')).not.toBeInTheDocument()
 })

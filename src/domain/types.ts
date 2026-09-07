@@ -79,6 +79,7 @@ export interface PrayerDatasetManifest {
   version: string
   url: 'prayer-times-current.json'
   sha256: string
+  sequence?: number
 }
 
 export const OFFICIAL_TIME_FIELDS = [

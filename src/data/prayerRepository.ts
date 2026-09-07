@@ -1,291 +1,149 @@
-import type { Place } from '../domain/place'
-import { migratePlaceChoice, restoreSavedCoordinates } from '../domain/placeMigration'
-import type {
-  DataFailure,
-  StorageFailure,
-  UpdateFailure,
-} from '../domain/errors'
-import {
-  isLocationSelectionSource,
-  type LocationSelectionSource,
-} from '../domain/locationSelection'
-import {
-  CALCULATION_PROFILES,
-  DEFAULT_CALCULATION_SETTINGS,
-  type CalculationSettings,
-} from '../domain/prayerCalculation'
+import { isLocationSelectionSource } from '../domain/locationSelection'
+import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
+import { isPrayerDataset } from '../domain/prayerDatasetValidation'
+import { getDatasetRevision } from '../domain/scheduleContext'
+import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
+import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
-import { isValidTimeZone } from '../domain/locationTime'
-import type {
-  PrayerDataset,
-  PrayerDatasetManifest,
-  SavedCoordinates,
-} from '../domain/types'
 import {
-  getDatasetMeta,
-  getLocationChoice,
-  getPrayerDay,
-  getPrayerDays,
-  getSetting,
-  replaceDataset,
-  saveLocationChoice,
-  setSetting,
-  type DatasetIdentity,
-  type DatasetMeta,
-  type LocationChoice,
+  getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getStoredDataset,
+  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch,
 } from '../storage/database'
-import {
-  resolvePrayerDatasetUrl,
-  validatePrayerDatasetManifest,
-  verifyPrayerDatasetBytes,
-  type PrayerDatasetByteOperations,
-} from './prayerDatasetManifest'
+import { DEFAULT_OFFICIAL_LOCATIONS, dumRtProvider } from './prayerProviders'
+import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
 
-const MANIFEST_URL = `${import.meta.env.BASE_URL}data/prayer-times-manifest.json`
-
-type Fetcher = (
-  input: RequestInfo | URL,
-  init?: RequestInit,
-) => Promise<Response>
-
-export type PrayerRepositoryInitializationOperations = Partial<
-  PrayerDatasetByteOperations
-> & {
-  fetch?: Fetcher
-  onCached?: (state: PrayerRepositoryState) => void
+const MANIFEST_URL = dumRtProvider.manifestUrl
+type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+export type DatasetUpdate = { status: 'idle' | 'refreshing' } | { status: 'failed'; reason: 'network' | 'timeout' | 'invalid' | 'storage' | 'superseded' }
+export interface PrayerRepositorySnapshot {
+  meta: DatasetMeta | null
+  dataState: 'ready' | 'not-loaded' | 'invalid'
+  update: DatasetUpdate
+  checkedAt: number | null
 }
-
-export interface PrayerRepositoryState {
-  meta: DatasetMeta
+export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   locationChoice: LocationChoice
-  calculationSettings: CalculationSettings
-  warning: UpdateFailure | null
+  preferences: SourcePreferences
+}
+export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & {
+  fetch?: Fetcher
+  timeoutMs?: number
+  replace?: typeof replaceDataset
 }
 
-function dataFailure(reason: DataFailure['reason']): DataFailure {
-  return { kind: 'data', reason }
+async function readLocalSnapshot(): Promise<Result<PrayerRepositorySnapshot, StorageFailure>> {
+  const stored = await getStoredDataset()
+  if (!stored.ok) return stored
+  const valid = stored.value && isPrayerDataset(stored.value.dataset)
+  return success({ meta: valid ? stored.value.meta : null, dataState: valid ? 'ready' : stored.value ? 'invalid' : 'not-loaded', update: { status: 'idle' }, checkedAt: null })
 }
-
-function fetchFailure(): DataFailure {
-  const offline = typeof navigator !== 'undefined' && !navigator.onLine
-  return dataFailure(offline ? 'offline' : 'unavailable')
+function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): LocationChoice {
+  const locations = meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS
+  if (value && typeof value === 'object') {
+    const raw = value as { mode?: unknown; source?: unknown }
+    const choice = value as LocationChoice
+    if (isLocationSelectionSource(raw.source) && (raw.mode === 'official' || raw.mode === 'calculated')
+      && placeFromChoice(choice, locations)) return migratePlaceChoice(choice, locations)
+  }
+  const location = locations.find(item => item.id === 'kazan') ?? DEFAULT_OFFICIAL_LOCATIONS[0]
+  if (!location) throw new Error('Не задано начальное место')
+  return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
-
-async function fetchManifest(fetcher: Fetcher): Promise<
-  Result<PrayerDatasetManifest, DataFailure>
-> {
-  let response: Response
-  try {
-    response = await fetcher(MANIFEST_URL, { cache: 'no-store' })
-  } catch {
-    return failure(fetchFailure())
-  }
-
-  if (!response.ok) return failure(dataFailure('unavailable'))
-
-  try {
-    return validatePrayerDatasetManifest(await response.json() as unknown)
-  } catch {
-    return failure(dataFailure('invalid'))
-  }
-}
-
-async function fetchVerifiedDataset(
-  fetcher: Fetcher,
-  manifest: PrayerDatasetManifest,
-  operations: Partial<PrayerDatasetByteOperations>,
-): Promise<Result<PrayerDataset, DataFailure>> {
-  let response: Response
-  try {
-    response = await fetcher(
-      resolvePrayerDatasetUrl(MANIFEST_URL, manifest),
-      { cache: 'no-store' },
-    )
-  } catch {
-    return failure(fetchFailure())
-  }
-
-  if (!response.ok) return failure(dataFailure('unavailable'))
-
-  let bytes: Uint8Array
-  try {
-    bytes = new Uint8Array(await response.arrayBuffer())
-  } catch {
-    return failure(fetchFailure())
-  }
-  return verifyPrayerDatasetBytes(bytes, manifest, operations)
-}
-
-function manifestIdentity(manifest: PrayerDatasetManifest): DatasetIdentity {
-  return {
-    version: manifest.version,
-    url: manifest.url,
-    sha256: manifest.sha256,
-  }
-}
-
-function toMeta(
-  dataset: PrayerDataset,
-  identity: DatasetIdentity,
-): DatasetMeta {
-  return {
-    schemaVersion: dataset.schemaVersion,
-    source: dataset.source,
-    locations: dataset.locations,
-    identity,
-  }
-}
-
-function defaultLocationChoice(meta: DatasetMeta): LocationChoice | undefined {
-  const locationId = meta.locations.find(({ id }) => id === 'kazan')?.id
-    ?? meta.locations[0]?.id
-  return locationId
-    ? { mode: 'official', locationId, source: 'default' }
-    : undefined
-}
-
-function restoreLocationChoice(
-  value: unknown,
-  meta: DatasetMeta,
-): LocationChoice | undefined {
-  const fallback = defaultLocationChoice(meta)
-  if (!value || typeof value !== 'object') return fallback
-
-  const choice = value as Partial<LocationChoice>
-  if (!isLocationSelectionSource(choice.source)) return fallback
-
-  if (
-    choice.mode === 'official'
-    && 'locationId' in choice
-    && typeof choice.locationId === 'string'
-    && meta.locations.some(({ id }) => id === choice.locationId)
-  ) {
-    return {
-      mode: 'official',
-      locationId: choice.locationId,
-      source: choice.source,
-      ...(choice.place ? { place: choice.place } : {}),
-    }
-  }
-
-  if (choice.mode === 'calculated' && 'coordinates' in choice) {
-    const coordinates = restoreSavedCoordinates(choice.coordinates)
-    if (coordinates) {
-      return {
-        mode: 'calculated',
-        coordinates,
-        source: choice.source,
-        ...(choice.place ? { place: choice.place } : {}),
-      }
-    }
-  }
-
-  return fallback
-}
-
-export async function initializePrayerRepository(): Promise<
-  Result<PrayerRepositoryState, DataFailure | StorageFailure>
->
-export async function initializePrayerRepository(
-  operations: PrayerRepositoryInitializationOperations,
-): Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>>
-export async function initializePrayerRepository(
-  operations: PrayerRepositoryInitializationOperations = {},
-): Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>> {
-  const cachedMetaResult = await getDatasetMeta()
-  if (!cachedMetaResult.ok) return cachedMetaResult
-
-  const cachedMeta = cachedMetaResult.value
-  if (cachedMeta && operations.onCached) {
-    const [choice, settings] = await Promise.all([getLocationChoice(), getSetting('calculationSettings')])
-    if (choice.ok && settings.ok) {
-      const restored = restoreLocationChoice(choice.value, cachedMeta)
-      if (restored) operations.onCached({ meta: cachedMeta, locationChoice: migratePlaceChoice(restored, cachedMeta.locations),
-        calculationSettings: isCalculationSettings(settings.value) ? settings.value : DEFAULT_CALCULATION_SETTINGS, warning: null })
-    }
-  }
-  let meta = cachedMeta
-  let warning: UpdateFailure | null = null
-  const fetcher = operations.fetch
-    ?? ((input, init) => globalThis.fetch(input, init))
-  const manifestResult = await fetchManifest(fetcher)
-
-  if (!manifestResult.ok) {
-    if (!cachedMeta) return manifestResult
-    warning = { kind: 'update', reason: 'failed' }
-  } else if (cachedMeta?.identity?.sha256 !== manifestResult.value.sha256) {
-    const datasetResult = await fetchVerifiedDataset(
-      fetcher,
-      manifestResult.value,
-      operations,
-    )
-    if (datasetResult.ok) {
-      const identity = manifestIdentity(manifestResult.value)
-      const replacement = await replaceDataset(datasetResult.value, identity)
-      if (!replacement.ok) return replacement
-      meta = toMeta(datasetResult.value, identity)
-    } else if (!cachedMeta) {
-      return datasetResult
-    } else {
-      warning = { kind: 'update', reason: 'failed' }
-    }
-  }
-
-  if (!meta) return failure(dataFailure('unavailable'))
-
-  const [storedChoiceResult, storedSettingsResult] = await Promise.all([
-    getLocationChoice(),
-    getSetting('calculationSettings'),
+export async function initializePrayerRepository(): Promise<Result<PrayerRepositoryState, StorageFailure>> {
+  const [snapshot, choice, preferences, legacy] = await Promise.all([
+    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'),
   ])
-  if (!storedChoiceResult.ok) return storedChoiceResult
-  if (!storedSettingsResult.ok) return storedSettingsResult
-
-  const locationChoice = restoreLocationChoice(storedChoiceResult.value, meta)
-  if (!locationChoice) return failure(dataFailure('invalid'))
-
-  return success({
-    meta,
-    locationChoice: migratePlaceChoice(locationChoice, meta.locations),
-    calculationSettings: isCalculationSettings(storedSettingsResult.value)
-      ? storedSettingsResult.value
-      : DEFAULT_CALCULATION_SETTINGS,
-    warning,
-  })
+  if (!snapshot.ok) return snapshot
+  if (!choice.ok) return choice
+  if (!preferences.ok) return preferences
+  if (!legacy.ok) return legacy
+  return success({ ...snapshot.value, locationChoice: restoreLocationChoice(choice.value, snapshot.value.meta),
+    preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
 
-function isCalculationSettings(value: unknown): value is CalculationSettings {
-  if (!value || typeof value !== 'object') return false
-  const settings = value as Partial<CalculationSettings>
-  return (
-    CALCULATION_PROFILES.some(({ id }) => id === settings.profile)
-    && ['hanafi', 'standard'].includes(settings.asrMethod ?? '')
-    && ['dumRt', 'seventhOfNight', 'twilightAngle', 'nearestDay'].includes(
-      settings.highLatitudeRule ?? '',
-    )
-  )
-}
-
-export const prayerRepository = {
-  initialize: (onCached?: (state: PrayerRepositoryState) => void) => initializePrayerRepository(onCached ? { onCached } : {}),
-  getDay: getPrayerDay,
-  getDays: getPrayerDays,
-  saveOfficialLocation: (
-    locationId: string,
-    source: LocationSelectionSource,
-    place?: Place,
-    isCurrent?: () => boolean,
-  ) => saveLocationChoice({ mode: 'official', locationId, source, ...(place ? { place } : {}) }, isCurrent),
-  saveCalculatedLocation: (
-    coordinates: SavedCoordinates,
-    source: LocationSelectionSource,
-    isCurrent?: () => boolean,
-  ) => {
-    if (!isValidTimeZone(coordinates.timeZone)) {
-      return Promise.resolve(failure(dataFailure('invalid')))
+export function createPrayerRepository(operations: PrayerRepositoryOperations = {}) {
+  const listeners = new Set<(snapshot: PrayerRepositorySnapshot) => void>()
+  let pending: Promise<PrayerRepositorySnapshot> | null = null
+  let controller: AbortController | null = null
+  let installation: ReturnType<typeof replaceDataset> | null = null
+  let epoch = 0
+  let latest: PrayerRepositorySnapshot = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null }
+  const emit = (snapshot: PrayerRepositorySnapshot) => {
+    latest = snapshot
+    for (const listener of listeners) listener(snapshot)
+  }
+  const refresh = (): Promise<PrayerRepositorySnapshot> => {
+    if (pending) return pending
+    const operation = epoch
+    controller = new AbortController()
+    const signal = controller.signal
+    const isCurrent = () => operation === epoch && !signal.aborted
+    let timedOut = false
+    const task = async (): Promise<PrayerRepositorySnapshot> => {
+      const local = await readLocalSnapshot()
+      if (!isCurrent()) return latest
+      if (local.ok) latest = { ...local.value, checkedAt: latest.checkedAt }
+      const initialMeta = await getDatasetMeta()
+      if (!isCurrent()) return latest
+      const revision = initialMeta.ok && initialMeta.value ? getDatasetRevision(initialMeta.value) : null
+      emit({ ...latest, update: { status: 'refreshing' } })
+      let reason: Extract<DatasetUpdate, { status: 'failed' }>['reason'] | null = null
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      const fetcher = operations.fetch ?? globalThis.fetch
+      const aborted = new Promise<never>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new Error('Прервана загрузка')), { once: true })
+        timeout = setTimeout(() => { timedOut = true; controller?.abort() }, operations.timeoutMs ?? 8_000)
+      })
+      // Таймаут охватывает тело ответа и digest; даже fetch, игнорирующий signal, не держит refresh открытым.
+      const download = async () => {
+        const manifestResponse = await fetcher(MANIFEST_URL, { cache: 'no-store', signal })
+        if (!manifestResponse.ok) return 'network' as const
+        const manifest = validatePrayerDatasetManifest(await manifestResponse.json() as unknown)
+        if (!manifest.ok) return 'invalid' as const
+        if (!isCurrent()) return 'superseded' as const
+        if (latest.meta?.identity?.sha256 === manifest.value.sha256 && latest.meta.identity.sequence === manifest.value.sequence) return null
+        const response = await fetcher(resolvePrayerDatasetUrl(MANIFEST_URL, manifest.value), { cache: 'no-store', signal })
+        if (!response.ok) return 'network' as const
+        const verified = await verifyPrayerDatasetBytes(new Uint8Array(await response.arrayBuffer()), manifest.value, operations)
+        if (!verified.ok) return verified.error.reason === 'invalid' ? 'invalid' as const : 'network' as const
+        if (!isCurrent()) return 'superseded' as const
+        const { schemaVersion: _schema, ...identity } = manifest.value
+        // Внутри транзакции повторно проверяется revision: другая вкладка могла уже установить новый набор.
+        installation = (operations.replace ?? replaceDataset)(verified.value, identity, { revision, isCurrent, provider: dumRtProvider.id })
+        const replacement = await installation
+        if (!replacement.ok) return replacement.error.kind === 'data' ? 'superseded' as const : 'storage' as const
+        return null
+      }
+      try { reason = await Promise.race([download(), aborted]) }
+      catch { reason = timedOut ? 'timeout' : 'network' }
+      finally { clearTimeout(timeout) }
+      if (operation !== epoch) return latest
+      const installed = await readLocalSnapshot()
+      if (operation !== epoch) return latest
+      const snapshot: PrayerRepositorySnapshot = { ...(installed.ok ? installed.value : latest),
+        checkedAt: reason ? latest.checkedAt : Date.now(), update: reason ? { status: 'failed', reason } : { status: 'idle' } }
+      emit(snapshot)
+      return snapshot
     }
-    const place = 'selection' in coordinates ? coordinates as Place : undefined
-    return saveLocationChoice({ mode: 'calculated', coordinates, source, ...(place ? { place } : {}) }, isCurrent)
-  },
-  saveCalculationSettings: (settings: CalculationSettings) =>
-    setSetting('calculationSettings', settings),
+    const running = task().catch(() => {
+      const snapshot: PrayerRepositorySnapshot = { ...latest, update: { status: 'failed', reason: 'storage' } }
+      if (operation === epoch) emit(snapshot)
+      return snapshot
+    }).finally(() => { if (pending === running) { pending = null; controller = null } })
+    pending = running
+    return running
+  }
+  return {
+    initialize: initializePrayerRepository,
+    refresh,
+    subscribe: (listener: (snapshot: PrayerRepositorySnapshot) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    invalidateAndDrain: async () => { epoch += 1; controller?.abort(); await pending; await installation; latest = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null } },
+    getDays: getPrayerDays,
+    saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean): Promise<Result<void, StorageFailure | DataFailure>> => {
+      if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      return saveSettings(patch, isCurrent)
+    },
+  }
 }
+export const prayerRepository = createPrayerRepository()

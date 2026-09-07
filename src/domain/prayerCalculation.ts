@@ -9,6 +9,8 @@ import {
   type CalculationParameters,
 } from 'adhan'
 
+import { isCalculationSettings, type IshaMethod } from './calculationSettings'
+
 import { addDays } from './date'
 import {
   createLocationClock,
@@ -41,6 +43,9 @@ export interface CalculationSettings {
   profile: CalculationProfileId
   asrMethod: AsrMethod
   highLatitudeRule: HighLatitudeMethod
+  fajrAngle?: number
+  isha?: IshaMethod
+  adjustments?: Partial<Record<CalculatedPrayerKey, number>>
 }
 
 export interface CalculationProfileOption {
@@ -73,9 +78,9 @@ export const CALCULATION_PROFILES: readonly CalculationProfileOption[] = [
 ]
 
 export const DEFAULT_CALCULATION_SETTINGS: CalculationSettings = {
-  profile: 'dumRt',
-  asrMethod: 'hanafi',
-  highLatitudeRule: 'dumRt',
+  profile: 'muslimWorldLeague',
+  asrMethod: 'standard',
+  highLatitudeRule: 'twilightAngle',
 }
 
 export interface CalculatedPrayerSchedule {
@@ -297,11 +302,15 @@ export function calculatePrayerSchedule(
   timeZone: string,
   settings: CalculationSettings = DEFAULT_CALCULATION_SETTINGS,
 ): CalculatedPrayerSchedule {
+  if (!isCalculationSettings(settings)) throw new RangeError('Некорректные параметры расчёта')
   const locationClock = createLocationClock(timeZone)
   const calendarDate = dateFromIso(date)
   const coordinates = new Coordinates(location.latitude, location.longitude)
   const parameters = profileParameters(settings.profile, date, timeZone)
   applyUserRules(parameters, settings)
+  if (settings.fajrAngle !== undefined) parameters.fajrAngle = settings.fajrAngle
+  if (settings.isha?.kind === 'angle') { parameters.ishaAngle = settings.isha.angle; parameters.ishaInterval = 0 }
+  if (settings.isha?.kind === 'interval') parameters.ishaInterval = settings.isha.minutes
 
   const polarResolutionApplied = hasPolarGap(coordinates, calendarDate)
   if (settings.highLatitudeRule === 'dumRt') {
@@ -313,16 +322,16 @@ export function calculatePrayerSchedule(
   const previousNightHasFajr = !polarResolutionApplied && angleIsAvailable(
     coordinates,
     date,
-    dumRtNorthRule ? 18 : parameters.fajrAngle,
+    dumRtNorthRule && settings.fajrAngle === undefined ? 18 : parameters.fajrAngle,
     parameters.polarCircleResolution,
     'fajr',
   )
   const currentNightHasIsha =
-    (!dumRtNorthRule && parameters.ishaInterval > 0) ||
+    (parameters.ishaInterval > 0) ||
     (!polarResolutionApplied && angleIsAvailable(
       coordinates,
       date,
-      dumRtNorthRule ? 18 : parameters.ishaAngle,
+      dumRtNorthRule && settings.isha === undefined ? 18 : parameters.ishaAngle,
       parameters.polarCircleResolution,
       'isha',
     ))
@@ -369,6 +378,8 @@ export function calculatePrayerSchedule(
   const maghrib =
     settings.profile === 'dumRt' ? roundMinute(times.sunset, 'up') : times.maghrib
 
+  if (settings.isha?.kind === 'interval') isha = addMinutes(maghrib, settings.isha.minutes)
+
   const entries: CalculatedPrayerEntries = {
     fajr: entry(fajr, fajrEstimated, locationClock.getTime),
     sunrise: entry(sunrise, polarResolutionApplied, locationClock.getTime),
@@ -377,6 +388,13 @@ export function calculatePrayerSchedule(
     asr: entry(asr, polarResolutionApplied, locationClock.getTime),
     maghrib: entry(maghrib, polarResolutionApplied, locationClock.getTime),
     isha: entry(isha, ishaEstimated, locationClock.getTime),
+  }
+  for (const key of Object.keys(entries) as CalculatedPrayerKey[]) {
+    const minutes = settings.adjustments?.[key] ?? 0
+    if (minutes !== 0) {
+      const adjusted = new Date(entries[key].instant + minutes * MINUTE)
+      entries[key] = entry(adjusted, entries[key].estimated, locationClock.getTime)
+    }
   }
   const estimatedPrayers = (Object.keys(entries) as CalculatedPrayerKey[]).filter(
     (key) => entries[key].estimated,

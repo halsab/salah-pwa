@@ -1,3 +1,4 @@
+import { completeDataset } from '../test/prayerDataset'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { PrayerDataset, PrayerDatasetManifest } from '../domain/types'
@@ -15,30 +16,7 @@ const manifest: PrayerDatasetManifest = {
   url: 'prayer-times-current.json',
   sha256: HASH,
 }
-const dataset = {
-  schemaVersion: 2,
-  source: {
-    name: 'ДУМ Республики Татарстан',
-    url: 'https://dumrt.ru/ru/help-info/prayertime/',
-    updatedAt: '2025-12-27T10:49:10.000Z',
-    years: [2026],
-  },
-  locations: [
-    { id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 },
-  ],
-  days: [{
-    locationId: 'kazan',
-    date: '2026-09-01',
-    suhurEnd: '02:21',
-    fajrJamaat: '03:17',
-    sunrise: '04:48',
-    zenith: '11:44',
-    dhuhr: '12:00',
-    asr: '16:24',
-    maghrib: '18:39',
-    isha: '20:33',
-  }],
-} satisfies PrayerDataset
+const dataset = completeDataset()
 
 describe('prayer dataset manifest', () => {
   it('принимает только schema 1, производную version, точное имя и lowercase SHA-256', () => {
@@ -140,4 +118,18 @@ describe('prayer dataset manifest', () => {
       error: { kind: 'data', reason: 'invalid' },
     })
   })
+})
+
+it.each([
+  (data: PrayerDataset) => ({ ...data, days: data.days.slice(1) }),
+  (data: PrayerDataset) => ({ ...data, days: [...data.days, data.days[0]] }),
+  (data: PrayerDataset) => ({ ...data, locations: [...data.locations, data.locations[0]] }),
+  (data: PrayerDataset) => ({ ...data, days: data.days.map(day => ({ ...day, fajrJamaat: '99:99' })) }),
+  (data: PrayerDataset) => ({ ...data, days: data.days.map(day => ({ ...day, date: '2026-02-30' })) }),
+  (data: PrayerDataset) => ({ ...data, locations: [{ ...data.locations[0], latitude: Infinity }] }),
+  (data: PrayerDataset) => ({ ...data, source: { ...data.source, years: [2027] } }),
+  (data: PrayerDataset) => ({ ...data, source: { ...data.source, updatedAt: 2026 } }),
+])('rejects hashed but incomplete or corrupt data', async (corrupt) => {
+  const value = corrupt(dataset)
+  expect(await verifyPrayerDatasetBytes(new Uint8Array(), manifest, { digest: () => Promise.resolve(HASH), decode: () => '', parse: () => value })).toMatchObject({ ok: false, error: { reason: 'invalid' } })
 })

@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { getZonedTime } from './locationTime'
 import {
   CALCULATION_PROFILES,
-  DEFAULT_CALCULATION_SETTINGS,
   UnsupportedCalculationProfileError,
   calculatePrayerSchedule,
   getCalculationProfileCapability,
@@ -17,7 +16,7 @@ const MINUTE = 60_000
 function withSettings(
   settings: Partial<CalculationSettings>,
 ): CalculationSettings {
-  return { ...DEFAULT_CALCULATION_SETTINGS, ...settings }
+  return { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt', ...settings }
 }
 
 describe('calculatePrayerSchedule', () => {
@@ -26,6 +25,7 @@ describe('calculatePrayerSchedule', () => {
       KAZAN,
       '2026-01-15',
       'Europe/Moscow',
+      withSettings({}),
     )
 
     expect(Object.keys(schedule.entries)).toEqual([
@@ -52,6 +52,7 @@ describe('calculatePrayerSchedule', () => {
       KAZAN,
       '2026-06-15',
       'Europe/Moscow',
+      withSettings({}),
     )
 
     expect(schedule.estimatedPrayers).toEqual(['fajr', 'isha'])
@@ -71,26 +72,31 @@ describe('calculatePrayerSchedule', () => {
       KAZAN,
       '2026-05-01',
       'Europe/Moscow',
+      withSettings({}),
     )
     const firstEveningFallback = calculatePrayerSchedule(
       KAZAN,
       '2026-05-05',
       'Europe/Moscow',
+      withSettings({}),
     )
     const adjusted = calculatePrayerSchedule(
       KAZAN,
       '2026-05-15',
       'Europe/Moscow',
+      withSettings({}),
     )
     const lastMorningFallback = calculatePrayerSchedule(
       KAZAN,
       '2026-08-08',
       'Europe/Moscow',
+      withSettings({}),
     )
     const restored = calculatePrayerSchedule(
       KAZAN,
       '2026-08-09',
       'Europe/Moscow',
+      withSettings({}),
     )
 
     expect(direct.estimatedPrayers).not.toContain('fajr')
@@ -105,6 +111,7 @@ describe('calculatePrayerSchedule', () => {
       KAZAN,
       '2026-09-01',
       'Europe/Moscow',
+      withSettings({}),
     )
     const standard = calculatePrayerSchedule(
       KAZAN,
@@ -143,6 +150,7 @@ describe('calculatePrayerSchedule', () => {
       KAZAN,
       '2026-01-15',
       'Europe/Moscow',
+      withSettings({}),
     )
     const isna = calculatePrayerSchedule(
       KAZAN,
@@ -257,4 +265,35 @@ describe('calculatePrayerSchedule', () => {
     expect(thrown).toBeInstanceOf(UnsupportedCalculationProfileError)
     expect(thrown).toMatchObject({ profile: 'ummAlQura', message: reason })
   })
+})
+
+it('applies adjustments to absolute instants across midnight and countdown chronology', async () => {
+  const { buildScheduleEvents, selectEventPair } = await import('./scheduleEvents')
+  const place = { latitude: 55.79, longitude: 49.12 }
+  const baseline = calculatePrayerSchedule(place, '2026-06-21', 'Europe/Moscow', withSettings({}))
+  const adjusted = calculatePrayerSchedule(place, '2026-06-21', 'Europe/Moscow', withSettings({ adjustments: { isha: 180, fajr: -180 } }))
+  expect(adjusted.entries.isha.instant).toBe(baseline.entries.isha.instant + 180 * MINUTE)
+  expect(adjusted.entries.fajr.instant).toBe(baseline.entries.fajr.instant - 180 * MINUTE)
+  expect(adjusted.estimatedPrayers).toEqual(baseline.estimatedPrayers)
+  const events = buildScheduleEvents(adjusted)
+  expect(events.find(e => e.key === 'isha')).toMatchObject({ date: '2026-06-22', dayOffset: 1 })
+  expect(events.find(e => e.key === 'fajr')).toMatchObject({ date: '2026-06-20', dayOffset: -1 })
+  const instant = adjusted.entries.isha.instant
+  expect(selectEventPair(new Date(instant - 1000), events).next?.instant).toBe(instant)
+  expect(selectEventPair(new Date(instant), events).current?.key).toBe('isha')
+})
+it('applies explicit angles and Isha interval while retaining profile and polar rules', () => {
+  const base = withSettings({ profile: 'turkey', highLatitudeRule: 'nearestDay' })
+  const original = calculatePrayerSchedule(MECCA, '2026-01-15', 'Asia/Riyadh', base)
+  const angles = calculatePrayerSchedule(MECCA, '2026-01-15', 'Asia/Riyadh', { ...base, fajrAngle: 20, isha: { kind: 'angle', angle: 20 } })
+  expect(angles.entries.fajr.instant).toBeLessThan(original.entries.fajr.instant)
+  expect(angles.entries.isha.instant).toBeGreaterThan(original.entries.isha.instant)
+  for (const place of [MECCA, { latitude: 69.65, longitude: 18.96 }]) {
+    const interval = calculatePrayerSchedule(place, '2026-06-21', 'Europe/Oslo', { ...base, isha: { kind: 'interval', minutes: 240 } })
+    expect(interval.entries.isha.instant - interval.entries.maghrib.instant).toBe(240 * MINUTE)
+    expect(Object.values(interval.entries).every(e => Number.isFinite(e.instant))).toBe(true)
+  }
+})
+it('rejects non-finite custom settings before generating an invalid instant', () => {
+  expect(() => calculatePrayerSchedule(KAZAN, '2026-01-01', 'Europe/Moscow', withSettings({ adjustments: { fajr: Infinity } }))).toThrow('Некорректные параметры')
 })

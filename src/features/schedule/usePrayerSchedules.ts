@@ -4,12 +4,13 @@ import { addDays } from '../../domain/date'
 import {
   UnsupportedCalculationProfileError,
   calculatePrayerSchedule,
-  type CalculationSettings,
 } from '../../domain/prayerCalculation'
-import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from '../../domain/scheduleContext'
+import { scheduleContextKey, type ScheduleContext } from '../../domain/scheduleContext'
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
-import type { PrayerDay, SavedCoordinates } from '../../domain/types'
-import type { DatasetMeta, LocationMode } from '../../storage/database'
+import type { PrayerDay } from '../../domain/types'
+import type { Place } from '../../domain/place'
+import type { ResolvedPrayerSource } from '../../domain/prayerSource'
+import { isPrayerDay } from '../../domain/prayerDatasetValidation'
 
 export type DisplaySchedule = PrayerSchedule
 
@@ -19,13 +20,10 @@ interface PrayerScheduleServices {
 
 interface UsePrayerSchedulesOptions {
   services: PrayerScheduleServices
-  meta: DatasetMeta | null
-  locationId: string
-  locationMode: LocationMode
-  calculatedLocation: SavedCoordinates | null
-  calculationSettings: CalculationSettings
+  location: Place | null
+  resolution: ResolvedPrayerSource | null
+  mode: 'automatic' | 'manual'
   selectedDate: string
-  timeZone: string
 }
 
 interface ScheduleResult {
@@ -38,27 +36,22 @@ interface ScheduleResult {
 }
 
 export function usePrayerSchedules({
-  services, meta, locationId, locationMode, calculatedLocation,
-  calculationSettings, selectedDate, timeZone,
+  services, location, resolution, mode, selectedDate,
 }: UsePrayerSchedulesOptions) {
-  const official = locationMode === 'official'
-  const location = calculatedLocation ?? (official ? meta?.locations.find(({ id }) => id === locationId) : null)
-  const id = official ? locationId : calculatedLocation?.cityId?.toString() ?? null
   const latitude = location?.latitude
   const longitude = location?.longitude
-  const datasetRevision = official && meta ? getDatasetRevision(meta) : null
-  const profile = official ? null : calculationSettings.profile
-  const asrMethod = official ? null : calculationSettings.asrMethod
-  const highLatitudeRule = official ? null : calculationSettings.highLatitudeRule
-  const context = useMemo<ScheduleContext | null>(() => {
-    if (latitude === undefined || longitude === undefined) return null
-    const base = { location: { id, latitude, longitude }, date: selectedDate, timeZone }
-    if (official && datasetRevision) return { ...base, source: 'dumRt', datasetRevision }
-    if (!official && profile && asrMethod && highLatitudeRule) {
-      return { ...base, source: 'adhan', settings: { profile, asrMethod, highLatitudeRule } }
-    }
-    return null
-  }, [id, latitude, longitude, selectedDate, timeZone, official, datasetRevision, profile, asrMethod, highLatitudeRule])
+  const id = location?.id ?? null
+  const description: ScheduleContext | null = resolution?.status === 'ready' && latitude !== undefined && longitude !== undefined
+    ? resolution.kind === 'official' && resolution.revision && resolution.version && resolution.coverage && resolution.locationId
+      ? { location: { id, latitude, longitude }, date: selectedDate, timeZone: resolution.timeZone, mode,
+        source: 'official', provider: resolution.provider, datasetRevision: resolution.revision,
+        datasetVersion: resolution.version, coverage: resolution.coverage, localityId: resolution.locationId }
+      : resolution.kind === 'calculated'
+        ? { location: { id, latitude, longitude }, date: selectedDate, timeZone: resolution.timeZone, mode, source: 'calculated', settings: resolution.settings }
+        : null
+    : null
+  const serialized = description ? JSON.stringify(description) : null
+  const context = useMemo<ScheduleContext | null>(() => serialized ? JSON.parse(serialized) as ScheduleContext : null, [serialized])
   const key = context ? scheduleContextKey(context) : null
   const [result, setResult] = useState<ScheduleResult | null>(null)
   const [retry, setRetry] = useState(0)
@@ -67,19 +60,19 @@ export function usePrayerSchedules({
     if (!context || !key) return
     let active = true
     const load = async (): Promise<DisplaySchedule[]> => {
-      // При offsets [-2, 2] нужны даты [D-3, D+3], чтобы сохранить и соседний день с каждой стороны.
-      const radius = context.source === 'adhan' ? 3 : 1
+      // При offsets [-3, 3] с поправками нужны даты [D-4, D+4], чтобы сохранить и соседний день с каждой стороны.
+      const radius = context.source === 'calculated' ? 4 : 1
       const dates = Array.from({ length: radius * 2 + 1 }, (_, index) => addDays(context.date, index - radius))
-      if (context.source === 'dumRt') {
-        if (context.location.id === null) throw new Error('Не указан населённый пункт')
-        const days = await services.getDays(context.location.id, dates, context.datasetRevision)
+      if (context.source === 'official') {
+        const days = await services.getDays(context.localityId, dates, context.datasetRevision)
         if (days.length !== dates.length || days.some((day, index) => day && (
-          day.date !== dates[index] || day.locationId !== context.location.id
+          !isPrayerDay(day) || day.date !== dates[index] || day.locationId !== context.localityId
         ))) throw new Error('Набор дней не соответствует запросу')
+        if (!days.some(day => day?.date === context.date)) throw new Error('Не найден день покрытого расписания')
         return days.filter((day) => day !== undefined)
       }
       const days = dates.map((date) => calculatePrayerSchedule(context.location, date, context.timeZone, context.settings))
-      if (days.flatMap(buildScheduleEvents).some((event) => event.dayOffset !== null && Math.abs(event.dayOffset) > 2)) {
+      if (days.flatMap(buildScheduleEvents).some((event) => event.dayOffset !== null && Math.abs(event.dayOffset) > 3)) {
         throw new Error('Событие вне поддерживаемого окна календарных дат')
       }
       return days
@@ -99,6 +92,12 @@ export function usePrayerSchedules({
   // Проверка во время render закрывает промежуток до cleanup/effect нового запроса.
   const matching = result?.key === key && result.retry === retry && result.services === services ? result : null
   const schedules = matching?.schedules ?? []
+  const unavailable = resolution && resolution.status !== 'ready'
+    ? resolution.kind === 'calculated' ? 'Выбранный расчётный профиль недоступен в этом браузере.'
+      : resolution.status === 'not-covered' ? 'Выбранный официальный источник не покрывает это место или дату. Выберите другой источник или автоматический режим.'
+        : resolution.status === 'invalid' ? 'Официальное расписание повреждено. Повторите загрузку.'
+          : 'Официальное расписание ещё не загружено. Подключитесь к сети и повторите загрузку.'
+    : null
   return {
     context,
     contextKey: key,
@@ -106,8 +105,8 @@ export function usePrayerSchedules({
     schedule: schedules.find(({ date }) => date === selectedDate) ?? null,
     previousSchedule: schedules.find(({ date }) => date === addDays(selectedDate, -1)),
     tomorrow: schedules.find(({ date }) => date === addDays(selectedDate, 1)),
-    scheduleLoading: !matching,
-    scheduleError: matching?.error ?? null,
+    scheduleLoading: !matching && !unavailable,
+    scheduleError: unavailable ?? matching?.error ?? null,
     retrySchedule: () => setRetry((count) => count + 1),
   }
 }

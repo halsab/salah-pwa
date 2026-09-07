@@ -11,7 +11,7 @@ export interface GeolocationFailure {
 
 export interface DataFailure {
   readonly kind: 'data'
-  readonly reason: 'offline' | 'unavailable' | 'invalid'
+  readonly reason: 'offline' | 'unavailable' | 'invalid' | 'superseded'
 }
 
 export interface UpdateFailure {

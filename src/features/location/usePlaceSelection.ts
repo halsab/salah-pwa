@@ -17,13 +17,12 @@ function locationError(error: GeolocationFailure): string {
   return 'Не удалось определить местоположение'
 }
 
-export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void) {
+export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void, persist: (choice: LocationChoice) => void) {
   const [place, setPlace] = useState<Place | null>(null)
   const [source, setSource] = useState<LocationSelectionSource>('default')
   const [notice, setNotice] = useState<string | null>(null)
   const current = useRef<Place | null>(null)
   const epoch = useRef(0)
-  const saveQueue = useRef(Promise.resolve())
   const started = useRef(false)
   const restored = useRef(false)
   useEffect(() => () => { epoch.current += 1 }, [])
@@ -34,19 +33,10 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setPlace(next)
     setSource(selectionSource)
     const official = officialLocationForPlace(next, locations)
-    // Порядок сохранений совпадает с выбором пользователя даже при медленном IndexedDB.
-    saveQueue.current = saveQueue.current.catch(() => undefined).then(async () => {
-      if (operation !== epoch.current) return
-      try {
-        const result = official
-          ? await services.saveOfficialLocation(official.id, selectionSource, next, () => operation === epoch.current)
-          : await services.saveCalculatedLocation(next, selectionSource, () => operation === epoch.current)
-        if (operation === epoch.current && !result.ok) setNotice('Место выбрано, но не сохранено. Проверьте доступ к данным сайта.')
-      } catch {
-        if (operation === epoch.current) setNotice('Место выбрано, но не сохранено. Проверьте доступ к данным сайта.')
-      }
-    })
-  }, [locations, services])
+    persist(official
+      ? { mode: 'official', locationId: official.id, source: selectionSource, place: next }
+      : { mode: 'calculated', coordinates: next, source: selectionSource, place: next })
+  }, [locations, persist])
 
   const restore = useCallback((choice: LocationChoice, availableLocations: PrayerLocation[]) => {
     if (restored.current || current.current) return

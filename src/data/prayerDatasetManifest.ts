@@ -1,3 +1,4 @@
+import { isPrayerDataset } from '../domain/prayerDatasetValidation'
 import type { DataFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import type { PrayerDataset, PrayerDatasetManifest } from '../domain/types'
@@ -20,23 +21,6 @@ function unavailableData(): DataFailure {
   return { kind: 'data', reason: 'unavailable' }
 }
 
-function isPrayerDataset(value: unknown): value is PrayerDataset {
-  if (!value || typeof value !== 'object') return false
-  const dataset = value as Partial<PrayerDataset>
-
-  return (
-    dataset.schemaVersion === 2
-    && Array.isArray(dataset.source?.years)
-    && dataset.source.years.length > 0
-    && dataset.source.years.every((year) => typeof year === 'number')
-    && typeof dataset.source.updatedAt === 'string'
-    && Array.isArray(dataset.locations)
-    && dataset.locations.length > 0
-    && Array.isArray(dataset.days)
-    && dataset.days.length > 0
-  )
-}
-
 export function validatePrayerDatasetManifest(
   value: unknown,
 ): Result<PrayerDatasetManifest, DataFailure> {
@@ -52,6 +36,7 @@ export function validatePrayerDatasetManifest(
     manifest.schemaVersion !== 1
     || manifest.url !== DATASET_FILE_NAME
     || !SHA256_PATTERN.test(sha256)
+    || (manifest.sequence !== undefined && (!Number.isSafeInteger(manifest.sequence) || manifest.sequence < 1))
     || !versionMatch
     || versionMatch[2] !== sha256.slice(0, 16)
   ) {
@@ -63,6 +48,7 @@ export function validatePrayerDatasetManifest(
     version,
     url: DATASET_FILE_NAME,
     sha256,
+    ...(manifest.sequence === undefined ? {} : { sequence: manifest.sequence }),
   })
 }
 

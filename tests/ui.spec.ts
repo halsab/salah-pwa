@@ -13,7 +13,9 @@ const stageFiveViewports = [
 
 async function waitForAnimations(locator: Locator) {
   await locator.evaluate(async (element) => {
-    await Promise.allSettled(element.getAnimations({ subtree: true }).map((animation) => animation.finished))
+    await Promise.allSettled(element.getAnimations({ subtree: true })
+      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map((animation) => animation.finished))
   })
 }
 
@@ -43,6 +45,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 async function expectControlTargetsAtLeast44Px(scope: Locator) {
+  await waitForAnimations(scope)
   const undersized = await scope.locator([
     'button:not(:disabled)',
     'input:not(:disabled)',
@@ -516,10 +519,10 @@ test.describe('Stage 5 production matrix', () => {
       dialog = page.getByRole('dialog', { name: 'Настройки расчёта' })
       await expectInsideViewport(dialog, page)
       const settings = dialog.getByRole('combobox')
-      await expect(settings).toHaveCount(3)
+      await expect(settings).toHaveCount(4)
       for (const select of await settings.all()) {
-        await expect(select).toBeDisabled()
-        await expect(select).toHaveAttribute('aria-disabled', 'true')
+        await expect(select).toBeEnabled()
+        await expect(select).not.toHaveAttribute('aria-disabled', 'true')
       }
       await expectControlTargetsAtLeast44Px(dialog)
       await dialog.getByRole('button', { name: 'Закрыть' }).click()

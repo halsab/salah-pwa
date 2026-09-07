@@ -1,3 +1,5 @@
+import { settingsServices, type TestSettingsServices } from '../../test/settingsServices'
+import { createSettingsPersistence } from '../settings/settingsPersistence'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { usePlaceSelection } from './usePlaceSelection'
@@ -18,7 +20,7 @@ function deferred<T>() {
   const promise = new Promise<T>(r => { resolve = r })
   return { resolve, promise }
 }
-function setup(overrides: Partial<AppServices> = {}) {
+function setup(overrides: Partial<AppServices & TestSettingsServices> = {}) {
   const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
   const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
   const lookup = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
@@ -28,12 +30,13 @@ function setup(overrides: Partial<AppServices> = {}) {
     getPermission: vi.fn().mockResolvedValue('granted'),
     getDeviceTimeZone: () => 'America/Los_Angeles', now: () => new Date(1000),
     cities: { findNearest: vi.fn().mockReturnValue(lookup.promise) },
-    saveOfficialLocation: vi.fn().mockResolvedValue(success(undefined)),
-    saveCalculatedLocation: vi.fn().mockResolvedValue(success(undefined)),
+    ...settingsServices(overrides),
     ...overrides,
-  } as unknown as AppServices
+  } as unknown as AppServices & TestSettingsServices
   const chosen = vi.fn()
-  const hook = renderHook(() => usePlaceSelection(services, locations, chosen))
+  const writer = createSettingsPersistence(services.saveSettings)
+  const persist = (choice: Parameters<typeof writer.save>[0]['locationChoice']) => writer.save(choice ? { locationChoice: choice } : {})
+  const hook = renderHook(() => usePlaceSelection(services, locations, chosen, persist))
   return { ...hook, services, coarse, precise, lookup, chosen }
 }
 
@@ -112,7 +115,7 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place?.timeZoneOverride).toBeUndefined()
   })
   it('serializes slow saves so the manual choice is persisted last', async () => {
-    const save = deferred<Awaited<ReturnType<AppServices['saveOfficialLocation']>>>()
+    const save = deferred<Awaited<ReturnType<TestSettingsServices['saveOfficialLocation']>>>()
     const h = setup({ saveOfficialLocation: vi.fn().mockReturnValue(save.promise) })
     act(() => { void h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
@@ -133,9 +136,9 @@ describe('one-shot GPS operations', () => {
 
 it('restores a saved selection during StrictMode effect replay', async () => {
   const { StrictMode } = await import('react')
-  const services = { now: () => new Date(1000) } as AppServices
+  const services = { now: () => new Date(1000) } as AppServices & TestSettingsServices
   const chosen = vi.fn()
-  const h = renderHook(() => usePlaceSelection(services, locations, chosen), { wrapper: StrictMode })
+  const h = renderHook(() => usePlaceSelection(services, locations, chosen, vi.fn()), { wrapper: StrictMode })
   act(() => h.result.current.restore({ mode: 'official', locationId: 'kazan', source: 'manual' }, locations))
   expect(h.result.current.place?.name).toBe('Казань')
 })

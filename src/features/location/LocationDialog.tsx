@@ -1,6 +1,7 @@
 import type { Place } from '../../domain/place'
 import {
   memo,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -28,6 +29,7 @@ import { useDialogViewport, useModalDialog } from '../../ui/dialogHooks'
 import type { CityCatalogStatus } from './useCityCatalog'
 
 interface LocationDialogProps {
+  persistenceNotice?: ReactNode
   locations: PrayerLocation[]
   cityCatalog: CityCatalog | null
   cityCatalogStatus: CityCatalogStatus
@@ -306,6 +308,7 @@ export const LocationDialog = memo(function LocationDialog({ open, ...props }: L
 })
 
 function OpenLocationDialog({
+  persistenceNotice,
   locations,
   cityCatalog,
   cityCatalogStatus,
@@ -447,6 +450,7 @@ function OpenLocationDialog({
                 <CloseIcon />
               </button>
             </header>
+        {persistenceNotice}
 
             <p className="location-mode-guide">
               <strong>В Татарстане</strong> — готовое расписание ДУМ РТ.{' '}

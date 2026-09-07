@@ -1,3 +1,6 @@
+import { createOfficialPlace, type Place } from '../../domain/place'
+import { getDatasetRevision } from '../../domain/scheduleContext'
+import type { SavedCoordinates } from '../../domain/types'
 import { required } from '../../test/required'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
@@ -10,7 +13,7 @@ import type { PrayerDay } from '../../domain/types'
 import type { DatasetMeta } from '../../storage/database'
 import { usePrayerSchedules } from './usePrayerSchedules'
 
-type Options = Parameters<typeof usePrayerSchedules>[0]
+type Options = { services: Parameters<typeof usePrayerSchedules>[0]['services']; meta: DatasetMeta; locationId: string; locationMode: 'official' | 'calculated'; calculatedLocation: SavedCoordinates | null; calculationSettings: calculation.CalculationSettings; selectedDate: string; timeZone: string }
 const meta: DatasetMeta = {
   schemaVersion: 2,
   identity: { version: 'v1', sha256: 'hash1', url: 'prayer-times-current.json' },
@@ -24,7 +27,7 @@ function options(): Options {
   return {
     services: { getDays: vi.fn((id: string, dates: readonly string[]) => Promise.resolve(dates.map((date) => day(id, date)))) },
     meta, locationId: 'A', locationMode: 'official', calculatedLocation: null,
-    calculationSettings: calculation.DEFAULT_CALCULATION_SETTINGS,
+    calculationSettings: { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt' },
     selectedDate: '2026-09-01', timeZone: 'Europe/Moscow',
   }
 }
@@ -37,7 +40,12 @@ function deferred<Value>() {
 function observe(initialProps: Options) {
   const renders: ReturnType<typeof usePrayerSchedules>[] = []
   const hook = renderHook((props: Options) => {
-    const value = usePrayerSchedules(props)
+    const official = props.locationMode === 'official'
+    const local = required(props.meta.locations.find(l => l.id === props.locationId))
+    const place: Place = { ...createOfficialPlace(local, 0), ...(props.calculatedLocation ?? {}), id: official ? local.id : String(props.calculatedLocation?.cityId ?? 'coordinates') }
+    const value = usePrayerSchedules({ services: props.services, location: place, selectedDate: props.selectedDate, mode: 'manual',
+      resolution: official ? { kind: 'official', status: 'ready', provider: 'dumRt', version: props.meta.identity?.version ?? 'legacy', revision: getDatasetRevision(props.meta), coverage: 'RU-TA', locationId: props.locationId, timeZone: props.timeZone }
+        : { kind: 'calculated', status: 'ready', settings: props.calculationSettings, timeZone: props.timeZone, strategy: 'manual' } })
     renders.push(value)
     return value
   }, { initialProps })
@@ -118,6 +126,9 @@ describe('usePrayerSchedules', () => {
       (o) => ({ ...o, calculationSettings: { ...o.calculationSettings, profile: 'turkey' } }),
       (o) => ({ ...o, calculationSettings: { ...o.calculationSettings, asrMethod: 'standard' } }),
       (o) => ({ ...o, calculationSettings: { ...o.calculationSettings, highLatitudeRule: 'seventhOfNight' } }),
+      (o) => ({ ...o, calculationSettings: { ...o.calculationSettings, fajrAngle: 20 } }),
+      (o) => ({ ...o, calculationSettings: { ...o.calculationSettings, isha: { kind: 'interval', minutes: 120 } } }),
+      (o) => ({ ...o, calculationSettings: { ...o.calculationSettings, adjustments: { isha: 180 } } }),
     ]
     for (const change of changes) {
       current = change(current)
@@ -163,9 +174,9 @@ describe('окно событий и гонки источников', () => {
     const hook = observe(initial)
     await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
     expect(hook.result.current.scheduleError).toBeNull()
-    expect(hook.result.current.schedules.map(({ date }) => date)).toEqual(['2026-06-18', '2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24'])
+    expect(hook.result.current.schedules.map(({ date }) => date)).toEqual(['2026-06-17', '2026-06-18', '2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25'])
     const loaded = hook.result.current.schedules.flatMap(buildScheduleEvents)
-    const wider = Array.from({ length: 11 }, (_, index) => calculation.calculatePrayerSchedule(place, addDays(initial.selectedDate, index - 5), place.timeZone)).flatMap(buildScheduleEvents)
+    const wider = Array.from({ length: 11 }, (_, index) => calculation.calculatePrayerSchedule(place, addDays(initial.selectedDate, index - 5), place.timeZone, initial.calculationSettings)).flatMap(buildScheduleEvents)
     expect(loaded.some((event) => event.dayOffset === (place.timeZone === 'Europe/Oslo' ? 1 : -2))).toBe(true)
     for (const time of ['00:00', '12:00', '23:59'] as const) {
       const now = zonedDateTimeToInstant(initial.selectedDate, time, place.timeZone)

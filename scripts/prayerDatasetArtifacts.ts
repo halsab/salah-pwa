@@ -1,3 +1,4 @@
+import { validatePrayerDatasetManifest } from '../src/data/prayerDatasetManifest'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -57,12 +58,30 @@ function readDatasetSchemaVersion(datasetBytes: Uint8Array): number {
   return Number(schemaVersion)
 }
 
+async function withReleaseSequence(manifest: PrayerDatasetManifest, manifestPath: string): Promise<PrayerDatasetManifest> {
+  let previous: PrayerDatasetManifest | undefined
+  try {
+    const result = validatePrayerDatasetManifest(JSON.parse(await readFile(manifestPath, 'utf8')) as unknown)
+    if (result.ok) previous = result.value
+  } catch (error) {
+    if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+  const sequence = previous?.sequence ?? 0
+  return { ...manifest, sequence: previous?.sha256 === manifest.sha256 && sequence > 0 ? sequence : sequence + 1 }
+}
+
+export async function writePrayerCoverage(datasetPath: string, manifest: PrayerDatasetManifest, outputPath: string): Promise<void> {
+  const dataset = JSON.parse(await readFile(datasetPath, 'utf8')) as PrayerDataset
+  const { schemaVersion: _manifestSchema, ...identity } = manifest
+  await writeFile(outputPath, `${JSON.stringify({ schemaVersion: dataset.schemaVersion, source: dataset.source, locations: dataset.locations, identity })}\n`)
+}
+
 export async function writePrayerDatasetArtifacts(
   outputDirectory: string,
   dataset: PrayerDataset,
 ): Promise<PrayerDatasetManifest> {
   const datasetBytes = serializePrayerDataset(dataset)
-  const manifest = createPrayerDatasetManifest(datasetBytes, dataset.schemaVersion)
+  const manifest = await withReleaseSequence(createPrayerDatasetManifest(datasetBytes, dataset.schemaVersion), path.join(outputDirectory, PRAYER_MANIFEST_FILE_NAME))
   await mkdir(outputDirectory, { recursive: true })
   await Promise.all([
     writeFile(path.join(outputDirectory, PRAYER_DATASET_FILE_NAME), datasetBytes),
@@ -76,10 +95,7 @@ export async function writePrayerDatasetManifest(
   manifestPath: string,
 ): Promise<PrayerDatasetManifest> {
   const datasetBytes = await readFile(datasetPath)
-  const manifest = createPrayerDatasetManifest(
-    datasetBytes,
-    readDatasetSchemaVersion(datasetBytes),
-  )
+  const manifest = await withReleaseSequence(createPrayerDatasetManifest(datasetBytes, readDatasetSchemaVersion(datasetBytes)), manifestPath)
   await writeFile(manifestPath, serializeManifest(manifest))
   return manifest
 }

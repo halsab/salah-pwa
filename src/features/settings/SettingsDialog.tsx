@@ -1,4 +1,7 @@
-import { useRef, type RefObject } from 'react'
+import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
+import { effectiveCalculationSettings, selectionFromSettings } from '../../domain/calculationSettings'
+import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
+import { useRef, type ReactNode, type RefObject } from 'react'
 
 import {
   CALCULATION_PROFILES,
@@ -12,6 +15,9 @@ import { ASR_METHOD_LABELS } from '../../ui/calculationLabels'
 import { useDialogViewport, useModalDialog } from '../../ui/dialogHooks'
 
 interface SettingsDialogProps {
+  persistenceNotice?: ReactNode
+  preferences: SourcePreferences
+  onSourceChange: (preferences: SourcePreferences) => void
   open: boolean
   officialMode: boolean
   settings: CalculationSettings
@@ -26,6 +32,9 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({
+  persistenceNotice,
+  preferences,
+  onSourceChange,
   open,
   officialMode,
   settings,
@@ -50,8 +59,9 @@ export function SettingsDialog({
     key: Key,
     value: CalculationSettings[Key],
   ) => {
-    if (officialMode) return
-    onChange({ ...settings, [key]: value })
+    onChange(key === 'profile'
+      ? effectiveCalculationSettings({ profile: value as CalculationProfileId, overrides: preferences.mode === 'manual' && preferences.source.kind === 'calculated' ? preferences.source.calculation.overrides : {} })
+      : { ...settings, [key]: value })
   }
 
   return (
@@ -71,10 +81,28 @@ export function SettingsDialog({
             <CloseIcon />
           </button>
         </header>
+        {persistenceNotice}
+
+        <label className="setting-field">
+          <span>Источник</span>
+          <select aria-label="Источник" value={preferences.mode === 'automatic' ? 'automatic' : preferences.source.kind === 'official' ? preferences.source.provider : 'calculated'}
+            onChange={event => {
+              const value = event.target.value
+              onSourceChange(value === 'automatic' ? automaticPreferences(preferences.calculationDraft)
+                : value === 'calculated' ? manualCalculation(preferences.calculationDraft ?? selectionFromSettings(settings))
+                  : { mode: 'manual', source: { kind: 'official', provider: value }, ...(preferences.calculationDraft ? { calculationDraft: preferences.calculationDraft } : {}) })
+            }}>
+            <option value="automatic">Автоматически</option>
+            <option value="calculated">Ручной расчёт</option>
+            {PRAYER_PROVIDERS.map(provider => <option key={provider.id} value={provider.id}>Официальный · {provider.label}</option>)}
+          </select>
+        </label>
+        <p className="settings-mode-note">{preferences.mode === 'automatic' ? 'Автоматический выбор источника по месту и дате.' : 'Источник выбран вручную.'}</p>
+        {preferences.mode === 'manual' ? <button className="primary-button" type="button" onClick={() => onSourceChange(automaticPreferences(preferences.calculationDraft))}>Вернуться к автоматическому выбору</button> : null}
 
         <p className="settings-mode-note" data-active={!officialMode || undefined}>
           {officialMode
-            ? 'Сейчас используется готовое расписание ДУМ РТ. Эти параметры сохранятся и применятся после выбора города вне Татарстана.'
+            ? 'Сейчас используется официальное расписание. Изменение параметров включит ручной расчёт.'
             : 'Сейчас расписание пересчитывается по этим параметрам. Изменения применяются сразу.'}
         </p>
 
@@ -82,8 +110,6 @@ export function SettingsDialog({
           <span>Аср</span>
           <select
             aria-label="Аср"
-            aria-disabled={officialMode}
-            disabled={officialMode}
             value={settings.asrMethod}
             onChange={(event) => update('asrMethod', event.target.value as CalculationSettings['asrMethod'])}
           >
@@ -96,11 +122,9 @@ export function SettingsDialog({
           <span>Профиль</span>
           <select
             aria-label="Профиль"
-            aria-disabled={officialMode}
             aria-describedby={!ummAlQuraCapability.supported
               ? 'umm-al-qura-capability'
               : undefined}
-            disabled={officialMode}
             value={settings.profile}
             onChange={(event) => update('profile', event.target.value as CalculationProfileId)}
           >
@@ -125,8 +149,6 @@ export function SettingsDialog({
           <span>Северные правила</span>
           <select
             aria-label="Северные правила"
-            aria-disabled={officialMode}
-            disabled={officialMode}
             value={settings.highLatitudeRule}
             onChange={(event) => update('highLatitudeRule', event.target.value as HighLatitudeMethod)}
           >

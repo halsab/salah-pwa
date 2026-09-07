@@ -1,3 +1,4 @@
+import { restoreSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
 import type { Place } from '../domain/place'
 import { migratePlaceChoice } from '../domain/placeMigration'
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
@@ -16,7 +17,7 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 7
+const DATABASE_VERSION = 8
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -36,6 +37,7 @@ export type LocationChoice = { place?: Place } & (
 
 interface SettingValueMap {
   locationChoice: LocationChoice
+  sourcePreferences: SourcePreferences
   calculationSettings: CalculationSettings
 }
 
@@ -62,10 +64,11 @@ interface PrayerDayRecord extends PrayerDay {
 
 export type DatasetIdentity = Pick<
   PrayerDatasetManifest,
-  'version' | 'url' | 'sha256'
+  'version' | 'url' | 'sha256' | 'sequence'
 >
 
 export interface DatasetMeta {
+  provider?: string
   schemaVersion: number
   source: PrayerDataset['source']
   locations: PrayerLocation[]
@@ -178,10 +181,20 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       }
       if (oldVersion < 7) {
         const store = transaction.objectStore('settings')
-        void previousMigration.then(async () => {
+        const migration = previousMigration.then(async () => {
           const [record, meta] = await Promise.all([store.get('locationChoice'), transaction.objectStore('meta').get('current')])
           if (record?.key !== 'locationChoice') return
           await store.put({ key: 'locationChoice', value: migratePlaceChoice(record.value, meta?.locations ?? []) })
+        })
+        previousMigration = migration
+        void migration.catch(() => transaction.abort())
+      }
+      if (oldVersion < 8) {
+        const store = transaction.objectStore('settings')
+        void previousMigration.then(async () => {
+          const [preferences, settings, choice] = await Promise.all([store.get('sourcePreferences'), store.get('calculationSettings'), store.get('locationChoice')])
+          if (preferences) return
+          await store.put({ key: 'sourcePreferences', value: restoreSourcePreferences(undefined, storedValue(settings), choice?.key === 'locationChoice' ? choice.value : undefined) })
         }).catch(() => transaction.abort())
       }
     },
@@ -214,13 +227,23 @@ async function storageResult<Value>(
 export function replaceDataset(
   dataset: PrayerDataset,
   identity: DatasetIdentity,
-): Promise<Result<void, StorageFailure>> {
+  guard?: { revision: string | null; isCurrent: () => boolean; provider?: string },
+): Promise<Result<void, StorageFailure | DataFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     const transaction = database.transaction(['days', 'meta'], 'readwrite')
     const dayStore = transaction.objectStore('days')
 
     try {
+      if (guard) {
+        const installed = await transaction.objectStore('meta').get('current')
+        if (!guard.isCurrent() || (installed ? getDatasetRevision(installed) : null) !== guard.revision
+          || (installed?.identity?.sequence !== undefined && (identity.sequence === undefined || identity.sequence < installed.identity.sequence || (identity.sequence === installed.identity.sequence && identity.sha256 !== installed.identity.sha256)))
+          || (installed && Date.parse(dataset.source.updatedAt) < Date.parse(installed.source.updatedAt))) {
+          await transaction.done
+          return false
+        }
+      }
       await dayStore.clear()
       const dayWrites: Promise<IDBValidKey>[] = []
       for (const day of dataset.days) {
@@ -236,6 +259,7 @@ export function replaceDataset(
 
       await transaction.objectStore('meta').put(
         {
+          ...(guard?.provider ? { provider: guard.provider } : {}),
           schemaVersion: dataset.schemaVersion,
           source: dataset.source,
           locations: dataset.locations,
@@ -244,6 +268,7 @@ export function replaceDataset(
         'current',
       )
       await transaction.done
+      return true
     } catch (error) {
       try {
         transaction.abort()
@@ -253,7 +278,7 @@ export function replaceDataset(
       await transaction.done.catch(() => undefined)
       throw error
     }
-  })
+  }).then(result => !result.ok ? result : result.value ? success(undefined) : failure({ kind: 'data', reason: 'superseded' }))
 }
 
 export function getPrayerDay(
@@ -313,7 +338,9 @@ export function setSetting<Key extends SettingKey>(
 ): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
-    await database.put('settings', { key, value } as StoredSettingRecord)
+    const transaction = database.transaction('settings', 'readwrite')
+    await transaction.store.put({ key, value } as StoredSettingRecord)
+    await transaction.done
   })
 }
 
@@ -333,7 +360,9 @@ export function saveLocationChoice(
   return storageResult(async () => {
     const database = await getDatabase()
     if (!isCurrent()) return
-    await database.put('settings', { key: 'locationChoice', value: choice })
+    const transaction = database.transaction('settings', 'readwrite')
+    await transaction.store.put({ key: 'locationChoice', value: choice })
+    await transaction.done
   })
 }
 
@@ -351,4 +380,33 @@ export async function deleteSalahDatabase(): Promise<void> {
     database?.close()
   }
   await deleteDB(DATABASE_NAME)
+}
+
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences'>>
+
+export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true): Promise<Result<void, StorageFailure>> {
+  return storageResult(async () => {
+    const database = await getDatabase()
+    if (!isCurrent()) return
+    const transaction = database.transaction('settings', 'readwrite')
+    try {
+      if (patch.locationChoice) await transaction.store.put({ key: 'locationChoice', value: patch.locationChoice })
+      if (patch.sourcePreferences) await transaction.store.put({ key: 'sourcePreferences', value: patch.sourcePreferences })
+      await transaction.done
+    } catch (error) {
+      try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }
+      await transaction.done.catch(() => undefined)
+      throw error
+    }
+  })
+}
+
+export function getStoredDataset(): Promise<Result<{ dataset: PrayerDataset; meta: DatasetMeta } | null, StorageFailure>> {
+  return storageResult(async () => {
+    const database = await getDatabase()
+    const transaction = database.transaction(['days', 'meta'], 'readonly')
+    const [meta, records] = await Promise.all([transaction.objectStore('meta').get('current'), transaction.objectStore('days').getAll()])
+    await transaction.done
+    return meta ? { meta, dataset: { ...meta, days: records.map(({ key: _key, ...day }) => day) } } : null
+  })
 }

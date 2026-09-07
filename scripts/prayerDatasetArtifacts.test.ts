@@ -128,6 +128,27 @@ describe('prayer dataset artifacts', () => {
 
     expect(bytes.byteLength).toBeGreaterThan(1_000_000)
     expect(hashPrayerDatasetBytes(bytes)).toMatch(/^[0-9a-f]{64}$/)
-    expect(checkedInManifest).toEqual(createPrayerDatasetManifest(bytes, 2))
+    expect(checkedInManifest).toMatchObject(createPrayerDatasetManifest(bytes, 2))
+    expect((checkedInManifest as { sequence: number }).sequence).toBeGreaterThan(0)
   })
+})
+
+it('increments a release sequence for changed bytes, preserving it on identical regeneration', async () => {
+  const directory = await temporaryDirectory()
+  const first = await writePrayerDatasetArtifacts(directory, dataset)
+  const same = await writePrayerDatasetArtifacts(directory, dataset)
+  const changed = await writePrayerDatasetArtifacts(directory, { ...dataset, source: { ...dataset.source, name: 'Новая публикация' } })
+  expect(first.sequence).toBe(1)
+  expect(same.sequence).toBe(1)
+  expect(changed.sequence).toBe(2)
+})
+
+it('bundled official coverage matches the shipped dataset and manifest without copying prayer rows', async () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+  const data = JSON.parse(await readFile(path.join(root, 'public/data/prayer-times-current.json'), 'utf8')) as PrayerDataset
+  const manifest = JSON.parse(await readFile(path.join(root, 'public/data/prayer-times-manifest.json'), 'utf8')) as Record<string, unknown>
+  const { schemaVersion: _schema, ...identity } = manifest
+  const coverage: unknown = JSON.parse(await readFile(path.join(root, 'src/data/dumRtCoverage.json'), 'utf8'))
+  expect(coverage).toEqual({ schemaVersion: data.schemaVersion, source: data.source, locations: data.locations, identity })
+  expect(coverage).not.toHaveProperty('days')
 })

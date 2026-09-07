@@ -10,3 +10,17 @@ export const test = base.extend<{ deterministicClock: true }>({
 })
 
 export { expect }
+
+export async function readSavedSetting(page: import('@playwright/test').Page, key: string): Promise<unknown> {
+  return page.evaluate(settingKey => new Promise<unknown>((resolve, reject) => {
+    const request = indexedDB.open('salah')
+    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
+    request.onsuccess = () => {
+      const database = request.result
+      const transaction = database.transaction('settings', 'readonly')
+      const value = transaction.objectStore('settings').get(settingKey)
+      transaction.oncomplete = () => { database.close(); resolve((value.result as { value?: unknown } | undefined)?.value) }
+      transaction.onabort = () => { database.close(); reject(transaction.error ?? new Error('Чтение отменено')) }
+    }
+  }), key)
+}

@@ -1427,7 +1427,7 @@ button:disabled {
   .date-arrow,
   .date-picker,
   .today-button {
-    min-height: 44px;
+    min-height: 48px;
   }
 
   .today-button {
@@ -1843,7 +1843,7 @@ button:disabled {
 @keyframes app-enter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.995);
+    transform: translateY(8px);
   }
 }
 
@@ -1928,3 +1928,25 @@ button:disabled {
 .location-choice-dialog { overflow-y: auto; }
 .location-choice-dialog > * { flex-shrink: 0; }
 .location-choice-dialog .location-results { flex: none; overflow: visible; }
+
+.persistence-notice {
+  position: fixed;
+  z-index: 110;
+  inset-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  margin-inline: auto;
+  max-width: 560px;
+  padding: 16px;
+  border: 1px solid var(--ink-soft);
+  background: var(--paper);
+  color: var(--ink);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.dialog-layer .persistence-notice {
+  position: static;
+  margin-block: 12px;
+}

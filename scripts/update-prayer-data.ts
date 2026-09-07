@@ -8,6 +8,7 @@ import { DUM_RT_LOCATIONS } from './dumRtLocations'
 import {
   PRAYER_DATASET_FILE_NAME,
   writePrayerDatasetArtifacts,
+  writePrayerCoverage,
 } from './prayerDatasetArtifacts'
 import { selectCompleteDatasetYears } from './selectDatasetYear'
 
@@ -79,7 +80,8 @@ async function main(): Promise<void> {
 
   const outputDirectory = path.join(root, 'public', 'data')
   const outputPath = path.join(outputDirectory, PRAYER_DATASET_FILE_NAME)
-  await writePrayerDatasetArtifacts(outputDirectory, dataset)
+  const manifest = await writePrayerDatasetArtifacts(outputDirectory, dataset)
+  await writePrayerCoverage(outputPath, manifest, path.join(root, 'src/data/dumRtCoverage.json'))
 
   console.log(
     `Сохранено ${dataset.days.length} строк для ${dataset.locations.length} населённых пунктов: ${outputPath}`,

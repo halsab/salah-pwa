@@ -125,6 +125,7 @@ interface ScheduleContentProps {
   today: string
   currentTime: Date
   now: () => Date
+  officialProviderName?: string | undefined
   officialMode: boolean
   calculationSettings: CalculationSettings
   officialScheduleUrl: string
@@ -143,6 +144,7 @@ export function ScheduleContent({
   today,
   currentTime,
   now,
+  officialProviderName = 'ДУМ РТ',
   officialMode,
   calculationSettings,
   officialScheduleUrl,
@@ -245,7 +247,7 @@ export function ScheduleContent({
             <CheckIcon />
             {officialMode ? (
               <span>
-                Официальное расписание <a href={officialScheduleUrl} target="_blank" rel="noreferrer">ДУМ РТ</a> · Настройки расчёта не влияют ·{' '}
+                Официальное расписание <a href={officialScheduleUrl} target="_blank" rel="noreferrer">{officialProviderName}</a> · Настройки расчёта не влияют ·{' '}
                 <button
                   ref={methodologyButtonRef}
                   className="methodology-trigger"
@@ -254,7 +256,7 @@ export function ScheduleContent({
                 >
                   Методика
                 </button>{' '}
-                · Доступно офлайн · <a href={PRIVACY_URL}>Конфиденциальность</a>
+                {activeSchedule ? '· Доступно офлайн · ' : '· '}<a href={PRIVACY_URL}>Конфиденциальность</a>
               </span>
             ) : (
               <span>

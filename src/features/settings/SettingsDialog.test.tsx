@@ -1,3 +1,4 @@
+import { automaticPreferences } from '../../domain/sourcePreferences'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef, type ComponentProps } from 'react'
@@ -14,6 +15,8 @@ const settings = {
 function renderDialog(overrides: Partial<ComponentProps<typeof SettingsDialog>> = {}) {
   const props: ComponentProps<typeof SettingsDialog> = {
     open: true,
+    preferences: automaticPreferences(),
+    onSourceChange: vi.fn(),
     officialMode: false,
     settings,
     focusMethodologyOnOpen: false,
@@ -29,18 +32,15 @@ function renderDialog(overrides: Partial<ComponentProps<typeof SettingsDialog>> 
 }
 
 describe('SettingsDialog', () => {
-  it('отключает все параметры в официальном режиме, сохраняя выбранные значения', () => {
+  it('позволяет осознанно изменить параметры даже при официальном источнике', () => {
     const { props } = renderDialog({ officialMode: true })
     const asr = screen.getByRole('combobox', { name: 'Аср' })
     const profile = screen.getByRole('combobox', { name: 'Профиль' })
     const highLatitude = screen.getByRole('combobox', { name: 'Северные правила' })
 
-    expect(asr).toBeDisabled()
-    expect(profile).toBeDisabled()
-    expect(highLatitude).toBeDisabled()
-    expect(asr).toHaveAttribute('aria-disabled', 'true')
-    expect(profile).toHaveAttribute('aria-disabled', 'true')
-    expect(highLatitude).toHaveAttribute('aria-disabled', 'true')
+    expect(asr).toBeEnabled()
+    expect(profile).toBeEnabled()
+    expect(highLatitude).toBeEnabled()
     expect(asr).toHaveValue('standard')
     expect(profile).toHaveValue('turkey')
     expect(highLatitude).toHaveValue('seventhOfNight')
@@ -48,7 +48,7 @@ describe('SettingsDialog', () => {
     fireEvent.change(asr, { target: { value: 'hanafi' } })
     fireEvent.change(profile, { target: { value: 'dumRt' } })
     fireEvent.change(highLatitude, { target: { value: 'dumRt' } })
-    expect(props.onChange).not.toHaveBeenCalled()
+    expect(props.onChange).toHaveBeenCalledTimes(3)
   })
 
   it('оставляет методику доступной в официальном режиме', async () => {

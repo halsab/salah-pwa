@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { expect, readSavedSetting, test } from './fixtures'
 
 test('весь интерфейс использует локальный Alegreya Sans только в нужных начертаниях', async ({ page }) => {
   await page.goto('./')
@@ -141,7 +141,8 @@ test('GPS-расписание вне Татарстана рассчитыва�
       .getByRole('list', { name: 'Времена намаза' })
       .getByText('Фаджр', { exact: true }),
   ).toBeVisible()
-  await expect(page.getByText(/Расчёт по настройкам · ДУМ РТ/)).toBeVisible()
+  await expect(page.getByText(/Расчёт по настройкам · Muslim World League/)).toBeVisible()
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ mode: 'calculated', source: 'automatic', coordinates: { latitude: 55.7558, longitude: 37.6173 } })
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
@@ -156,7 +157,7 @@ test('GPS-расписание вне Татарстана рассчитыва�
         .getByRole('list', { name: 'Времена намаза' })
         .getByText('Фаджр', { exact: true }),
     ).toBeVisible()
-    await expect(page.getByText(/Расчёт по настройкам · ДУМ РТ/)).toBeVisible()
+    await expect(page.getByText(/Расчёт по настройкам · Muslim World League/)).toBeVisible()
     expect(cityCatalogRequests).toBe(0)
   } finally {
     await context.setOffline(false)
