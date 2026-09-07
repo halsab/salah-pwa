@@ -27,5 +27,5 @@ it('расчёт показывает эффективные параметры,
   expect(dialog).toHaveTextContent('95 мин после заката')
   expect(dialog).toHaveTextContent('Аср +12 мин')
   expect(dialog).toHaveTextContent('Приблизительные значения')
-  expect(dialog).toHaveTextContent('не представляет муфтият')
+  expect(dialog).toHaveTextContent('не представляет ДУМ РТ или другую религиозную организацию')
 })

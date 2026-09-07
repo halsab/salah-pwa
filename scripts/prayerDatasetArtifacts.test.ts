@@ -17,6 +17,7 @@ import {
   hashPrayerDatasetBytes,
   serializePrayerDataset,
   writePrayerDatasetArtifacts,
+  writePrayerCoverage,
   writePrayerDatasetManifest,
 } from './prayerDatasetArtifacts'
 
@@ -151,4 +152,13 @@ it('bundled official coverage matches the shipped dataset and manifest without c
   const coverage: unknown = JSON.parse(await readFile(path.join(root, 'src/data/dumRtCoverage.json'), 'utf8'))
   expect(coverage).toEqual({ schemaVersion: data.schemaVersion, source: data.source, locations: data.locations, identity })
   expect(coverage).not.toHaveProperty('days')
+})
+
+it('generates lightweight coverage from the same dataset identity without embedding rows', async () => {
+  const directory = await temporaryDirectory()
+  const manifest = await writePrayerDatasetArtifacts(directory, dataset)
+  const output = path.join(directory, 'coverage.json')
+  await writePrayerCoverage(path.join(directory, 'prayer-times-current.json'), manifest, output)
+  const { schemaVersion: _schema, ...identity } = manifest
+  expect(JSON.parse(await readFile(output, 'utf8'))).toEqual({ schemaVersion: 2, source: dataset.source, locations: dataset.locations, identity })
 })

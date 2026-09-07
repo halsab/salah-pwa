@@ -87,3 +87,40 @@ test('source mode persists across reload and manual official does not silently f
   await expect(page.getByRole('listitem')).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('storage failure stays visible and retry saves the latest place and settings together', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.setViewportSize({ width: 320, height: 740 })
+  await page.goto('./')
+  await expect(page.getByRole('listitem')).toHaveCount(8)
+  await page.evaluate(() => {
+    const put = Object.getOwnPropertyDescriptor(IDBObjectStore.prototype, 'put')?.value as IDBObjectStore['put']
+    Object.assign(window, { restoreStorage: () => { IDBObjectStore.prototype.put = put } })
+    IDBObjectStore.prototype.put = function (...args) {
+      if (this.name === 'settings') throw new DOMException('Quota exhausted', 'QuotaExceededError')
+      return put.apply(this, args)
+    }
+  })
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Найти город или район' }).click()
+  await page.getByRole('searchbox').fill('Стамбул')
+  await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true }).click()
+  await expect(page.getByRole('listitem')).toHaveCount(7)
+  await expect(page.getByRole('status')).toContainText('сохранить его не удалось')
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByLabel('Оформление').selectOption('dark')
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.getByRole('dialog').getByRole('status')).toContainText('сохранить его не удалось')
+  await page.screenshot({ path: '/tmp/salah-stage6-storage-retry-320.png' })
+  await page.evaluate(() => (window as Window & { restoreStorage: () => void }).restoreStorage())
+  await page.getByRole('dialog').getByRole('button', { name: 'Повторить', exact: true }).click()
+  await expect(page.getByRole('status')).toHaveCount(0)
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { cityId: 745044 } })
+  await expect.poll(() => readSavedSetting(page, 'appearance')).toBe('dark')
+  await page.reload()
+  await expect(page.getByRole('button', { name: /Стамбул/ })).toBeVisible()
+  await expect(page.getByRole('listitem')).toHaveCount(7)
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  expect(errors).toEqual([])
+})

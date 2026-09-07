@@ -1,3 +1,4 @@
+import { openDB } from 'idb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getDatasetRevision } from '../domain/scheduleContext'
@@ -398,4 +399,12 @@ it('migrates a manual legacy city without expert settings to automatic source', 
   await createVersion5Database({ settings: [{ key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'manual' } }] }, 7)
   expect(unwrap(await getSetting('sourcePreferences'))).toEqual({ mode: 'automatic' })
   expect(unwrap(await getLocationChoice())).toMatchObject({ source: 'manual', locationId: 'kazan' })
+})
+
+it('closes an active connection when another tab upgrades instead of blocking it', async () => {
+  unwrap(await getSetting('appearance'))
+  const upgraded = await openDB('salah', 10)
+  expect(upgraded.version).toBe(10)
+  upgraded.close()
+  expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
 })

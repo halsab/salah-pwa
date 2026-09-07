@@ -442,12 +442,11 @@ export function clearAppData(): Promise<Result<void, StorageFailure>> {
     const transaction = database.transaction(['settings', 'days', 'meta', 'control'], 'readwrite')
     try {
       const generation = (await transaction.objectStore('control').get('generation')) ?? 0
-      await Promise.all([
-        transaction.objectStore('settings').clear(),
-        transaction.objectStore('days').clear(),
-        transaction.objectStore('meta').clear(),
-        transaction.objectStore('control').put(generation + 1, 'generation'),
-      ])
+      // Ждём каждый запрос: синхронный сбой следующего не оставит Promise без обработчика при откате.
+      await transaction.objectStore('settings').clear()
+      await transaction.objectStore('days').clear()
+      await transaction.objectStore('meta').clear()
+      await transaction.objectStore('control').put(generation + 1, 'generation')
       await transaction.done
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }

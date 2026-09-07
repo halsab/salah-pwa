@@ -38,6 +38,8 @@ async function releaseSettings(page: Page) {
 }
 
 test('reset: cancel, transactional failure, retry, two tabs, offline and restart', async ({ page, context }) => {
+  const errors: string[] = []
+  page.on('pageerror', error => errors.push(error.message))
   await page.setViewportSize({ width: 320, height: 640 })
   await page.goto('./')
   await expect(page.getByRole('listitem')).toHaveCount(8)
@@ -69,6 +71,7 @@ test('reset: cancel, transactional failure, retry, two tabs, offline and restart
   await page.getByRole('button', { name: 'Удалить данные', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('Не удалось сбросить')
   expect(await counts(page)).toEqual(before)
+  expect(errors).toEqual([])
   await page.screenshot({ path: '/tmp/salah-stage5-reset-error-320-dark.png' })
   const second = await context.newPage()
   await second.clock.setFixedTime(new Date('2026-09-04T09:30:00Z'))

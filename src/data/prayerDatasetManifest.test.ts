@@ -133,3 +133,13 @@ it.each([
   const value = corrupt(dataset)
   expect(await verifyPrayerDatasetBytes(new Uint8Array(), manifest, { digest: () => Promise.resolve(HASH), decode: () => '', parse: () => value })).toMatchObject({ ok: false, error: { reason: 'invalid' } })
 })
+
+it('distinguishes unavailable crypto from invalid UTF-8 or JSON without accepting unverified data', async () => {
+  expect(await verifyPrayerDatasetBytes(new Uint8Array(), manifest, {
+    digest: () => Promise.reject(new Error('WebCrypto unavailable')),
+  })).toEqual({ ok: false, error: { kind: 'data', reason: 'unavailable' } })
+  for (const bytes of [new Uint8Array([0xff]), new TextEncoder().encode('{broken')]) {
+    expect(await verifyPrayerDatasetBytes(bytes, manifest, { digest: () => Promise.resolve(HASH) }))
+      .toEqual({ ok: false, error: { kind: 'data', reason: 'invalid' } })
+  }
+})

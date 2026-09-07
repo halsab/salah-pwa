@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createOfficialPlace } from './place'
 import { resolvePrayerTimeSource, type OfficialDatasetAvailability } from './prayerSource'
-import { automaticPreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
+import { automaticPreferences, isSourcePreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
 import { effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
 
 const place = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 0)
@@ -64,6 +64,10 @@ describe('preferences and validation', () => {
     { isha: { kind: 'interval', minutes: 0 } },
     { adjustments: { fajr: 181 } }, { adjustments: { fajr: 0.5 } },
     { adjustments: { suhurEnd: 2 } }, { unknown: 1 },
+    { asrMethod: 'unknown' }, { highLatitudeRule: 7 },
+    { isha: null }, { isha: { kind: 'angle', angle: 0 } },
+    { isha: { kind: 'interval', minutes: 90, angle: 15 } },
+    { isha: { kind: 'unknown' } }, { adjustments: [] },
   ])('rejects invalid expert overrides %j', (overrides) => {
     expect(isCalculationSelection({ profile: 'karachi', overrides })).toBe(false)
   })
@@ -83,4 +87,14 @@ it('uses the provider calendar year near midnight regardless of a manual place t
 it('uses a confirmed local version ahead of a missing version regardless of descriptor order', () => {
   const missing = { ...official, state: 'not-loaded' as const, version: 'v2', revision: 'r2' }
   expect(resolvePrayerTimeSource(place, '2026-09-01', auto, [missing, official])).toMatchObject({ kind: 'official', status: 'ready', version: 'v1' })
+})
+
+it('rejects corrupt saved preferences and never turns invalid expert drafts into effective settings', () => {
+  for (const value of [null, [], { mode: 'manual' }, { mode: 'automatic', calculationDraft: {} }, { mode: 'manual', source: { kind: 'official', provider: '' } }]) {
+    expect(isSourcePreferences(value)).toBe(false)
+    expect(restoreSourcePreferences(value)).toEqual(auto)
+  }
+  const invalid = { profile: 'karachi' as const, overrides: { fajrAngle: NaN } }
+  expect(() => effectiveCalculationSettings(invalid)).toThrow(RangeError)
+  expect(() => manualCalculation(invalid)).toThrow(RangeError)
 })

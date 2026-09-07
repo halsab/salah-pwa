@@ -55,6 +55,10 @@ body {
 }
 
 a {
+  display: inline-block;
+  min-width: 44px;
+  min-height: 44px;
+  align-content: center;
   color: inherit;
   font-weight: 700;
   text-decoration-thickness: 1px;
@@ -212,7 +216,7 @@ code {
   justify-content: space-between;
   gap: 18px;
   padding: 4px 5px;
-  color: color-mix(in srgb, var(--paper-strong) 82%, var(--page));
+  color: #f6eedf;
 }
 
 .privacy-footer small {

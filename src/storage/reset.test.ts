@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { openDB } from 'idb'
 import { clearAppData, deleteSalahDatabase, getDataGeneration, getSetting, saveSettings, setSetting } from './database'
 import { automaticPreferences } from '../domain/sourcePreferences'
@@ -47,4 +47,28 @@ it('не позволяет старому refresh записать таблиц
   const result = await replaceDataset(completeDataset(), {version:'old',sha256:'old',url:'prayer-times-current.json'}, {generation, revision:null, isCurrent:()=>true})
   expect(result).toEqual({ok:false,error:{kind:'data',reason:'superseded'}})
   expect(await getStoredDataset()).toEqual({ok:true,value:null})
+})
+
+it('rolls back a failed clear, keeps the generation and allows retry without partial deletion', async () => {
+  await setSetting('appearance', 'dark')
+  const before = await getDataGeneration()
+  const clear = Object.getOwnPropertyDescriptor(IDBObjectStore.prototype, 'clear')?.value as IDBObjectStore['clear']
+  const injected = vi.spyOn(IDBObjectStore.prototype, 'clear').mockImplementation(function (this: IDBObjectStore) {
+    if (this.name === 'days') throw new DOMException('Storage unavailable', 'InvalidStateError')
+    return clear.call(this)
+  })
+  expect(await clearAppData()).toEqual({ ok: false, error: { kind: 'storage', reason: 'unavailable' } })
+  expect(await getDataGeneration()).toBe(before)
+  expect(await getSetting('appearance')).toEqual({ ok: true, value: 'dark' })
+  injected.mockRestore()
+  expect(await clearAppData()).toEqual({ ok: true, value: undefined })
+  expect(await getSetting('appearance')).toEqual({ ok: true, value: undefined })
+})
+
+it('does not persist a patch invalidated while opening storage or waiting for the generation read', async () => {
+  const generation = await getDataGeneration()
+  expect((await saveSettings({ appearance: 'dark' }, () => false, generation)).ok).toBe(true)
+  const current = vi.fn().mockReturnValueOnce(true).mockReturnValue(false)
+  expect((await saveSettings({ appearance: 'dark' }, current, generation)).ok).toBe(true)
+  expect(await getSetting('appearance')).toEqual({ ok: true, value: 'system' })
 })
