@@ -23,6 +23,7 @@ import {
   getDatasetMeta,
   getLocationChoice,
   getPrayerDay,
+  getPrayerDays,
   getSetting,
   replaceDataset,
   saveLocationChoice,
@@ -280,6 +281,7 @@ function isCalculationSettings(value: unknown): value is CalculationSettings {
 export const prayerRepository = {
   initialize: initializePrayerRepository,
   getDay: getPrayerDay,
+  getDays: getPrayerDays,
   saveOfficialLocation: (
     locationId: string,
     source: LocationSelectionSource,

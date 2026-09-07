@@ -2,6 +2,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { parseDumRtCsv, validateSchedule } from '../src/data/parseDumRtCsv'
+import { diagnoseOfficialSchedule } from '../src/data/scheduleDiagnostics'
 import type { PrayerDataset, PrayerDay } from '../src/domain/types'
 import { DUM_RT_LOCATIONS } from './dumRtLocations'
 import {
@@ -41,12 +42,17 @@ async function main(): Promise<void> {
     ? selectCompleteDatasetYears(downloaded.map(({ days }) => days), currentYear)
     : [requestedYear]
 
-  const schedules = downloaded.map(({ days, updatedAt }) => {
+  const schedules = downloaded.map(({ days, updatedAt }, index) => {
+    const location = DUM_RT_LOCATIONS[index]
+    if (!location) throw new Error('Неизвестное место в импорте')
     const selectedDays = years.flatMap((year) => {
       const yearDays = days.filter((day) => day.date.startsWith(`${year}-`))
-      validateSchedule(yearDays, year)
+      validateSchedule(yearDays, year, location.id)
       return yearDays
     })
+    for (const diagnostic of diagnoseOfficialSchedule(selectedDays)) {
+      console.warn(`${diagnostic.locationId} ${diagnostic.date} [${diagnostic.fields.join(', ')}] ${diagnostic.code}: ${diagnostic.reason}`)
+    }
     return { days: selectedDays, updatedAt }
   })
   const latestUpdate = downloaded

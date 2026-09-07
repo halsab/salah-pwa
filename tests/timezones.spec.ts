@@ -167,3 +167,33 @@ test('ручной город сохраняется при доступной �
   expect(await readSavedLocationChoice(page)).toEqual(savedChoice)
   expect(reverseRequests).toBe(0)
 })
+
+test('спорная строка Апастово переключается по моментам Зухра и зенита в московской зоне', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-02-07T08:59:00.000Z'))
+  await page.goto('./')
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.locator('.official-country-group summary').click()
+  await page.getByRole('button', { name: 'Апастово', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Апастово · UTC\+3/ })).toBeVisible()
+  await expect(page.getByRole('timer')).toHaveAccessibleName('До зухра, осталось 00:01:00')
+
+  await page.clock.setFixedTime(new Date('2026-02-07T09:00:00.000Z'))
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
+  await expect(page.locator('.next-name')).toHaveText('Зухр · 12:00')
+  await expect(page.getByRole('timer')).toHaveAccessibleName('До зенита, осталось 00:01:00')
+
+  await page.clock.setFixedTime(new Date('2026-02-07T09:01:00.000Z'))
+  await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
+  await expect(page.locator('.next-name')).toHaveText('Зенит · 12:01')
+  await expect(page.locator('.prayer-row[data-active] .prayer-name')).toHaveText('Зенит')
+})
+
+test('около полуночи сохраняет поздний сухур источника с пояснением и считает до подтверждённого события', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-05-04T21:10:00.000Z'))
+  await page.goto('./')
+  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-05-05')
+  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByText('23:54')).toBeVisible()
+  await expect(page.getByText(/Дата завершения сухура 23:54.*не уточнена/)).toBeVisible()
+  await expect(page.locator('.next-name')).toHaveText('Иша · 22:00')
+  await expect(page.getByRole('timer')).toHaveAccessibleName('До утреннего в мечети, осталось 02:12:00')
+})

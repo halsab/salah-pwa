@@ -1,3 +1,4 @@
+import { required } from '../test/required'
 import { describe, expect, it } from 'vitest'
 
 import { parseDumRtCsv, validateSchedule } from './parseDumRtCsv'
@@ -67,5 +68,23 @@ describe('validateSchedule', () => {
     )
 
     expect(() => validateSchedule(duplicate, 2026)).toThrow(/повтор/i)
+  })
+})
+
+describe('диагностика импорта', () => {
+  it('указывает место, дату и поле при пропущенном значении', () => {
+    expect(() => parseDumRtCsv('05.05.2026;23:54;02:22;;11:41;12:00;16:58;19:30;21:00', 'kazan'))
+      .toThrow(/kazan.*05.05.2026.*sunrise/)
+  })
+
+  it('сообщает о дубликате с местом, датой и полем', () => {
+    const [day] = parseDumRtCsv('01.01.2026;05:53;06:43;08:14;11:48;12:00;13:34;15:22;17:19', 'kazan')
+    expect(() => validateSchedule([required(day), required(day)], 2026)).toThrow(/kazan.*2026-01-01.*date.*повтор/)
+  })
+})
+
+describe('структурные границы расписания', () => {
+  it.each([NaN, 2026.5])('отклоняет неизвестный год %s даже у пустого расписания', (year) => {
+    expect(() => validateSchedule([], year, 'kazan')).toThrow(/kazan.*date.*год/)
   })
 })

@@ -1,6 +1,7 @@
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
-import type { StorageFailure } from '../domain/errors'
+import { getDatasetRevision } from '../domain/scheduleContext'
+import type { DataFailure, StorageFailure } from '../domain/errors'
 import type { LocationSelectionSource } from '../domain/locationSelection'
 import type { CalculationSettings } from '../domain/prayerCalculation'
 import { failure, success, type Result } from '../domain/result'
@@ -255,6 +256,34 @@ export function getPrayerDay(
     const { key: _key, ...day } = record
     return day
   })
+}
+
+export async function getPrayerDays(
+  locationId: string,
+  dates: readonly string[],
+  expectedRevision: string,
+): Promise<Result<(PrayerDay | undefined)[], StorageFailure | DataFailure>> {
+  const result = await storageResult(async () => {
+    const database = await getDatabase()
+    // Метаданные и дни читаются в одном снимке, в том числе при обновлении из другой вкладки.
+    const transaction = database.transaction(['days', 'meta'], 'readonly')
+    const [meta, records] = await Promise.all([
+      transaction.objectStore('meta').get('current'),
+      Promise.all(dates.map((date) => transaction.objectStore('days').get(dayKey(locationId, date)))),
+    ])
+    await transaction.done
+    return { meta, records }
+  })
+  if (!result.ok) return result
+  const { meta, records } = result.value
+  if (!meta || getDatasetRevision(meta) !== expectedRevision) {
+    return failure({ kind: 'data', reason: 'invalid' })
+  }
+  return success(records.map((record) => {
+    if (!record) return undefined
+    const { key: _key, ...day } = record
+    return day
+  }))
 }
 
 export function getDatasetMeta(): Promise<

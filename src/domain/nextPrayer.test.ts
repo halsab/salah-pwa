@@ -207,3 +207,11 @@ describe('formatRemainingTime', () => {
     expect(formatRemainingTime(5)).toBe('00:00:05')
   })
 })
+
+describe('регрессии порядка полей', () => {
+  it('на реальной строке Апастово выбирает Зухр 12:00 перед зенитом 12:01', () => {
+    const day: PrayerDay = { ...today, locationId: 'apastovo', date: '2026-02-07', suhurEnd: '05:21', fajrJamaat: '05:56', sunrise: '07:27', zenith: '12:01', dhuhr: '12:00', asr: '14:43', maghrib: '16:35', isha: '18:19' }
+    expect(findNextPrayer(new Date('2026-02-07T11:59:59+03:00'), day)?.key).toBe('dhuhr')
+    expect(findCurrentPrayer(new Date('2026-02-07T12:01:00+03:00'), day)?.key).toBe('zenith')
+  })
+})

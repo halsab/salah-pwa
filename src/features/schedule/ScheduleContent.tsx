@@ -1,7 +1,7 @@
-import { useCallback, useState, type RefObject } from 'react'
+import { useCallback, useMemo, useState, type RefObject } from 'react'
 
 import { formatDateLabel } from '../../domain/date'
-import { findCurrentPrayer, findNextPrayer } from '../../domain/nextPrayer'
+import { buildScheduleEvents, selectEventPair } from '../../domain/scheduleEvents'
 import {
   CALCULATION_PROFILES,
   type CalculationProfileId,
@@ -74,6 +74,7 @@ function PrayerSchedule({
 }) {
   const calculated = 'entries' in schedule
   const rows = calculated ? CALCULATED_PRAYER_ROWS : OFFICIAL_PRAYER_ROWS
+  const events = buildScheduleEvents(schedule)
 
   return (
     <ol className="prayer-list" aria-label="Времена намаза">
@@ -82,9 +83,8 @@ function PrayerSchedule({
           ? schedule.entries[key as CalculatedPrayerKey]
           : null
         const time = entry?.time ?? (schedule as PrayerDay)[key as PrayerKey]
-        const dateTime = entry
-          ? new Date(entry.instant).toISOString()
-          : `${schedule.date}T${time}:00+03:00`
+        const event = events.find((event) => event.key === key)
+        const dateTime = event?.status === 'resolved' ? new Date(event.instant).toISOString() : undefined
         const estimated = entry?.estimated ?? false
 
         return (
@@ -118,8 +118,7 @@ function calculationProfileLabel(profileId: CalculationProfileId): string {
 
 interface ScheduleContentProps {
   schedule: DisplaySchedule | null
-  previousSchedule: DisplaySchedule | undefined
-  tomorrow: DisplaySchedule | undefined
+  schedules: DisplaySchedule[]
   scheduleLoading: boolean
   scheduleError: string | null
   selectedDate: string
@@ -137,8 +136,7 @@ interface ScheduleContentProps {
 
 export function ScheduleContent({
   schedule,
-  previousSchedule,
-  tomorrow,
+  schedules,
   scheduleLoading,
   scheduleError,
   selectedDate,
@@ -163,13 +161,14 @@ export function ScheduleContent({
     setEventBoundaryTime((current) =>
       current?.getTime() === nextTime.getTime() ? current : nextTime)
   }, [now])
-  const nextPrayer = selectedDate === today && schedule
-    ? findNextPrayer(effectiveCurrentTime, schedule, tomorrow)
-    : null
-  const currentPrayer = selectedDate === today && schedule
-    ? findCurrentPrayer(effectiveCurrentTime, schedule, previousSchedule)
-    : null
-  const calculatedSchedule = schedule && 'entries' in schedule ? schedule : null
+  const activeSchedule = scheduleLoading || scheduleError ? null : schedule
+  const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
+  const { next: nextPrayer, current: currentPrayer } = selectedDate === today && activeSchedule
+    ? selectEventPair(effectiveCurrentTime, events)
+    : { next: null, current: null }
+  const calculatedSchedule = activeSchedule && 'entries' in activeSchedule ? activeSchedule : null
+  const ambiguousSuhur = activeSchedule && events.find((event) =>
+    event.scheduleDate === activeSchedule.date && event.status === 'ambiguous-date')
   const profileLabel = calculationProfileLabel(calculationSettings.profile)
 
   return (
@@ -177,7 +176,7 @@ export function ScheduleContent({
       <section className="next-prayer-panel" aria-label="Текущее событие и время до следующего">
         {scheduleError ? (
           <div className="no-next-prayer"><ClockIcon /><p>Расписание временно недоступно</p></div>
-        ) : scheduleLoading && !schedule ? (
+        ) : scheduleLoading ? (
           <div className="no-next-prayer" aria-live="polite"><ClockIcon /><p>Загружаем расписание…</p></div>
         ) : selectedDate === today ? (
           nextPrayer ? (
@@ -217,8 +216,8 @@ export function ScheduleContent({
             <p role="alert">{scheduleError}</p>
             <button className="primary-button" type="button" onClick={onRetrySchedule}>Повторить</button>
           </div>
-        ) : schedule ? (
-          <PrayerSchedule schedule={schedule} activePrayer={currentPrayer?.date === schedule.date ? currentPrayer.key : undefined} />
+        ) : activeSchedule ? (
+          <PrayerSchedule schedule={activeSchedule} activePrayer={currentPrayer?.scheduleDate === activeSchedule.date ? currentPrayer.key : undefined} />
         ) : scheduleLoading ? (
           <div className="schedule-skeleton" aria-label="Загружаем расписание" />
         ) : (
@@ -231,6 +230,11 @@ export function ScheduleContent({
         )}
 
         <div>
+          {ambiguousSuhur ? (
+            <p className="calculation-note">
+              Дата завершения сухура {ambiguousSuhur.time} в источнике не уточнена. Эта отметка не участвует в таймере.
+            </p>
+          ) : null}
           {calculatedSchedule?.estimatedPrayers.some((key) => key === 'fajr' || key === 'isha') ? (
             <p className="calculation-note">Фаджр и/или Иша определены по правилу северных широт.</p>
           ) : null}

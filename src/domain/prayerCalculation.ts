@@ -80,6 +80,7 @@ export const DEFAULT_CALCULATION_SETTINGS: CalculationSettings = {
 
 export interface CalculatedPrayerSchedule {
   date: string
+  timeZone: string
   profile: CalculationProfileId
   entries: CalculatedPrayerEntries
   estimatedPrayers: CalculatedPrayerKey[]
@@ -383,6 +384,7 @@ export function calculatePrayerSchedule(
 
   return {
     date,
+    timeZone,
     profile: settings.profile,
     entries,
     estimatedPrayers,

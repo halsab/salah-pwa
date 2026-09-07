@@ -54,10 +54,11 @@ import { ShareIcon } from './ui/Icons'
 export interface AppServices {
   initialize: () => Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>>
   cities: CityCatalogService
-  getDay: (
+  getDays: (
     locationId: string,
-    date: string,
-  ) => Promise<Result<PrayerDay | undefined, StorageFailure>>
+    dates: readonly string[],
+    datasetRevision: string,
+  ) => Promise<Result<(PrayerDay | undefined)[], StorageFailure | DataFailure>>
   saveOfficialLocation: (
     locationId: string,
     source: LocationSelectionSource,
@@ -201,16 +202,16 @@ export function App({
     showDatePicker,
   } = useScheduleDate(services, selectedTimeZone)
   const scheduleServices = useMemo(() => ({
-    getDay: async (nextLocationId: string, date: string) => {
-      const result = await services.getDay(nextLocationId, date)
+    getDays: async (nextLocationId: string, dates: readonly string[], datasetRevision: string) => {
+      const result = await services.getDays(nextLocationId, dates, datasetRevision)
       if (!result.ok) throw new Error(result.error.reason)
       return result.value
     },
   }), [services])
   const {
     schedule,
-    previousSchedule,
-    tomorrow,
+    schedules,
+    contextKey,
     scheduleLoading,
     scheduleError,
     retrySchedule,
@@ -510,8 +511,8 @@ export function App({
 
           <ScheduleContent
             schedule={schedule}
-            previousSchedule={previousSchedule}
-            tomorrow={tomorrow}
+            key={contextKey}
+            schedules={schedules}
             scheduleLoading={scheduleLoading}
             scheduleError={scheduleError}
             selectedDate={selectedDate}

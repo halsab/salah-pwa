@@ -109,11 +109,11 @@ function createServices(
       ),
       findNearest: vi.fn().mockResolvedValue(success(null)),
     },
-    getDay: vi
+    getDays: vi
       .fn()
-      .mockImplementation((locationId: string, date: string) =>
+      .mockImplementation((locationId: string, dates: readonly string[]) =>
         Promise.resolve(success(
-          days.find((day) => day.locationId === locationId && day.date === date),
+          dates.map((date) => days.find((day) => day.locationId === locationId && day.date === date)),
         )),
       ),
     saveOfficialLocation: vi.fn().mockResolvedValue(success(undefined)),
@@ -300,8 +300,8 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     expect((await screen.findAllByText('понедельник, 31 августа'))[0]).toBeVisible()
-    await waitFor(() => expect(services.getDay).toHaveBeenCalledTimes(3))
-    vi.mocked(services.getDay).mockClear()
+    await waitFor(() => expect(services.getDays).toHaveBeenCalledTimes(1))
+    vi.mocked(services.getDays).mockClear()
 
     act(() => {
       now = new Date('2026-08-31T21:00:00.000Z')
@@ -310,7 +310,7 @@ describe('Salah', () => {
 
     expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
     await waitFor(() => {
-      expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-01')
+      expect(services.getDays).toHaveBeenCalledWith('kazan', ['2026-08-31', '2026-09-01', '2026-09-02'], expect.any(String))
     })
   })
 
@@ -345,7 +345,7 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     expect(await screen.findByText('вторник, 1 сентября')).toBeVisible()
-    expect(services.getDay).toHaveBeenCalledWith('kazan', '2026-09-01')
+    expect(services.getDays).toHaveBeenCalledWith('kazan', ['2026-08-31', '2026-09-01', '2026-09-02'], expect.any(String))
   })
 
   it.each(['manual', 'default'] as const)(
@@ -1364,13 +1364,13 @@ describe('Salah', () => {
   it('позволяет повторить загрузку расписания после ошибки', async () => {
     const baseServices = createServices()
     let shouldFail = true
-    const getDay = vi.fn((locationId: string, date: string) => {
+    const getDays = vi.fn((locationId: string, dates: readonly string[], datasetRevision: string) => {
       if (shouldFail) {
         return Promise.resolve(failure({ kind: 'storage' as const, reason: 'unavailable' as const }))
       }
-      return baseServices.getDay(locationId, date)
+      return baseServices.getDays(locationId, dates, datasetRevision)
     })
-    const services = createServices({ getDay })
+    const services = createServices({ getDays })
     const user = userEvent.setup()
     render(<App services={services} />)
 
@@ -1385,6 +1385,39 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Повторить' }))
 
     expect(await screen.findByRole('list', { name: 'Времена намаза' })).toBeVisible()
-    expect(getDay).toHaveBeenCalledTimes(6)
+    expect(getDays).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('согласованность контекста в интерфейсе', () => {
+  it('при быстром выборе Казань → Челны → Апастово скрывает прежнюю таблицу и таймер до ответа нужного города', async () => {
+    const base = createServices()
+    const chelny = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
+    const apastovo = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ meta: { ...initializedState.meta, locations: [
+        ...initializedState.meta.locations,
+        { id: 'apastovo', name: 'Апастово', latitude: 55.2, longitude: 48.5 },
+      ] } })),
+      getDays: vi.fn((id: string, dates: readonly string[], revision: string) => id === 'naberezhnye-chelny' ? chelny.promise : id === 'apastovo' ? apastovo.promise : base.getDays(id, dates, revision)),
+    })
+    const user = userEvent.setup()
+    const { container } = render(<App services={services} />)
+    expect(await screen.findByRole('timer')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /Казань/ }))
+    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Времена намаза' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Набережные Челны/ }))
+    await user.click(screen.getByRole('button', { name: 'Апастово' }))
+    await act(async () => { chelny.resolve(success([undefined, chelnyToday, undefined])); await chelny.promise })
+    expect(screen.getByRole('button', { name: /Апастово/ })).toBeVisible()
+    expect(screen.getByLabelText('Загружаем расписание')).toBeVisible()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(container.querySelector('[data-active]')).toBeNull()
+    await act(async () => { apastovo.resolve(success([undefined, { ...kazanToday, locationId: 'apastovo', asr: '16:45' }, undefined])); await apastovo.promise })
+    expect(await screen.findByText('16:45')).toBeVisible()
+    expect(screen.queryByText('16:37')).not.toBeInTheDocument()
+    expect(screen.getByRole('timer')).toBeVisible()
   })
 })

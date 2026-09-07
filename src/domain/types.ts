@@ -81,3 +81,7 @@ export interface PrayerDatasetManifest {
   url: 'prayer-times-current.json'
   sha256: string
 }
+
+export const OFFICIAL_TIME_FIELDS = [
+  'suhurEnd', 'fajrJamaat', 'sunrise', 'zenith', 'dhuhr', 'asr', 'maghrib', 'isha',
+] as const satisfies readonly PrayerKey[]

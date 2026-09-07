@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { getDatasetRevision } from '../domain/scheduleContext'
 import type { Result } from '../domain/result'
 import type { PrayerDataset } from '../domain/types'
 import {
@@ -7,6 +8,7 @@ import {
   getDatasetMeta,
   getLocationChoice,
   getPrayerDay,
+  getPrayerDays,
   getSetting,
   replaceDataset,
   saveLocationChoice,
@@ -339,5 +341,22 @@ describe('database', () => {
       ok: false,
       error: { kind: 'storage', reason: 'unavailable' },
     })
+  })
+})
+
+describe('согласованное окно расписаний', () => {
+  it('читает все дни одной транзакцией с ожидаемой версией, сохраняя отсутствующие даты', async () => {
+    unwrap(await replaceDataset(dataset, identity))
+    const revision = getDatasetRevision({ ...dataset, identity })
+    expect(unwrap(await getPrayerDays('kazan', ['2026-08-31', '2026-09-01', '2026-09-02'], revision)))
+      .toEqual([undefined, dataset.days[0], undefined])
+  })
+
+  it('при замене набора не выдаёт данные новой версии под старым контекстом', async () => {
+    unwrap(await replaceDataset(dataset, identity))
+    const revision = getDatasetRevision({ ...dataset, identity })
+    const updated = { ...dataset, days: dataset.days.map((day) => ({ ...day, asr: '16:25' as const })) }
+    unwrap(await replaceDataset(updated, { ...identity, version: 'v2', sha256: 'hash2' }))
+    expect(await getPrayerDays('kazan', ['2026-09-01'], revision)).toEqual({ ok: false, error: { kind: 'data', reason: 'invalid' } })
   })
 })
