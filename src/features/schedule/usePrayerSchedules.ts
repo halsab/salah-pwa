@@ -72,7 +72,7 @@ export function usePrayerSchedules({
         return days.filter((day) => day !== undefined)
       }
       const days = dates.map((date) => calculatePrayerSchedule(context.location, date, context.timeZone, context.settings))
-      if (days.flatMap(buildScheduleEvents).some((event) => event.dayOffset !== null && Math.abs(event.dayOffset) > 3)) {
+      if (days.flatMap(buildScheduleEvents).some((event) => Math.abs(event.dayOffset) > 3)) {
         throw new Error('Событие вне поддерживаемого окна календарных дат')
       }
       return days

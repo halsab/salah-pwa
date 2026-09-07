@@ -48,7 +48,7 @@ function PrayerSchedule({
         const entry = calculated
           ? schedule.entries[key as CalculatedPrayerKey]
           : null
-        const dateTime = event.status === 'resolved' ? new Date(event.instant).toISOString() : undefined
+        const dateTime = new Date(event.instant).toISOString()
         const estimated = entry?.estimated ?? false
 
         return (

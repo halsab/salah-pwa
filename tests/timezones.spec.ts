@@ -188,13 +188,14 @@ test('спорная строка Апастово сохраняет момен
   await expect(page.locator('.prayer-row[data-active] .prayer-name')).toHaveText('Аср')
 })
 
-test('около полуночи сохраняет поздний сухур источника с пояснением и считает до подтверждённого события', async ({ page }) => {
+test('около полуночи показывает календарную дату сухура накануне дня поста и считает до джамаата', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-04T21:10:00.000Z'))
   await page.goto('./')
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-05-05')
   await expect(page.getByRole('list', { name: 'Расписание дня' }).getByText('23:54')).toBeVisible()
+  await expect(page.getByText('23:54', { exact: true })).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
   await page.getByRole('button', { name: /Официальное расписание · ДУМ РТ/ }).click()
-  await expect(page.getByText(/Дата завершения сухура 23:54.*не уточнена/)).toBeVisible()
+  await expect(page.getByText('Завершение сухура 23:54 — понедельник, 4 мая, накануне дня поста.')).toBeVisible()
   await page.getByRole('button', { name: 'Закрыть' }).click()
   await expect(page.locator('.next-name')).toHaveText('Утренний намаз в мечетях')
   await expect(page.getByRole('timer')).toHaveAccessibleName('До утреннего в мечети, осталось 02:12:00')

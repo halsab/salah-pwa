@@ -17,10 +17,11 @@ const base = {
 }
 
 describe('ScheduleContent', () => {
-  it('сохраняет спорное значение без неподтверждённого datetime и считает до намаза', () => {
+  it('показывает дату позднего сухура накануне дня поста и считает до намаза', () => {
     render(<ScheduleContent {...base} />)
     expect(screen.getByText('23:54')).toBeVisible()
-    expect(screen.getByText('23:54')).not.toHaveAttribute('datetime')
+    expect(screen.getByText('23:54')).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
+    expect(screen.getByText(/Завершение сухура/).parentElement).toHaveTextContent('понедельник, 4 мая')
     expect(screen.queryByText(/Дата завершения сухура.*не уточнена/)).not.toBeInTheDocument()
     expect(screen.getByRole('timer')).toHaveAccessibleName(/До зухра/)
   })

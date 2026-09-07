@@ -5,14 +5,14 @@ import { calculatePrayerSchedule } from '../../domain/prayerCalculation'
 import { parseDumRtCsv } from '../../data/parseDumRtCsv'
 import { required } from '../../test/required'
 
-it('показывает факты официальной таблицы и неоднозначность без раскрытия идентификаторов', () => {
+it('показывает факты официальной таблицы и дату позднего сухура без раскрытия идентификаторов', () => {
   const schedule = required(parseDumRtCsv('05.05.2026;23:54;02:22;03:53;11:41;12:00;16:58;19:30;21:00', 'kazan')[0])
   render(<SourceInfo open onClose={() => {}} schedule={schedule} placeLabel="Рядом: Казань" checkedAt={null} updateFailed context={{ source:'official', provider:'dumRt', mode:'automatic', datasetVersion:'secret-version', datasetRevision:'secret-hash', localityId:'kazan', coverage:'RU-TA', date: schedule.date, timeZone:'Europe/Moscow', location:{id:'private-id', latitude:55, longitude:49} }} meta={{ schemaVersion:2, source:{name:'ДУМ РТ',url:'https://dumrt.ru/ru/help-info/prayertime/', updatedAt:'2026-01-01',years:[2026]}, locations:[{id:'kazan',name:'Казань',latitude:55,longitude:49}] }} />)
   const dialog = screen.getByRole('dialog', { name:'Сведения об источнике' })
   expect(within(dialog).getByText('Казань', { exact:true })).toBeVisible()
   expect(dialog).toHaveTextContent('Europe/Moscow')
   expect(dialog).toHaveTextContent('Проверка обновлений не удалась')
-  expect(dialog).toHaveTextContent('Дата завершения сухура 23:54')
+  expect(dialog).toHaveTextContent('Завершение сухура 23:54 — понедельник, 4 мая, накануне дня поста.')
   expect(within(dialog).getByRole('link', { name: /Первичный источник/ })).toHaveAttribute('href','https://dumrt.ru/ru/help-info/prayertime/')
   expect(dialog.textContent).not.toMatch(/secret-|private-id/)
 })

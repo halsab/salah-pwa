@@ -8,19 +8,33 @@ import { buildScheduleEvents, selectEventPair } from './scheduleEvents'
 function official(csv: string) {
   return required(parseDumRtCsv(csv, 'kazan')[0])
 }
-const disputed = official('05.05.2026;23:54;02:22;03:53;11:41;12:00;16:58;19:30;21:00')
+const lateSuhur = official('05.05.2026;23:54;02:22;03:53;11:41;12:00;16:58;19:30;21:00')
 const apastovo = official('07.02.2026;05:21;05:56;07:27;12:01;12:00;14:43;16:35;18:19')
 
 describe('хронология расписания', () => {
-  it('сохраняет поздний сухур без выдуманной даты и исключает только неопределённую отметку', () => {
-    const events = buildScheduleEvents(disputed)
+  it('относит поздний сухур к вечеру накануне дня поста и сравнивает его реальный момент', () => {
+    const events = buildScheduleEvents(lateSuhur)
     expect(events.find(({ key }) => key === 'suhurEnd')).toMatchObject({
       kind: 'marker', time: '23:54', scheduleDate: '2026-05-05',
-      timeZone: 'Europe/Moscow', status: 'ambiguous-date',
-      instant: null, date: null, dayOffset: null,
+      timeZone: 'Europe/Moscow', status: 'resolved',
+      instant: Date.parse('2026-05-04T23:54:00+03:00'), date: '2026-05-04', dayOffset: -1,
     })
+    expect(selectEventPair(new Date('2026-05-04T23:53:59+03:00'), events).next?.key).toBe('suhurEnd')
+    const exact = selectEventPair(new Date('2026-05-04T23:54:00+03:00'), events)
+    expect(exact.current?.key).toBe('suhurEnd')
+    expect(exact.next?.key).toBe('fajrJamaat')
+    expect(selectEventPair(new Date('2026-05-05T00:00:00+03:00'), events)).toEqual(exact)
     expect(selectEventPair(new Date('2026-05-05T09:30:00+03:00'), events).next?.key).toBe('zenith')
-    expect(disputed.suhurEnd).toBe('23:54')
+    expect(lateSuhur.suhurEnd).toBe('23:54')
+  })
+
+  it.each([
+    ['2026-01-01', '23:59', '2025-12-31', -1],
+    ['2026-05-01', '23:40', '2026-04-30', -1],
+    ['2026-05-05', '00:00', '2026-05-05', 0],
+  ] as const)('сухур %s %s сохраняет календарную границу', (scheduleDate, time, date, dayOffset) => {
+    const event = buildScheduleEvents({ ...lateSuhur, date: scheduleDate, suhurEnd: time }).find(({ key }) => key === 'suhurEnd')
+    expect(event).toMatchObject({ date, dayOffset, instant: Date.parse(`${date}T${time}:00+03:00`) })
   })
 
   it('сравнивает абсолютные моменты при любой перестановке событий и при Зухре раньше зенита', () => {

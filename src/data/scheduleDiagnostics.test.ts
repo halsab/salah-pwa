@@ -11,11 +11,11 @@ const disputed = parseDumRtCsv([
 ].join('\n'), 'kazan')
 
 describe('diagnoseOfficialSchedule', () => {
-  it('сохраняет реальные спорные строки и сообщает о неясной дате и переходе через полночь', () => {
+  it('сохраняет реальные строки и сообщает о сухуре накануне и переходе через полночь', () => {
     const original = structuredClone(disputed)
     const warnings = diagnoseOfficialSchedule(disputed)
     expect(warnings).toContainEqual(expect.objectContaining({
-      code: 'ambiguous-date', locationId: 'kazan', date: '2026-05-05', fields: ['suhurEnd'],
+      code: 'previous-day-suhur', locationId: 'kazan', date: '2026-05-05', fields: ['suhurEnd'],
     }))
     expect(warnings).toContainEqual(expect.objectContaining({
       code: 'midnight-transition', locationId: 'kazan', date: '2026-05-05', fields: ['suhurEnd'],
@@ -52,7 +52,7 @@ describe('diagnoseOfficialSchedule', () => {
   it('полный год с необычной строкой проходит строгую проверку с предупреждением', () => {
     const days = Array.from({ length: 365 }, (_, index) => ({ ...required(disputed[0]), date: addDays('2026-01-01', index) }))
     days[124] = required(disputed[1])
-    expect(validateSchedule(days, 2026)).toContainEqual(expect.objectContaining({ code: 'ambiguous-date', date: '2026-05-05' }))
+    expect(validateSchedule(days, 2026)).toContainEqual(expect.objectContaining({ code: 'previous-day-suhur', date: '2026-05-05' }))
     expect(() => validateSchedule(days.filter(({ date }) => date !== '2026-05-06'), 2026)).toThrow(/kazan.*2026-05-06.*date.*пропущ/)
   })
 })

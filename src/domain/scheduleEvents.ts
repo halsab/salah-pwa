@@ -1,4 +1,5 @@
 import { createLocationClock, DUM_RT_TIME_ZONE } from './locationTime'
+import { addDays } from './date'
 import type { CalculatedPrayerSchedule } from './prayerCalculation'
 import type { PrayerDay, PrayerTime, SchedulePrayerKey } from './types'
 
@@ -37,14 +38,7 @@ export interface ResolvedScheduleEvent extends EventSource {
   dayOffset: number
 }
 
-export interface AmbiguousScheduleEvent extends EventSource {
-  status: 'ambiguous-date'
-  instant: null
-  date: null
-  dayOffset: null
-}
-
-export type ScheduleEvent = ResolvedScheduleEvent | AmbiguousScheduleEvent
+export type ScheduleEvent = ResolvedScheduleEvent
 
 export function buildScheduleEvents(schedule: PrayerSchedule): ScheduleEvent[] {
   const calculated = 'entries' in schedule
@@ -59,11 +53,10 @@ export function buildScheduleEvents(schedule: PrayerSchedule): ScheduleEvent[] {
       : null
     const time = entry?.time ?? (schedule as PrayerDay)[key as keyof Omit<PrayerDay, 'date' | 'locationId'>]
     const source: EventSource = { ...EVENT_DEFINITIONS[key], key, scheduleDate: schedule.date, timeZone, time }
-    // CSV и XLSX не уточняют дату позднего сухура; сдвиг накануне нельзя выводить из порядка колонок.
-    if (!calculated && key === 'suhurEnd' && Number(time.split(':')[0]) >= 12) {
-      return { ...source, status: 'ambiguous-date', instant: null, date: null, dayOffset: null }
-    }
-    const instant = entry?.instant ?? clock.toInstant(schedule.date, time).getTime()
+    // Поздний сухур наступает накануне: дата строки обозначает следующий день поста.
+    const eventDate = !calculated && key === 'suhurEnd' && Number(time.split(':')[0]) >= 12
+      ? addDays(schedule.date, -1) : schedule.date
+    const instant = entry?.instant ?? clock.toInstant(eventDate, time).getTime()
     const date = clock.getCivilDate(new Date(instant))
     const dayOffset = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${schedule.date}T00:00:00Z`)) / 86_400_000
     return { ...source, status: 'resolved', instant, date, dayOffset }
@@ -87,7 +80,6 @@ export function selectEventPair(now: Date, events: readonly ScheduleEvent[]): {
   let next: ResolvedScheduleEvent | null = null
   const nowInstant = now.getTime()
   for (const event of events) {
-    if (event.status !== 'resolved') continue
     if (event.instant > nowInstant) {
       if (!next || event.instant < next.instant
         || (event.instant === next.instant && tieBreak(event, next) < 0)) next = event

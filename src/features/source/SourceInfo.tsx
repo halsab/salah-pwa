@@ -5,6 +5,7 @@ import { CALCULATION_PROFILES, getEffectiveParameters } from '../../domain/praye
 import type { DatasetMeta } from '../../storage/database'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
+import { formatDateLabel } from '../../domain/date'
 import { ASR_METHOD_LABELS, EVENT_LABELS, HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
 import { useDialogViewport, useModalDialog } from '../../ui/dialogHooks'
 import { CloseIcon } from '../../ui/Icons'
@@ -31,7 +32,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   const provider = official ? PRAYER_PROVIDERS.find(provider => provider.id === context.provider) : null
   const calculated = 'entries' in schedule ? schedule : null
   const params = context.source === 'calculated' ? getEffectiveParameters(context.settings, context.date, context.timeZone) : null
-  const ambiguous = buildScheduleEvents(schedule).find(event => event.status === 'ambiguous-date')
+  const lateSuhur = buildScheduleEvents(schedule).find(event => event.key === 'suhurEnd' && event.dayOffset === -1)
   const facts: [string, string][] = [['Место', placeLabel], ['Дата расписания', context.date], ['Часовой пояс расписания', context.timeZone]]
   if (official) facts.push(
     ['Пункт таблицы', meta?.locations.find(location => location.id === context.localityId)?.name ?? 'Опубликованный пункт'],
@@ -60,7 +61,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
           {calculated?.polarResolutionApplied ? <p>{staticText('source-copy-3')}</p> : null}
           <a href="https://github.com/batoulapps/adhan-js/blob/master/METHODS.md" target="_blank" rel="noreferrer">Описание расчётных профилей Adhan</a>
         </> : null}
-        {ambiguous ? <p>Дата завершения сухура {ambiguous.time} в источнике не уточнена. Эта отметка не участвует в таймере.</p> : null}
+        {lateSuhur ? <p>Завершение сухура {lateSuhur.time} — {formatDateLabel(lateSuhur.date)}, накануне дня поста.</p> : null}
         <p className="methodology-disclaimer">{staticText('source-copy-4')}</p>
       </div>
     </section>
