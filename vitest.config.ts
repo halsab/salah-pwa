@@ -16,7 +16,7 @@ export default defineConfig({
       reportsDirectory: 'coverage',
       include: [
         'src/**/*.{ts,tsx}',
-        'scripts/nextReleaseVersion.ts',
+        'scripts/releaseVersion.ts',
         'scripts/parseGeoNamesCities.ts',
         'scripts/prayerDatasetArtifacts.ts',
         'scripts/selectDatasetYear.ts',
