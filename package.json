@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test tests/ui.spec.ts tests/privacy.spec.ts tests/timezones.spec.ts --project=chromium && playwright test --project=firefox --project=webkit --project=mobile-safari-portrait --project=mobile-safari-landscape",
-    "smoke:offline": "playwright test tests/offline.spec.ts --project=chromium",
+    "smoke:offline": "playwright test tests/offline.spec.ts tests/city-catalog.spec.ts --project=chromium",
     "smoke:sw-update": "playwright test tests/sw-update.spec.ts --project=chromium-sw --workers=1",
     "security:csp": "playwright test tests/security.spec.ts --project=chromium --workers=1",
     "data:update": "tsx scripts/update-prayer-data.ts",

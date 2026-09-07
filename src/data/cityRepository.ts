@@ -1,114 +1,51 @@
-import {
-  normalizeCitySearch,
-  type CityDataset,
-  type CityDatasetSource,
-  type CompactCityRecord,
-} from '../domain/cities'
-import type { DataFailure } from '../domain/errors'
-import { isValidTimeZone } from '../domain/locationTime'
+import type { CityIndex, CityShard, CityShardDescriptor } from '../domain/cityIndex'
+import { validateCityIndex, parseCityShard } from '../domain/citySchema'
+export { parseCityIndex, parseCityShard } from '../domain/citySchema'
 import { failure, success, type Result } from '../domain/result'
+import type { DataFailure } from '../domain/errors'
+import { readCatalogIndex, readCatalogShard, saveCatalogIndex, saveCatalogShard } from '../storage/cityCatalogStorage'
 
-interface CityDatasetFile {
-  schemaVersion: 3
-  source: CityDatasetSource
-  cities: CompactCityRecord[]
-}
-
-const DATA_URL = `${import.meta.env.BASE_URL}data/cities-current.json`
-
-function isSource(value: unknown): value is CityDatasetSource {
-  if (!value || typeof value !== 'object') return false
-  const source = value as Partial<CityDatasetSource>
-  return (
-    typeof source.name === 'string'
-    && typeof source.url === 'string'
-    && typeof source.license === 'string'
-    && typeof source.licenseUrl === 'string'
-    && typeof source.updatedAt === 'string'
-  )
-}
-
-function isCityRecord(value: unknown): value is CompactCityRecord {
-  if (!Array.isArray(value) || value.length !== 9) return false
-
-  const row: readonly unknown[] = value
-  const normalizedSearchKey = row[2]
-  return (
-    Number.isInteger(row[0])
-    && typeof row[0] === 'number'
-    && row[0] > 0
-    && typeof row[1] === 'string'
-    && row[1].length > 0
-    && typeof normalizedSearchKey === 'string'
-    && normalizedSearchKey.length > 0
-    && normalizeCitySearch(normalizedSearchKey) === normalizedSearchKey
-    && typeof row[3] === 'string'
-    && /^[A-Z]{2}$/.test(row[3])
-    && typeof row[4] === 'string'
-    && typeof row[5] === 'number'
-    && Number.isFinite(row[5])
-    && row[5] >= -90
-    && row[5] <= 90
-    && typeof row[6] === 'number'
-    && Number.isFinite(row[6])
-    && row[6] >= -180
-    && row[6] <= 180
-    && Number.isInteger(row[7])
-    && typeof row[7] === 'number'
-    && row[7] >= 5_000
-    && typeof row[8] === 'string'
-    && isValidTimeZone(row[8])
-  )
-}
-
-function hasUniqueCityIds(cities: readonly CompactCityRecord[]): boolean {
-  const ids = new Set<number>()
-  for (const city of cities) {
-    if (ids.has(city[0])) return false
-    ids.add(city[0])
-  }
-  return true
-}
-
-export function parseCityDataset(value: unknown): CityDataset {
-  if (!value || typeof value !== 'object') {
-    throw new Error('Справочник городов имеет неизвестный формат')
-  }
-  const file = value as Partial<CityDatasetFile>
-  if (
-    file.schemaVersion !== 3
-    || !isSource(file.source)
-    || !Array.isArray(file.cities)
-    || file.cities.length === 0
-    || !file.cities.every(isCityRecord)
-    || !hasUniqueCityIds(file.cities)
-  ) {
-    throw new Error('Справочник городов имеет неизвестный формат')
-  }
-
-  return { source: file.source, cities: file.cities }
-}
-
-export async function loadCityDataset(): Promise<Result<CityDataset, DataFailure>> {
-  let response: Response
+const unavailable = (): DataFailure => ({ kind: 'data', reason: typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'unavailable' })
+const baseUrl = () => `${import.meta.env.BASE_URL}data/cities/`
+async function fetchText(url: string): Promise<Result<string, DataFailure>> {
   try {
-    response = await fetch(DATA_URL)
-  } catch {
-    return failure({
-      kind: 'data',
-      reason: typeof navigator !== 'undefined' && !navigator.onLine
-        ? 'offline'
-        : 'unavailable',
-    })
+    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) })
+    if (!response.ok) return failure({ kind: 'data', reason: 'unavailable' })
+    return success(await response.text())
+  } catch { return failure(unavailable()) }
+}
+export async function loadCityIndex(): Promise<Result<CityIndex, DataFailure>> {
+  const response = await fetchText(`${baseUrl()}index.json`)
+  if (response.ok) {
+    try {
+      const index = await validateCityIndex(JSON.parse(response.value))
+      await saveCatalogIndex(index).catch(() => undefined)
+      return success(index)
+    } catch { /* Некорректное обновление не заменяет рабочий индекс. */ }
   }
-  if (!response.ok) {
-    return failure({ kind: 'data', reason: 'unavailable' })
+  const stored = await readCatalogIndex().catch(() => undefined)
+  if (stored) {
+    try { return success(await validateCityIndex(stored)) } catch { /* Повреждённый кеш не используется. */ }
   }
-
+  return failure(response.ok ? { kind: 'data', reason: 'invalid' } : response.error)
+}
+export async function loadCityShard(index: CityIndex, descriptor: CityShardDescriptor, localOnly = false): Promise<Result<CityShard, DataFailure>> {
+  const key = `${index.version}/${descriptor.id}`
+  const cached = await readCatalogShard(key).catch(() => undefined)
+  if (cached) {
+    try { return success(await parseCityShard(cached, index, descriptor)) } catch { /* Повторная загрузка может исправить повреждённый пакет. */ }
+  }
+  if (localOnly) return failure({ kind: 'data', reason: 'offline' })
+  const response = await fetchText(`${baseUrl()}${key}.json`)
+  if (!response.ok) return response
   try {
-    const value: unknown = await response.json()
-    return success(parseCityDataset(value))
-  } catch {
-    return failure({ kind: 'data', reason: 'invalid' })
-  }
+    const shard = await parseCityShard(response.value, index, descriptor)
+    await saveCatalogShard(key, response.value).catch(() => undefined)
+    return success(shard)
+  } catch { return failure({ kind: 'data', reason: 'invalid' }) }
+}
+export async function loadPreviousCityIndex(): Promise<CityIndex | undefined> {
+  const previous = await readCatalogIndex('previous').catch(() => undefined)
+  if (!previous) return undefined
+  try { return await validateCityIndex(previous) } catch { return undefined }
 }

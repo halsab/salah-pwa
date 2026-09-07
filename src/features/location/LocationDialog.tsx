@@ -7,10 +7,11 @@ import {
 } from 'react'
 import { flushSync } from 'react-dom'
 
-import type { CityCatalog } from '../../data/cityCatalog'
+import type { CityCatalog, CitySearchResult } from '../../data/cityCatalog'
 import {
   formatCityLabel,
-  groupCitiesByCountry,
+  formatCityRegion,
+  getCountryName,
   type City,
 } from '../../domain/cities'
 import type { DataFailure } from '../../domain/errors'
@@ -39,7 +40,7 @@ interface LocationDialogProps {
   onLocate: () => Promise<void>
   onReverse: () => Promise<void>
   onLoadCities: () => void
-  onSearchCities: (query: string) => Promise<Result<City[], DataFailure>>
+  onSearchCities: (query: string) => Promise<Result<CitySearchResult, DataFailure>>
 }
 
 interface LocationResultsProps {
@@ -49,6 +50,9 @@ interface LocationResultsProps {
   cityMatches: City[]
   citySearchPending: boolean
   citySearchFailed: boolean
+  searchStatus: CitySearchResult['status']
+  previousVersion: boolean
+  onRetrySearch: () => void
   selectedOfficialId: string | null
   selectedCityId: number | null
   query: string
@@ -60,20 +64,21 @@ interface LocationResultsProps {
 interface CityOptionProps {
   city: City
   selected: boolean
+  disambiguate?: boolean
   onSelect: (city: City) => void
 }
 
-const CityOption = memo(function CityOption({ city, selected, onSelect }: CityOptionProps) {
+const CityOption = memo(function CityOption({ city, selected, onSelect, disambiguate }: CityOptionProps) {
   return (
     <li>
       <button
         className="location-option city-option"
-        aria-label={formatCityLabel(city)}
+        aria-label={formatCityLabel(city, disambiguate)}
         aria-current={selected ? 'location' : undefined}
         type="button"
         onClick={() => onSelect(city)}
       >
-        <span>{city.name}</span>
+        <span>{city.name}<small>{formatCityRegion(city)}, {getCountryName(city.countryCode)}{disambiguate ? ` · GeoNames ${city.id}` : ''}</small></span>
         {selected ? <CheckIcon /> : null}
       </button>
     </li>
@@ -106,6 +111,7 @@ function CollapsibleCityGroup({
             <CityOption
               city={city}
               key={city.id}
+              disambiguate={group.cities.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))}
               selected={city.id === selectedCityId}
               onSelect={onSelectCity}
             />
@@ -162,6 +168,9 @@ const LocationResults = memo(function LocationResults({
   cityMatches,
   citySearchPending,
   citySearchFailed,
+  searchStatus,
+  previousVersion,
+  onRetrySearch,
   selectedOfficialId,
   selectedCityId,
   query,
@@ -175,17 +184,15 @@ const LocationResults = memo(function LocationResults({
       ? locations.filter(({ name }) => name.toLocaleLowerCase('ru-RU').includes(normalizedQuery))
       : locations
   }, [locations, query])
-  const searchCountryGroups = useMemo(
-    () => groupCitiesByCountry(cityMatches),
-    [cityMatches],
-  )
   const hasSearch = query.trim().length > 0
   const searchAnnouncement = hasSearch
     ? citySearchPending
       ? 'Ищем города…'
       : citySearchFailed
         ? 'Не удалось выполнить поиск городов.'
-        : cityCatalogStatus === 'ready'
+        : searchStatus === 'needs-download' ? 'Для полного поиска нужно загрузить данные.'
+          : searchStatus === 'refine' ? 'Уточните название города.'
+            : cityCatalogStatus === 'ready'
           ? `Найдено вариантов: ${filteredOfficialLocations.length + cityMatches.length}`
           : ''
     : ''
@@ -226,26 +233,17 @@ const LocationResults = memo(function LocationResults({
           {cityMatches.length > 0 ? (
             <section className="location-section" aria-labelledby="city-search-title">
               <h3 id="city-search-title">Города мира · автономный расчёт</h3>
-              <div className="country-list">
-                {searchCountryGroups.map((group) => (
-                  <details className="country-group" key={group.code} open>
-                    <summary>
-                      <span>{group.name}</span>
-                      <small>Городов: {group.cities.length}</small>
-                    </summary>
-                    <ul className="location-list">
-                      {group.cities.map((city) => (
-                        <CityOption
-                          city={city}
-                          key={city.id}
-                          selected={city.id === selectedCityId}
-                          onSelect={onSelectCity}
-                        />
-                      ))}
-                    </ul>
-                  </details>
+              <ul className="location-list">
+                {cityMatches.map((city) => (
+                  <CityOption
+                    city={city}
+                    key={city.id}
+                    disambiguate={cityMatches.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))}
+                    selected={city.id === selectedCityId}
+                    onSelect={onSelectCity}
+                  />
                 ))}
-              </div>
+              </ul>
             </section>
           ) : null}
           {citySearchPending ? (
@@ -256,11 +254,17 @@ const LocationResults = memo(function LocationResults({
           ) : null}
           <CityCatalogState status={cityCatalogStatus} onRetry={onLoadCities} />
           {citySearchFailed ? (
-            <p className="empty-search">Не удалось выполнить поиск городов.</p>
+            <div><p className="empty-search">Не удалось выполнить поиск городов.</p><button className="city-catalog-retry" type="button" onClick={onRetrySearch}>Повторить поиск</button></div>
           ) : null}
+          {!citySearchPending && !citySearchFailed && searchStatus === 'needs-download' ? (
+            <div role="status" className="city-catalog-state"><p>Для полного поиска нужно загрузить данные. Подключитесь к сети и повторите поиск.</p><button className="city-catalog-retry" type="button" onClick={onRetrySearch}>Повторить поиск</button></div>
+          ) : null}
+          {!citySearchPending && searchStatus === 'refine' ? <p className="empty-search">Уточните название города: введите не менее трёх букв или добавьте регион. Показаны крупные города.</p> : null}
+          {!citySearchPending && previousVersion ? <p role="status">Используем сохранённую версию каталога. Обновление пока недоступно.</p> : null}
           {cityCatalogStatus === 'ready' &&
           !citySearchPending &&
           !citySearchFailed &&
+          searchStatus === 'complete' &&
           filteredOfficialLocations.length === 0 &&
           cityMatches.length === 0 ? (
             <p className="empty-search">Ничего не нашли. Попробуйте другое название.</p>
@@ -319,6 +323,9 @@ function OpenLocationDialog({
   const [cityMatches, setCityMatches] = useState<City[]>([])
   const [completedCitySearch, setCompletedCitySearch] = useState<string | null>(null)
   const [citySearchFailed, setCitySearchFailed] = useState(false)
+  const [searchStatus, setSearchStatus] = useState<CitySearchResult['status']>('complete')
+  const [previousVersion, setPreviousVersion] = useState(false)
+  const [retrySearch, setRetrySearch] = useState(0)
   const [locating, setLocating] = useState(false)
   const [resolving, setResolving] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
@@ -339,7 +346,9 @@ function OpenLocationDialog({
       void onSearchCities(query).then((result) => {
         if (!active) return
         if (result.ok) {
-          setCityMatches(result.value)
+          setCityMatches(result.value.cities)
+          setSearchStatus(result.value.status)
+          setPreviousVersion(Boolean(result.value.previousVersion))
         } else {
           setCitySearchFailed(true)
         }
@@ -355,7 +364,7 @@ function OpenLocationDialog({
       active = false
       globalThis.clearTimeout(timeout)
     }
-  }, [cityCatalogStatus, onSearchCities, searchMode, searchQuery])
+  }, [cityCatalogStatus, onSearchCities, searchMode, searchQuery, retrySearch])
 
   const runLocationAction = async (
     action: () => Promise<void>,
@@ -385,6 +394,8 @@ function OpenLocationDialog({
     setCityMatches([])
     setCompletedCitySearch(null)
     setCitySearchFailed(false)
+    setSearchStatus('complete')
+    setPreviousVersion(false)
   }
 
   return (
@@ -486,6 +497,9 @@ function OpenLocationDialog({
           cityMatches={cityMatches}
           citySearchPending={citySearchPending}
           citySearchFailed={citySearchFailed}
+          searchStatus={searchStatus}
+          previousVersion={previousVersion}
+          onRetrySearch={() => { updateSearch(search); setRetrySearch(n => n + 1) }}
           selectedOfficialId={selectedOfficialId}
           selectedCityId={selectedCityId}
           query={searchMode ? search : ''}

@@ -15,46 +15,54 @@ const records: CompactCityRecord[] = [
   [
     745044,
     'Стамбул',
-    'стамбул istanbul истанбул турция',
+    ['стамбул', 'istanbul', 'истанбул'],
     'TR',
     '34',
     41.0138,
     28.9497,
     15_701_602,
     'Europe/Istanbul',
+    'Стамбул',
+    'турция',
   ],
   [
     524901,
     'Москва',
-    'москва moscow россия',
+    ['москва', 'moscow'],
     'RU',
     '48',
     55.7522,
     37.6156,
     10_381_222,
     'Europe/Moscow',
+    'Москва',
+    'россия',
   ],
   [
     323786,
     'Анкара',
-    'анкара ankara турция',
+    ['анкара', 'ankara'],
     'TR',
     '68',
     39.9199,
     32.8543,
     5_504_000,
     'Europe/Istanbul',
+    'Стамбул',
+    'турция',
   ],
   [
     551487,
     'Казань',
-    'казань kazan россия',
+    ['казань', 'kazan'],
     'RU',
     '73',
     55.7887,
     49.1221,
     1_243_500,
     'Europe/Moscow',
+    'Москва',
+    'россия',
   ],
 ]
 
@@ -82,6 +90,7 @@ describe('findNearestCity', () => {
       name: 'Москва',
       countryCode: 'RU',
       admin1Code: '48',
+      admin1Name: 'Москва',
       latitude: 55.7522,
       longitude: 37.6156,
       population: 10_381_222,
@@ -114,6 +123,7 @@ describe('searchCities', () => {
         name: 'Стамбул',
         countryCode: 'TR',
         admin1Code: '34',
+        admin1Name: 'Стамбул',
         latitude: 41.0138,
         longitude: 28.9497,
         population: 15_701_602,
@@ -135,7 +145,7 @@ describe('searchCities', () => {
     Object.defineProperty(tracked, 2, {
       get: () => {
         searchKeyReads += 1
-        return 'стамбул istanbul турция'
+        return ['стамбул', 'istanbul']
       },
     })
     const trackedDataset = { ...dataset, cities: [tracked] }
@@ -147,7 +157,7 @@ describe('searchCities', () => {
 
   it('не материализует несовпавшие записи и ограничивает результат 60 городами', () => {
     const hidden = [...recordAt(1)] as CompactCityRecord
-    hidden[2] = 'другой ключ'
+    hidden[2] = ['другой ключ']
     Object.defineProperty(hidden, 1, {
       get: () => {
         throw new Error('Несовпавший город не должен материализоваться')
@@ -156,13 +166,15 @@ describe('searchCities', () => {
     const matching = Array.from({ length: 61 }, (_, index): CompactCityRecord => [
       10_000 + index,
       `Город ${index}`,
-      'совпадение',
+      ['совпадение'],
       'RU',
       '73',
       55 + index / 100,
       49,
       100_000 - index,
       'Europe/Moscow',
+      'Татарстан',
+      'россия',
     ])
 
     expect(searchCities({ ...dataset, cities: [hidden, ...matching] }, 'совпадение'))
@@ -175,13 +187,15 @@ describe('getCountryGroups', () => {
     const turkey = Array.from({ length: 6 }, (_, index): CompactCityRecord => [
       20_000 + index,
       `Город ${index}`,
-      `город ${index} турция`,
+      [`город ${index}`],
       'TR',
       '34',
       41 + index / 100,
       29,
       1_000_000 - index,
       'Europe/Istanbul',
+      'Стамбул',
+      'турция',
     ])
     const sixthCity = turkey[5]
     if (!sixthCity) throw new Error('Не найден шестой тестовый город')
@@ -223,12 +237,13 @@ describe('formatCityLabel', () => {
       name: 'Казань',
       countryCode: 'RU',
       admin1Code: '73',
+      admin1Name: 'Татарстан',
       latitude: 55.7887,
       longitude: 49.1221,
       population: 1_243_500,
       timeZone: 'Europe/Moscow',
     }
 
-    expect(formatCityLabel(city)).toBe('Казань, Россия')
+    expect(formatCityLabel(city)).toBe('Казань, Татарстан, Россия')
   })
 })

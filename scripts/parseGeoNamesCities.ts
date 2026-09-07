@@ -1,31 +1,5 @@
-export type Schema2CompactCityRecord = [
-  id: number,
-  name: string,
-  searchNames: string,
-  countryCode: string,
-  latitude: number,
-  longitude: number,
-  population: number,
-  timeZone: string,
-]
-
-export type CompactCityRecord = [
-  id: number,
-  displayName: string,
-  normalizedSearchKey: string,
-  countryCode: string,
-  admin1Code: string,
-  latitude: number,
-  longitude: number,
-  population: number,
-  timeZone: string,
-]
-
-export interface Schema2CityDataset<Source = unknown> {
-  schemaVersion: 2
-  source: Source
-  cities: Schema2CompactCityRecord[]
-}
+import { normalizeCitySearch, getCountryName, type CompactCityRecord } from '../src/domain/cities'
+export type { CompactCityRecord } from '../src/domain/cities'
 
 export interface ParsedGeoNamesCity {
   id: number
@@ -52,7 +26,7 @@ export interface RussianNames {
 export type RussianNameIndex = Map<number, RussianNames>
 
 const VALID_TIME_ZONES = new Set<string>()
-const countryNames = new Intl.DisplayNames(['ru'], { type: 'region' })
+
 
 function roundCoordinate(value: string): number {
   return Number(Number(value).toFixed(4))
@@ -71,60 +45,45 @@ function assertValidTimeZone(timeZone: string, cityId: number): void {
   }
 }
 
-function normalizeSearchValue(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLocaleLowerCase('ru-RU')
-    .trim()
-    .replace(/\s+/g, ' ')
-}
-
-function getCountryName(countryCode: string): string {
-  const name = countryNames.of(countryCode)
-  if (!name || name === countryCode) {
-    throw new Error(`Неизвестный код страны GeoNames: ${countryCode}`)
+export interface Admin1 { name: string; id: number }
+export function parseGeoNamesAdmin1(content: string): Map<string, Admin1> {
+  const regions = new Map<string, Admin1>()
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue
+    const [code, name, , id, ...extra] = line.replace(/\r$/, '').split('\t')
+    if (!code || !/^[A-Z]{2}\.[^\s.]+$/.test(code) || !name || !Number.isInteger(Number(id)) || Number(id) <= 0 || extra.length || regions.has(code)) {
+      throw new Error('Некорректная строка admin1CodesASCII')
+    }
+    regions.set(code, { name, id: Number(id) })
   }
-  return name
-}
-
-function buildSearchKey(values: readonly string[]): string {
-  const unique = new Set<string>()
-
-  for (const value of values) {
-    const normalized = normalizeSearchValue(value)
-    if (normalized) unique.add(normalized)
-  }
-
-  return [...unique].join(' ')
+  return regions
 }
 
 function toCompactCity(
   city: ParsedGeoNamesCity,
   russianNames: RussianNames | undefined,
+  admin1Name = '',
 ): CompactCityRecord {
   const activeRussianNames = russianNames?.activeNames ?? []
   const displayName = russianNames?.preferredName
-    ?? activeRussianNames[0]
+    ?? [...activeRussianNames].sort()[0]
     ?? city.primaryName
-  const normalizedSearchKey = buildSearchKey([
-    displayName,
-    city.primaryName,
-    city.asciiName,
-    ...activeRussianNames,
-    getCountryName(city.countryCode),
-  ])
+  const normalizedNames = [...new Set([
+    displayName, city.primaryName, city.asciiName, ...[...activeRussianNames].sort(),
+  ].map(normalizeCitySearch).filter(Boolean))]
 
   return [
     city.id,
     displayName,
-    normalizedSearchKey,
+    normalizedNames,
     city.countryCode,
     city.admin1Code,
     city.latitude,
     city.longitude,
     city.population,
     city.timeZone,
+    admin1Name,
+    normalizeCitySearch(`${getCountryName(city.countryCode)} ${city.countryCode} ${admin1Name}`),
   ]
 }
 
@@ -176,7 +135,7 @@ export function parseGeoNamesCities(content: string): ParsedCities {
     if (modifiedAt > updatedAt) updatedAt = modifiedAt
   }
 
-  cities.sort((left, right) => right.population - left.population)
+  cities.sort((left, right) => right.population - left.population || left.id - right.id)
   return { updatedAt, cities }
 }
 
@@ -188,6 +147,7 @@ export function addGeoNamesAlternateName(
   index: RussianNameIndex,
   cityIds: ReadonlySet<number>,
   line: string,
+  allowPreferredVariants = false,
 ): void {
   if (!line) return
   const columns = line.replace(/\r$/, '').split('\t')
@@ -222,12 +182,14 @@ export function addGeoNamesAlternateName(
   if (!names.activeNames.includes(name)) names.activeNames.push(name)
 
   if (columns[4] === '1') {
-    if (names.preferredName && names.preferredName !== name) {
+    if (!allowPreferredVariants && names.preferredName && names.preferredName !== name) {
       throw new Error(
         `Неоднозначное русское preferred-имя для города ${cityId}`,
       )
     }
-    names.preferredName = name
+    // У регионов бывают несколько действующих preferred-имён; выбираем кратчайшее, затем по строке.
+    names.preferredName = [names.preferredName, name].filter((v): v is string => Boolean(v))
+      .sort((a,b)=>a.length-b.length || (a < b ? -1 : a > b ? 1 : 0))[0]
   }
 
   index.set(cityId, names)
@@ -247,76 +209,12 @@ export function parseGeoNamesAlternateNames(
 export function buildCompactCities(
   cities: readonly ParsedGeoNamesCity[],
   russianNames: RussianNameIndex,
+  regions: ReadonlyMap<string, Admin1> = new Map(),
 ): CompactCityRecord[] {
-  return cities.map((city) => toCompactCity(city, russianNames.get(city.id)))
-}
-
-export function upgradeCityDataset<Source>(
-  dataset: Schema2CityDataset<Source>,
-  currentCities: readonly ParsedGeoNamesCity[],
-  russianNames: RussianNameIndex,
-): {
-  schemaVersion: 3
-  source: Source
-  cities: CompactCityRecord[]
-} {
-  const currentCitiesById = new Map(currentCities.map((city) => [city.id, city]))
-  const cities = dataset.cities.map((baselineCity): CompactCityRecord => {
-    const [
-      id,
-      baselineName,
-      baselineSearchNames,
-      countryCode,
-      latitude,
-      longitude,
-      population,
-      timeZone,
-    ] = baselineCity
-    const currentCity = currentCitiesById.get(id)
-
-    if (!currentCity) {
-      const names = russianNames.get(id)
-      const activeRussianNames = names?.activeNames ?? []
-      const displayName = names?.preferredName
-        ?? activeRussianNames[0]
-        ?? baselineName
-      return [
-        id,
-        displayName,
-        buildSearchKey([
-          displayName,
-          baselineName,
-          baselineSearchNames,
-          ...activeRussianNames,
-          getCountryName(countryCode),
-        ]),
-        countryCode,
-        '',
-        latitude,
-        longitude,
-        population,
-        timeZone,
-      ]
-    }
-    if (currentCity.countryCode !== countryCode) {
-      throw new Error(
-        `GeoNames и базовый набор расходятся по стране города ${id}`,
-      )
-    }
-
-    const generated = toCompactCity(currentCity, russianNames.get(id))
-    return [
-      id,
-      generated[1],
-      generated[2],
-      countryCode,
-      generated[4],
-      latitude,
-      longitude,
-      population,
-      timeZone,
-    ]
+  return cities.map((city) => {
+    const region = regions.get(`${city.countryCode}.${city.admin1Code}`)
+    const names = region ? russianNames.get(region.id) : undefined
+    const admin1Name = names?.preferredName ?? [...(names?.activeNames ?? [])].sort()[0] ?? region?.name ?? ''
+    return toCompactCity(city, russianNames.get(city.id), admin1Name)
   })
-
-  return { schemaVersion: 3, source: dataset.source, cities }
 }

@@ -4,8 +4,7 @@ import {
   buildCompactCities,
   parseGeoNamesAlternateNames,
   parseGeoNamesCities,
-  upgradeCityDataset,
-  type Schema2CityDataset,
+  parseGeoNamesAdmin1,
 } from './parseGeoNamesCities'
 
 function cityRow({
@@ -118,13 +117,15 @@ describe('GeoNames city catalog generation', () => {
       [
         745044,
         'Стамбул',
-        'стамбул istanbul истанбул турция',
+        ['стамбул', 'istanbul', 'истанбул'],
         'TR',
         '34',
         41.0138,
         28.9497,
         15701602,
         'Europe/Istanbul',
+        '',
+        'турция tr',
       ],
     ])
   })
@@ -158,70 +159,26 @@ describe('GeoNames city catalog generation', () => {
     expect(cities[0]?.slice(0, 5)).toEqual([
       551487,
       'Казань',
-      'казань kazan россия',
+      ['казань', 'kazan'],
       'RU',
       '73',
     ])
     expect(cities[1]?.slice(0, 5)).toEqual([
       2,
       'No Russian Name',
-      'no russian name франция',
+      ['no russian name'],
       'FR',
       '11',
     ])
   })
 
-  it('сохраняет порядок, идентичность, координаты, население, пояс и источник schema 2', () => {
-    const source = {
-      name: 'GeoNames',
-      url: 'https://www.geonames.org/',
-      license: 'CC BY 4.0',
-      licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
-      updatedAt: '2026-09-01',
-    }
-    const baseline: Schema2CityDataset<typeof source> = {
-      schemaVersion: 2,
-      source,
-      cities: [
-        [2, 'Baseline Two', 'Old Two', 'FR', 10.1234, 20.1234, 5000, 'Europe/Paris'],
-        [1, 'Baseline One', 'Old One', 'RU', 30.9876, 40.9876, 10000, 'Europe/Moscow'],
-      ],
-    }
-    const current = parseGeoNamesCities([
-      cityRow({
-        id: '1',
-        name: 'Current One',
-        countryCode: 'RU',
-        admin1Code: '73',
-        latitude: '31',
-        longitude: '41',
-        population: '20000',
-        timeZone: 'Europe/Moscow',
-      }),
-      cityRow({
-        id: '2',
-        name: 'Current Two',
-        countryCode: 'FR',
-        admin1Code: '11',
-        latitude: '11',
-        longitude: '21',
-        population: '15000',
-        timeZone: 'Europe/Paris',
-      }),
-    ].join('\n'))
-    const alternateNames = parseGeoNamesAlternateNames([
-      alternateNameRow({ id: '1', cityId: '1', name: 'Текущий один' }),
-      alternateNameRow({ id: '2', cityId: '2', name: 'Текущий два' }),
-    ].join('\n'), new Set([1, 2]))
-
-    expect(upgradeCityDataset(baseline, current.cities, alternateNames)).toEqual({
-      schemaVersion: 3,
-      source,
-      cities: [
-        [2, 'Текущий два', 'текущии два current two франция', 'FR', '11', 10.1234, 20.1234, 5000, 'Europe/Paris'],
-        [1, 'Текущий один', 'текущии один current one россия', 'RU', '73', 30.9876, 40.9876, 10000, 'Europe/Moscow'],
-      ],
-    })
+  it('получает регион по существующему admin1Code, без вымышленных fallback-имён', () => {
+    const regions = parseGeoNamesAdmin1('RU.33\tKirov Oblast\tKirov Oblast\t548389\n')
+    const parsed = parseGeoNamesCities(cityRow({id:'548408', name:'Kirov', countryCode:'RU', admin1Code:'33', timeZone:'Europe/Moscow'}))
+    const names = parseGeoNamesAlternateNames(alternateNameRow({id:'1',cityId:'548389',name:'Кировская область'}),new Set([548389]))
+    expect(buildCompactCities(parsed.cities,names,regions)[0]?.[9]).toBe('Кировская область')
+    expect(buildCompactCities(parsed.cities,names)[0]?.[9]).toBe('')
+    expect(()=>parseGeoNamesAdmin1('RU.33\tInvented')).toThrow('admin1CodesASCII')
   })
 
   it('явно отклоняет неоднозначные preferred-имена', () => {

@@ -46,7 +46,7 @@
           У приложения нет собственного сервера, аналитики и cookies. Координаты, настройки
           и расписания сохраняются только в браузере: пользовательский выбор и проверенный
           набор расписаний — в IndexedDB, а оболочка приложения, небольшие служебные файлы
-          и каталог городов после первого использования — в Cache Storage.
+          и небольшой обзор городов — в Cache Storage. Загруженные пакеты городов сохраняются в IndexedDB.
         </p>
         <p>
           Эти данные можно удалить через настройки данных сайта в браузере. Отдельной кнопки
@@ -113,8 +113,9 @@
         <div class="source-block">
           <h3>Каталог GeoNames</h3>
           <p>
-            Используются наборы <a href="https://download.geonames.org/export/dump/cities5000.zip">cities5000.zip</a>
-            и <a href="https://download.geonames.org/export/dump/alternateNamesV2.zip">alternateNamesV2.zip</a>
+            Используются наборы <a href="https://download.geonames.org/export/dump/cities5000.zip">cities5000.zip</a>,
+            <a href="https://download.geonames.org/export/dump/alternateNamesV2.zip">alternateNamesV2.zip</a>
+            и <a href="https://download.geonames.org/export/dump/admin1CodesASCII.txt">admin1CodesASCII.txt</a>
             по лицензии <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>.
           </p>
           <p>

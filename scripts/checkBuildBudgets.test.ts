@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
+import { buildCityPackages } from './buildCityPackages'
 import {
   BUILD_BUDGETS,
   checkBuildBudgets,
@@ -12,13 +13,17 @@ import {
   type BuildArtifact,
 } from './checkBuildBudgets'
 
+const generated = buildCityPackages([[1,'Киров',['киров'],'RU','33',58.6,49.6,5000,'Europe/Moscow','Кировская область','россия']],{name:'GeoNames',url:'https://www.geonames.org/',license:'CC BY 4.0',licenseUrl:'https://creativecommons.org/licenses/by/4.0/',updatedAt:'2026-09-07'})
+const catalog = generated.index
+const shardPath = `data/cities/${catalog.version}/RU-0.json`
 function validArtifacts(): BuildArtifact[] {
   return [
     { path: 'assets/app-a1b2c3.js', size: BUILD_BUDGETS.appJavaScript },
     { path: 'assets/cityCatalog.worker-d4e5f6.js', size: 1 },
     { path: 'assets/app-a1b2c3.css', size: BUILD_BUDGETS.appCss },
     { path: 'assets/privacy-a1b2c3.css', size: BUILD_BUDGETS.privacyCss },
-    { path: 'data/cities-current.json', size: BUILD_BUDGETS.cities },
+    { path: 'data/cities/index.json', size: BUILD_BUDGETS.cityIndex },
+    { path: shardPath, size: BUILD_BUDGETS.cityShard },
     { path: 'data/prayer-times-current.json', size: BUILD_BUDGETS.prayerTimes },
     { path: 'data/prayer-times-manifest.json', size: BUILD_BUDGETS.prayerManifest },
   ]
@@ -26,14 +31,14 @@ function validArtifacts(): BuildArtifact[] {
 
 describe('build budgets', () => {
   it('принимает hashed production artifacts на границе каждого бюджета', () => {
-    expect(validateBuildArtifacts(validArtifacts())).toEqual([])
+    expect(validateBuildArtifacts(validArtifacts(),catalog)).toEqual([])
   })
 
   it.each([
     ['app JavaScript', 'assets/app-a1b2c3.js', 'appJavaScript'],
     ['app CSS', 'assets/app-a1b2c3.css', 'appCss'],
     ['privacy CSS', 'assets/privacy-a1b2c3.css', 'privacyCss'],
-    ['cities data', 'data/cities-current.json', 'cities'],
+    ['cities data', 'data/cities/index.json', 'cityIndex'],
     ['prayer data', 'data/prayer-times-current.json', 'prayerTimes'],
     ['prayer manifest', 'data/prayer-times-manifest.json', 'prayerManifest'],
   ] as const)('отклоняет превышение %s с path и actual/max', (_, path, budget) => {
@@ -42,7 +47,7 @@ describe('build budgets', () => {
     if (!artifact) throw new Error(`Не найден fixture ${path}`)
     artifact.size = BUILD_BUDGETS[budget] + 1
 
-    expect(validateBuildArtifacts(artifacts)).toContain(
+    expect(validateBuildArtifacts(artifacts,catalog)).toContain(
       `${budget}: ${path} — ${artifact.size} bytes, максимум ${BUILD_BUDGETS[budget]} bytes`,
     )
   })
@@ -54,7 +59,7 @@ describe('build budgets', () => {
       size: BUILD_BUDGETS.totalJavaScript - BUILD_BUDGETS.appJavaScript,
     })
 
-    expect(validateBuildArtifacts(artifacts)).toContain(
+    expect(validateBuildArtifacts(artifacts,catalog)).toContain(
       `totalJavaScript: assets/*.js — ${BUILD_BUDGETS.totalJavaScript + 1} bytes, максимум ${BUILD_BUDGETS.totalJavaScript} bytes`,
     )
   })
@@ -63,13 +68,13 @@ describe('build budgets', () => {
     ['appJavaScript', 'assets/app-a1b2c3.js'],
     ['appCss', 'assets/app-a1b2c3.css'],
     ['privacyCss', 'assets/privacy-a1b2c3.css'],
-    ['cities', 'data/cities-current.json'],
+    ['cityIndex', 'data/cities/index.json'],
     ['prayerTimes', 'data/prayer-times-current.json'],
     ['prayerManifest', 'data/prayer-times-manifest.json'],
   ] as const)('отклоняет отсутствующий %s artifact', (category, path) => {
     const artifacts = validArtifacts().filter((artifact) => artifact.path !== path)
 
-    expect(validateBuildArtifacts(artifacts)).toContain(
+    expect(validateBuildArtifacts(artifacts,catalog)).toContain(
       `${category}: artifact не найден`,
     )
   })
@@ -82,7 +87,7 @@ describe('build budgets', () => {
     const artifacts = validArtifacts()
     artifacts.push({ path, size: 1 })
 
-    expect(validateBuildArtifacts(artifacts)).toContain(
+    expect(validateBuildArtifacts(artifacts,catalog)).toContain(
       `${category}: найдено 2 artifacts`,
     )
   })
@@ -90,12 +95,13 @@ describe('build budgets', () => {
   it('рекурсивно проверяет production-каталог и выводит фактические размеры', async () => {
     const root = await mkdtemp(join(tmpdir(), 'salah-budgets-'))
     await mkdir(join(root, 'assets'), { recursive: true })
-    await mkdir(join(root, 'data'), { recursive: true })
+    await mkdir(join(root, `data/cities/${catalog.version}`), { recursive: true })
     await Promise.all([
       writeFile(join(root, 'assets/app-hash.js'), 'a'),
       writeFile(join(root, 'assets/app-hash.css'), 'a'),
       writeFile(join(root, 'assets/privacy-hash.css'), 'a'),
-      writeFile(join(root, 'data/cities-current.json'), 'a'),
+      writeFile(join(root, 'data/cities/index.json'), JSON.stringify(catalog)),
+      writeFile(join(root, shardPath), JSON.stringify(generated.shards['RU-0'])),
       writeFile(join(root, 'data/prayer-times-current.json'), 'a'),
       writeFile(join(root, 'data/prayer-times-manifest.json'), 'a'),
     ])
@@ -138,3 +144,15 @@ describe('build budgets', () => {
     }
   })
 })
+
+ it('обнаруживает отсутствующий, лишний пакет и старый монолит',()=>{
+   expect(validateBuildArtifacts(validArtifacts().filter(a=>a.path !== shardPath),catalog)).toContain(`cities: отсутствует ${shardPath}`)
+   expect(validateBuildArtifacts([...validArtifacts(),{path:'data/cities/stale/XX-0.json',size:1}],catalog)).toContain('cities: лишний artifact data/cities/stale/XX-0.json')
+   expect(validateBuildArtifacts([...validArtifacts(),{path:'data/cities-current.json',size:1}],catalog)).toContain('cities: старый монолит недопустим')
+ })
+ it('не даёт обойти бюджет отдельного пакета и суммарных данных',()=>{
+   const artifacts = validArtifacts().map(a=>a.path===shardPath ? {...a,size:BUILD_BUDGETS.cityTotal+1} : a)
+   const errors = validateBuildArtifacts(artifacts,catalog)
+   expect(errors.some(e=>e.startsWith('cityShard:'))).toBe(true)
+   expect(errors.some(e=>e.startsWith('cityTotal:'))).toBe(true)
+ })

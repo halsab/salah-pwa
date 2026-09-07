@@ -8,7 +8,6 @@ import type { PrayerRepositoryState } from './data/prayerRepository'
 import {
   getCountryGroups,
   searchCities,
-  type City,
   type CityDataset,
 } from './domain/cities'
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
@@ -50,9 +49,9 @@ const cityDataset: CityDataset = {
     updatedAt: '2026-08-31',
   },
   cities: [
-    [745044, 'Стамбул', 'стамбул истанбул istanbul турция', 'TR', '34', 41.0138, 28.9497, 15_701_602, 'Europe/Istanbul'],
-    [524901, 'Москва', 'москва москву moscow россия', 'RU', '48', 55.7522, 37.6156, 10_381_222, 'Europe/Moscow'],
-    [551487, 'Казань', 'казань kazan россия татарстан', 'RU', '73', 55.7946, 49.1115, 1_308_660, 'Europe/Moscow'],
+    [745044, 'Стамбул', ['стамбул', 'истанбул', 'istanbul'], 'TR', '34', 41.0138, 28.9497, 15_701_602, 'Europe/Istanbul', 'Стамбул', 'турция'],
+    [524901, 'Москва', ['москва', 'москву', 'moscow'], 'RU', '48', 55.7522, 37.6156, 10_381_222, 'Europe/Moscow', 'Москва', 'россия'],
+    [551487, 'Казань', ['казань', 'kazan'], 'RU', '73', 55.7946, 49.1115, 1_308_660, 'Europe/Moscow', 'Татарстан', 'россия татарстан'],
   ],
 }
 
@@ -105,7 +104,7 @@ function createServices(
         countryGroups: getCountryGroups(cityDataset),
       })),
       search: vi.fn().mockImplementation((query: string) =>
-        Promise.resolve(success(searchCities(cityDataset, query))),
+        Promise.resolve(success({cities:searchCities(cityDataset, query),status:'complete',missingPackages:[]})),
       ),
       findNearest: vi.fn().mockResolvedValue(success(null)),
     },
@@ -641,7 +640,7 @@ describe('Salah', () => {
 
     try {
       await user.type(screen.getByRole('searchbox'), 'Стамбул')
-      expect(await screen.findByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
+      expect(await screen.findByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible()
       expect(screen.queryByText('Нет сети, а каталог городов ещё не сохранён')).not.toBeInTheDocument()
       expect(services.cities.load).toHaveBeenCalledTimes(1)
     } finally {
@@ -846,17 +845,17 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'Стамбул')
-    expect(await screen.findByText('Турция', { exact: true })).toBeVisible()
-    await user.click(screen.getByRole('button', { name: 'Стамбул, Турция' }))
+    expect(await screen.findByText('Стамбул, Турция', { exact: true })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Стамбул, Стамбул, Турция' }))
 
-    expect(await screen.findByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
       latitude: 41.0138,
       longitude: 28.9497,
       timeZone: 'Europe/Istanbul',
       accuracy: null,
       timestamp: 1_788_256_800_000,
-      name: 'Стамбул, Турция',
+      name: 'Стамбул, Стамбул, Турция',
       cityId: 745044,
       nameSource: 'geonames',
       source: 'preset',
@@ -871,7 +870,7 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'Казань')
-    await user.click(await screen.findByRole('button', { name: 'Казань, Россия' }))
+    await user.click(await screen.findByRole('button', { name: 'Казань, Татарстан, Россия' }))
 
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'manual')
     expect(services.saveCalculatedLocation).not.toHaveBeenCalled()
@@ -910,9 +909,9 @@ describe('Salah', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('показывает статус поиска и сохраняет группировку по странам', async () => {
+  it('показывает статус поиска и страну результата', async () => {
     const user = userEvent.setup()
-    let resolveSearch: ((cities: ReturnType<typeof success<City[]>>) => void) | undefined
+    let resolveSearch: ((cities: ReturnType<typeof success<import('./data/cityCatalog').CitySearchResult>>) => void) | undefined
     const search = vi.fn().mockImplementation(() => new Promise((resolve) => {
       resolveSearch = resolve
     }))
@@ -931,11 +930,11 @@ describe('Salah', () => {
     expect(await screen.findByText('Ищем города…', { selector: '.city-search-state p' })).toBeVisible()
     await waitFor(() => expect(search).toHaveBeenCalledWith('Москва'))
     if (!resolveSearch) throw new Error('Не создан resolver поиска')
-    resolveSearch(success(searchCities(cityDataset, 'Москва')))
+    resolveSearch(success({cities:searchCities(cityDataset, 'Москва'),status:'complete',missingPackages:[]}))
 
-    expect(await screen.findByText('Россия', { exact: true })).toBeVisible()
+    expect(await screen.findByText('Москва, Россия', { exact: true })).toBeVisible()
     expect(screen.getByText('Найдено вариантов: 1')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Москва, Россия' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Москва, Москва, Россия' })).toBeVisible()
   })
 
   it('показывает крупнейшие города подпунктами страны', async () => {
@@ -949,7 +948,7 @@ describe('Salah', () => {
     await user.click(await within(searchDialog).findByText('Турция', { exact: true }))
 
     expect(within(searchDialog).getByText('Крупные города · 1 из 1')).toBeVisible()
-    expect(within(searchDialog).getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
+    expect(within(searchDialog).getByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible()
   })
 
   it('отправляет округлённую геопозицию во внешний сервис только по кнопке и кеширует название', async () => {
@@ -1044,8 +1043,8 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Найти город или район' }))
     await user.type(screen.getByRole('searchbox'), 'Стамбул')
-    await user.click(await screen.findByRole('button', { name: 'Стамбул, Турция' }))
-    expect(await screen.findByRole('button', { name: /Стамбул, Турция/ })).toBeVisible()
+    await user.click(await screen.findByRole('button', { name: 'Стамбул, Стамбул, Турция' }))
+    expect(await screen.findByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
 
     await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
     const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })

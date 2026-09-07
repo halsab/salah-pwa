@@ -26,7 +26,8 @@ test('статическая privacy page точно описывает данн
   await expect(localData).toContainText('и расписания сохраняются только в браузере')
   await expect(localData).toContainText('IndexedDB')
   await expect(localData).toContainText('Cache Storage')
-  await expect(localData).toContainText('каталог городов после первого использования')
+  await expect(localData).toContainText('обзор городов — в Cache Storage')
+  await expect(localData).toContainText('Загруженные пакеты городов сохраняются в IndexedDB')
   await expect(page.getByText(/удалить через настройки данных сайта в браузере/i)).toBeVisible()
   await expect(page.getByRole('button', { name: /сброс|удалить/i })).toHaveCount(0)
 

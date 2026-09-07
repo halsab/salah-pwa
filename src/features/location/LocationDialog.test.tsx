@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { CityCatalog } from '../../data/cityCatalog'
+import type { CityCatalog, CitySearchResult } from '../../data/cityCatalog'
 import type { City } from '../../domain/cities'
 import type { DataFailure } from '../../domain/errors'
 import { failure, success, type Result } from '../../domain/result'
@@ -13,6 +13,7 @@ const istanbul: City = {
   name: 'Стамбул',
   countryCode: 'TR',
   admin1Code: '34',
+  admin1Name: 'Стамбул',
   latitude: 41.0138,
   longitude: 28.9497,
   population: 15_701_602,
@@ -24,6 +25,7 @@ const moscow: City = {
   name: 'Москва',
   countryCode: 'RU',
   admin1Code: '48',
+  admin1Name: 'Москва',
   latitude: 55.7522,
   longitude: 37.6156,
   population: 10_381_222,
@@ -69,7 +71,7 @@ function renderDialog(overrides: Partial<ComponentProps<typeof LocationDialog>> 
     onLocate: vi.fn().mockResolvedValue(undefined),
     onReverse: vi.fn().mockResolvedValue(undefined),
     onLoadCities: vi.fn(),
-    onSearchCities: vi.fn().mockResolvedValue(success([])),
+    onSearchCities: vi.fn().mockResolvedValue(success({cities:[],status:'complete',missingPackages:[]})),
     ...overrides,
   }
   return { props, ...render(<LocationDialog {...props} />) }
@@ -136,8 +138,8 @@ describe('LocationDialog', () => {
 
   it('ждёт 200 мс, не запускает быстрые промежуточные запросы и игнорирует устаревший ответ', async () => {
     vi.useFakeTimers()
-    const older = deferred<Result<City[], DataFailure>>()
-    const latest = deferred<Result<City[], DataFailure>>()
+    const older = deferred<Result<CitySearchResult, DataFailure>>()
+    const latest = deferred<Result<CitySearchResult, DataFailure>>()
     const onSearchCities = vi.fn()
       .mockReturnValueOnce(older.promise)
       .mockReturnValueOnce(latest.promise)
@@ -163,22 +165,22 @@ describe('LocationDialog', () => {
     act(() => { vi.advanceTimersByTime(200) })
     expect(onSearchCities).toHaveBeenCalledTimes(2)
     await act(async () => {
-      latest.resolve(success([istanbul]))
+      latest.resolve(success({cities:[istanbul],status:'complete',missingPackages:[]}))
       await latest.promise
     })
-    expect(screen.getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible()
 
     await act(async () => {
-      older.resolve(success([moscow]))
+      older.resolve(success({cities:[moscow],status:'complete',missingPackages:[]}))
       await older.promise
     })
-    expect(screen.queryByRole('button', { name: 'Москва, Россия' })).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Москва, Москва, Россия' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible()
   })
 
   it('сразу показывает pending, когда каталог готов после ввода запроса', () => {
     vi.useFakeTimers()
-    const onSearchCities = vi.fn().mockResolvedValue(success([]))
+    const onSearchCities = vi.fn().mockResolvedValue(success({cities:[],status:'complete',missingPackages:[]}))
     const { props, rerender } = renderDialog({
       cityCatalogStatus: 'loading',
       onSearchCities,
@@ -237,7 +239,7 @@ describe('LocationDialog', () => {
         'Не удалось выполнить поиск городов.',
         { selector: '.empty-search' },
       )).toBeVisible()
-      expect(screen.queryByRole('button', { name: 'Стамбул, Турция' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Стамбул, Стамбул, Турция' })).not.toBeInTheDocument()
     },
   )
 
@@ -256,4 +258,21 @@ describe('LocationDialog', () => {
       { selector: '.empty-search' },
     )).toBeVisible()
   })
+})
+
+it('показывает регион видимым текстом, различает оставшиеся совпадения по ID и повторяет неполный поиск', async () => {
+  const user = (await import('@testing-library/user-event')).default.setup()
+  const cities = [1,2].map(id=>({...moscow,id,name:'Киров',admin1Name:'Кировская область'}))
+  const onSearchCities = vi.fn()
+    .mockResolvedValueOnce(success({cities,status:'needs-download',missingPackages:['RU-1']}))
+    .mockResolvedValueOnce(success({cities,status:'complete',missingPackages:[]}))
+  renderDialog({cityCatalog:catalog,cityCatalogStatus:'ready',onSearchCities})
+  await user.click(screen.getByRole('button',{name:'Найти город или район'}))
+  await user.type(screen.getByRole('searchbox'),'киров')
+  expect(await screen.findByText(/Для полного поиска нужно загрузить данные/, {selector:'p:not(.sr-only)'})).toBeVisible()
+  expect(screen.getByRole('button',{name:'Киров, Кировская область, Россия · GeoNames 1'})).toHaveTextContent('Кировская область, Россия · GeoNames 1')
+  expect(screen.queryByText('Ничего не нашли. Попробуйте другое название.')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button',{name:'Повторить поиск'}))
+  await screen.findByRole('button',{name:'Киров, Кировская область, Россия · GeoNames 2'})
+  expect(onSearchCities).toHaveBeenCalledTimes(2)
 })

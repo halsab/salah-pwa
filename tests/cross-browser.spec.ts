@@ -42,3 +42,16 @@ test('mobile Safari profiles сохраняют заданную ориента�
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
     .toBeLessThanOrEqual(1)
 })
+
+test('поиск города в Worker показывает регион и сохраняет выбор', async ({ page }) => {
+  await page.goto('./')
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Найти город или район' }).click()
+  await page.getByRole('searchbox').fill('Стамбул')
+  const city = page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true })
+  await expect(city).toBeVisible()
+  await expect(city).toHaveText(/Стамбул, Турция/)
+  await city.click()
+  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+  await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
+})

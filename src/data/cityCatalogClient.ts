@@ -9,6 +9,7 @@ import {
 } from './cityCatalog'
 
 interface PendingRequest {
+  timeout: ReturnType<typeof setTimeout>
   resolve: (value: Result<unknown, DataFailure>) => void
 }
 
@@ -23,6 +24,7 @@ function unavailableFailure(): DataFailure {
 
 function failWorker(): void {
   for (const request of pendingRequests.values()) {
+    clearTimeout(request.timeout)
     request.resolve(failure(unavailableFailure()))
   }
   pendingRequests.clear()
@@ -37,11 +39,14 @@ function getWorker(): Worker {
   worker = new Worker(new URL('./cityCatalog.worker.ts', import.meta.url), {
     type: 'module',
   })
+  const instance = worker
   worker.addEventListener('message', (event: MessageEvent<CityWorkerResponse>) => {
+    if (worker !== instance) return
     const response = event.data
     const pending = pendingRequests.get(response.id)
     if (!pending) return
 
+    clearTimeout(pending.timeout)
     pendingRequests.delete(response.id)
     if (response.ok) {
       pending.resolve(success(response.result))
@@ -50,10 +55,10 @@ function getWorker(): Worker {
     }
   })
   worker.addEventListener('error', () => {
-    failWorker()
+    if (worker === instance) failWorker()
   })
   worker.addEventListener('messageerror', () => {
-    failWorker()
+    if (worker === instance) failWorker()
   })
   return worker
 }
@@ -64,6 +69,7 @@ function request<T>(command: CityWorkerCommand): Promise<Result<T, DataFailure>>
 
   return new Promise<Result<T, DataFailure>>((resolve) => {
     pendingRequests.set(id, {
+      timeout: setTimeout(failWorker, 120_000),
       resolve: (result) => resolve(result as Result<T, DataFailure>),
     })
     try {

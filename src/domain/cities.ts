@@ -5,6 +5,7 @@ export interface City {
   name: string
   countryCode: string
   admin1Code: string
+  admin1Name: string
   latitude: number
   longitude: number
   population: number
@@ -14,13 +15,15 @@ export interface City {
 export type CompactCityRecord = [
   id: number,
   displayName: string,
-  normalizedSearchKey: string,
+  normalizedNames: string[],
   countryCode: string,
   admin1Code: string,
   latitude: number,
   longitude: number,
   population: number,
   timeZone: string,
+  admin1Name: string,
+  normalizedContext: string,
 ]
 
 export interface CityDatasetSource {
@@ -71,6 +74,7 @@ export function materializeCity(record: CompactCityRecord): City {
     name: record[1],
     countryCode: record[3],
     admin1Code: record[4],
+    admin1Name: record[9],
     latitude: record[5],
     longitude: record[6],
     population: record[7],
@@ -78,8 +82,15 @@ export function materializeCity(record: CompactCityRecord): City {
   }
 }
 
-export function formatCityLabel(city: City): string {
-  return `${city.name}, ${getCountryName(city.countryCode)}`
+export function formatCityRegion(city: City): string {
+  return city.admin1Name || (city.admin1Code && city.admin1Code !== '00'
+    ? `регион ${city.admin1Code}`
+    : 'регион не указан')
+}
+
+export function formatCityLabel(city: City, disambiguate = false): string {
+  const label = `${city.name}, ${formatCityRegion(city)}, ${getCountryName(city.countryCode)}`
+  return disambiguate ? `${label} · GeoNames ${city.id}` : label
 }
 
 export function findNearestCity(
@@ -88,6 +99,7 @@ export function findNearestCity(
   cities: readonly CompactCityRecord[],
   maxDistanceKm: number,
 ): City | null {
+  if (!validNearestQuery(latitude, longitude, maxDistanceKm)) return null
   let nearest: CompactCityRecord | undefined
   let nearestDistance = Number.POSITIVE_INFINITY
 
@@ -98,7 +110,7 @@ export function findNearestCity(
       city[5],
       city[6],
     )
-    if (distance < nearestDistance) {
+    if (distance < nearestDistance || (distance === nearestDistance && city[0] < (nearest?.[0] ?? Infinity))) {
       nearest = city
       nearestDistance = distance
     }
@@ -124,15 +136,29 @@ export function searchCities(
   )
   if (terms.length === 0 || resultLimit === 0) return []
 
-  const matches: City[] = []
-  for (const city of dataset.cities) {
-    const normalizedSearchKey = city[2]
-    if (terms.every((term) => normalizedSearchKey.includes(term))) {
-      matches.push(materializeCity(city))
-      if (matches.length === resultLimit) break
-    }
+  const normalized = normalizeCitySearch(query)
+  const matches: { record: CompactCityRecord; rank: number }[] = []
+  for (const record of dataset.cities) {
+    const names = record[2]
+    const key = `${names.join(' ')} ${record[10]}`
+    if (!terms.every((term) => key.includes(term))) continue
+    const primary = names[0] ?? ''
+    const rank = primary === normalized ? 0
+      : primary.startsWith(normalized) ? 1
+        : names.slice(1).some((name) => name === normalized) ? 2
+          : names.slice(1).some((name) => name.startsWith(normalized)) ? 3
+            : names.some((name) => terms.every((term) => name.includes(term))) ? 4 : 5
+    matches.push({ record, rank })
   }
-  return matches
+  return matches.sort((a, b) => a.rank - b.rank
+    || b.record[7] - a.record[7] || a.record[0] - b.record[0])
+    .slice(0, resultLimit).map(({ record }) => materializeCity(record))
+}
+
+export function validNearestQuery(latitude: number, longitude: number, maxDistanceKm: number): boolean {
+  return Number.isFinite(latitude) && Math.abs(latitude) <= 90
+    && Number.isFinite(longitude) && Math.abs(longitude) <= 180
+    && Number.isFinite(maxDistanceKm) && maxDistanceKm >= 0
 }
 
 export function getCountryGroups(
@@ -145,7 +171,7 @@ export function getCountryGroups(
   )
   const groups = new Map<string, CountryCityGroup>()
 
-  for (const city of dataset.cities) {
+  for (const city of [...dataset.cities].sort((a, b) => b[7] - a[7] || a[0] - b[0])) {
     const countryCode = city[3]
     let group = groups.get(countryCode)
     if (!group) {

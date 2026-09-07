@@ -97,7 +97,7 @@ test('production CSP разрешает приложение и блокируе
   await expect(page.getByRole('dialog', { name: 'Выбор местоположения' })).toBeVisible()
   await page.getByRole('button', { name: 'Найти город или район' }).click()
   await page.getByRole('searchbox').fill('Стамбул')
-  await expect(page.getByRole('button', { name: 'Стамбул, Турция' })).toBeVisible({
+  await expect(page.getByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible({
     timeout: 15_000,
   })
   await page.getByRole('button', { name: 'Закрыть' }).click()

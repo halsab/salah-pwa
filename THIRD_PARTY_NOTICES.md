@@ -15,12 +15,30 @@ Salah включает данные, шрифт и программные зав
 
 ### GeoNames
 
-- Источники: [cities5000.zip](https://download.geonames.org/export/dump/cities5000.zip)
-  и [alternateNamesV2.zip](https://download.geonames.org/export/dump/alternateNamesV2.zip).
+- Источники: [cities5000.zip](https://download.geonames.org/export/dump/cities5000.zip),
+  [alternateNamesV2.zip](https://download.geonames.org/export/dump/alternateNamesV2.zip)
+  и [admin1CodesASCII.txt](https://download.geonames.org/export/dump/admin1CodesASCII.txt).
 - Лицензия: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - Преобразования: порог населения 5 000, округление координат до четырёх знаков,
   выбор действующих русских имён с предпочтением preferred, нормализованный
   поисковый индекс и компактное представление записей.
+- Новые административные названия импортированы из снимков GeoNames, полученных
+  7 сентября 2026 года. `admin1CodesASCII.txt` связывается с существующим
+  `countryCode.admin1Code`; русское название берётся по ID региона из
+  `alternateNamesV2`, иначе используется исходное название admin1. Если записи нет,
+  название остаётся пустым (222 города в текущем наборе).
+- Несколько действующих preferred-названий региона разрешаются детерминированно:
+  кратчайшее, затем лексикографически. Для городов неоднозначность preferred
+  по-прежнему считается ошибкой импорта. Исторические и завершившиеся имена исключены.
+- Точные SHA-256 трёх входных снимков закреплены в
+  [scripts/geonames-sources.json](scripts/geonames-sources.json).
+  Версия результата schema 4: `827fbdd55f3dd27a865d`. Исходная выборка 69 037 городов,
+  её ID, координаты, `admin1Code`, население и timezone сохранены; дата исходной
+  выборки остаётся в `source.updatedAt`. Изменены структура, названия регионов,
+  поисковые ключи и упаковка по странам.
+- Описание формата и лицензия всего дампа, включая административные названия:
+  [GeoNames readme](https://download.geonames.org/export/dump/readme.txt).
+  Региональные названия не являются данными о границах.
 
 ### OpenStreetMap и Nominatim
 

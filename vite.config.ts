@@ -79,22 +79,21 @@ export default defineConfig({
       },
       workbox: {
         cleanupOutdatedCaches: true,
+        importScripts: ['city-cache-cleanup.js'],
         navigateFallback: 'index.html',
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
         globIgnores: [
           '**/data/cities-current.json',
+          '**/data/cities/*/*.json',
+          'city-cache-cleanup.js',
           '**/data/prayer-times-current.json',
         ],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: /\/data\/cities-current\.json$/,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'city-data',
-              cacheableResponse: { statuses: [0, 200] },
-              expiration: { maxEntries: 1 },
-            },
+            urlPattern: /\/salah-pwa\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
+            // Проверенные пакеты сохраняет Worker в IndexedDB; сырой ответ не кешируем.
+            handler: 'NetworkOnly',
           },
         ],
       },

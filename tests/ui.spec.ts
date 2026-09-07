@@ -458,7 +458,7 @@ test.describe('Stage 5 production matrix', () => {
   for (const viewport of stageFiveViewports) {
     test(`${viewport.label}: сохраняет геометрию, шрифт и модальные поверхности`, async ({ page }) => {
       await page.setViewportSize(viewport)
-      await page.route('**/data/cities-current.json', (route) => route.abort())
+      await page.route('**/data/cities/index.json', (route) => route.abort())
       await page.goto('./')
       await page.evaluate(() => document.fonts.ready)
       await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
