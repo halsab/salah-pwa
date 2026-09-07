@@ -23,7 +23,9 @@
     "data:update": "tsx scripts/update-prayer-data.ts",
     "data:update:prayer-manifest": "tsx scripts/update-prayer-manifest.ts",
     "data:update:cities": "tsx scripts/update-city-data.ts",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "data:build:geography": "tsx scripts/buildLocalGeography.ts",
+    "data:check:geography": "tsx scripts/buildLocalGeography.ts --check"
   },
   "dependencies": {
     "@fontsource/alegreya-sans": "5.3.0",

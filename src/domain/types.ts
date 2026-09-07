@@ -49,7 +49,6 @@ export interface SavedCoordinates {
   timestamp: number
   name?: string
   cityId?: number
-  nameSource?: 'geonames' | 'nominatim'
   source?: 'gps' | 'preset'
 }
 

@@ -22,6 +22,7 @@ export interface CityCatalogService {
     latitude: number,
     longitude: number,
     maxDistanceKm: number,
+    localOnly?: boolean,
   ) => Promise<Result<City | null, DataFailure>>
 }
 
@@ -33,6 +34,7 @@ export type CityWorkerCommand =
       latitude: number
       longitude: number
       maxDistanceKm: number
+      localOnly?: boolean
     }
 
 export type CityWorkerRequest = CityWorkerCommand & { id: number }

@@ -9,12 +9,12 @@ import {
 import type { CityCatalogService } from './data/cityCatalog'
 import { cityCatalogService } from './data/cityCatalogClient'
 import { prayerRepository, type PrayerRepositoryState } from './data/prayerRepository'
-import { resolvePlaceName, type ResolvedPlace } from './data/reverseGeocoder'
-import { formatCityLabel, type City } from './domain/cities'
+import { loadLocalGeography } from './data/localGeography'
+import type { CoverageGeometry } from './domain/localGeography'
+import { officialLocationForPlace, type Place } from './domain/place'
+import { usePlaceSelection } from './features/location/usePlaceSelection'
 import type { DataFailure, GeolocationFailure, StorageFailure } from './domain/errors'
-import { findNearestLocation, isConfirmedTatarstan } from './domain/location'
 import {
-  shouldStartAutomaticLocation,
   type LocationSelectionSource,
 } from './domain/locationSelection'
 import {
@@ -47,12 +47,12 @@ import {
   type GeolocationPermission,
   type PositionAccuracy,
 } from './platform/browser'
-import type { DatasetMeta, LocationMode } from './storage/database'
+import type { DatasetMeta } from './storage/database'
 import { AppHeader } from './ui/AppHeader'
 import { ShareIcon } from './ui/Icons'
 
 export interface AppServices {
-  initialize: () => Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>>
+  initialize: (onCached?: (state: PrayerRepositoryState) => void) => Promise<Result<PrayerRepositoryState, DataFailure | StorageFailure>>
   cities: CityCatalogService
   getDays: (
     locationId: string,
@@ -62,17 +62,18 @@ export interface AppServices {
   saveOfficialLocation: (
     locationId: string,
     source: LocationSelectionSource,
+    place?: Place,
+    isCurrent?: () => boolean,
   ) => Promise<Result<void, StorageFailure>>
   saveCalculatedLocation: (
     coordinates: SavedCoordinates,
     source: LocationSelectionSource,
+    isCurrent?: () => boolean,
   ) => Promise<Result<void, DataFailure | StorageFailure>>
   saveCalculationSettings: (
     settings: CalculationSettings,
   ) => Promise<Result<void, StorageFailure>>
-  resolvePlaceName: (
-    coordinates: SavedCoordinates,
-  ) => Promise<Result<ResolvedPlace, DataFailure>>
+  loadGeography: () => Promise<CoverageGeometry | null>
   getPermission: () => Promise<GeolocationPermission>
   getPosition: (
     accuracy: PositionAccuracy,
@@ -87,7 +88,7 @@ export interface AppServices {
 const defaultServices: AppServices = {
   ...prayerRepository,
   cities: cityCatalogService,
-  resolvePlaceName,
+  loadGeography: loadLocalGeography,
   getPermission: getGeolocationPermission,
   getPosition: getCurrentPosition,
   getDeviceTimeZone,
@@ -101,13 +102,6 @@ function canonicalTimeZone(timeZone: string): string {
 
 function consumeBackground(operation: Promise<unknown>): void {
   void operation.catch(() => undefined)
-}
-
-function locationErrorMessage(error: GeolocationFailure): string {
-  if (error.reason === 'denied') return 'Доступ к геопозиции запрещён'
-  if (error.reason === 'unsupported') return 'Геопозиция не поддерживается'
-  if (error.reason === 'timeout') return 'Не удалось определить местоположение вовремя'
-  return 'Не удалось определить местоположение'
 }
 
 function AppVersion({ version }: { version: string | undefined }) {
@@ -136,10 +130,6 @@ export function App({
   version?: string
 }) {
   const [meta, setMeta] = useState<DatasetMeta | null>(null)
-  const [locationId, setLocationId] = useState('kazan')
-  const [locationMode, setLocationMode] = useState<LocationMode>('official')
-  const [calculatedLocation, setCalculatedLocation] = useState<SavedCoordinates | null>(null)
-  const [locationSelectionSource, setLocationSelectionSource] = useState<LocationSelectionSource | null>(null)
   const [calculationSettings, setCalculationSettings] = useState<CalculationSettings>(DEFAULT_CALCULATION_SETTINGS)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -149,14 +139,25 @@ export function App({
   const [methodologyDialogOpen, setMethodologyDialogOpen] = useState(false)
   const [shareDialogOpen, setShareDialogOpen] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
-  const automaticLocationAttempted = useRef(false)
-  const locationOperationEpoch = useRef(0)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
   const footerMethodologyButtonRef = useRef<HTMLButtonElement>(null)
   const settingsMethodologyButtonRef = useRef<HTMLButtonElement>(null)
   const methodologyReturnTarget = useRef<'footer' | 'settings'>('footer')
   const shareButtonRef = useRef<HTMLButtonElement>(null)
+
+  const closeLocationDialog = useCallback(() => {
+    setLocationDialogOpen(false)
+    requestAnimationFrame(() => locationButtonRef.current?.focus())
+  }, [])
+  const onPlaceChosen = useCallback(() => { closeLocationDialog(); pulseHaptic() }, [closeLocationDialog])
+  const locations = useMemo(() => meta?.locations ?? [], [meta])
+  const { place, notice: locationNotice, restore, locate: locateAutomatically,
+    selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, changeTimeZone } = usePlaceSelection(services, locations, onPlaceChosen)
+  const officialLocation = place ? officialLocationForPlace(place, locations) : null
+  const locationMode = officialLocation ? 'official' : 'calculated'
+  const locationId = officialLocation?.id ?? 'kazan'
+  const calculatedLocation = place
 
   useEffect(() => {
     let active = true
@@ -165,28 +166,24 @@ export function App({
       setLoading(true)
       setError(null)
     })
-    void services.initialize().then((result) => {
+    const acceptState = (state: PrayerRepositoryState) => {
+      if (!active) return
+      setMeta(state.meta)
+      restore(state.locationChoice, state.meta.locations)
+      setCalculationSettings(state.calculationSettings)
+      setLoading(false)
+    }
+    void services.initialize(acceptState).then((result) => {
       if (!active) return
       if (!result.ok) {
         setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.')
         return
       }
-      const state = result.value
-      setMeta(state.meta)
-      setLocationSelectionSource(state.locationChoice.source)
-      if (state.locationChoice.mode === 'official') {
-        setLocationId(state.locationChoice.locationId)
-        setLocationMode('official')
-        setCalculatedLocation(null)
-      } else {
-        setLocationMode('calculated')
-        setCalculatedLocation(state.locationChoice.coordinates)
-      }
-      setCalculationSettings(state.calculationSettings)
+      acceptState(result.value)
     }).catch(() => active && setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.'))
       .finally(() => active && setLoading(false))
     return () => { active = false }
-  }, [retryCount, services])
+  }, [retryCount, services, restore])
 
   const { cityCatalog, cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -230,10 +227,6 @@ export function App({
     setLocationDialogOpen(true)
   }, [])
 
-  const closeLocationDialog = useCallback(() => {
-    setLocationDialogOpen(false)
-    requestAnimationFrame(() => locationButtonRef.current?.focus())
-  }, [])
   const closeSettingsDialog = useCallback(() => {
     setSettingsDialogOpen(false)
     setSettingsFocusMethodology(false)
@@ -262,192 +255,6 @@ export function App({
     requestAnimationFrame(() => shareButtonRef.current?.focus())
   }, [])
 
-  const applyOfficialLocation = useCallback((
-    nextLocationId: string,
-    source: LocationSelectionSource,
-    interactive: boolean,
-    operationEpoch: number,
-  ) => {
-    if (operationEpoch !== locationOperationEpoch.current) return
-    setLocationId(nextLocationId)
-    setLocationMode('official')
-    setCalculatedLocation(null)
-    setLocationSelectionSource(source)
-    if (interactive) {
-      closeLocationDialog()
-      pulseHaptic()
-    }
-    consumeBackground(services.saveOfficialLocation(nextLocationId, source))
-  }, [closeLocationDialog, services])
-
-  const applyCalculatedLocation = useCallback((
-    coordinates: SavedCoordinates,
-    source: LocationSelectionSource,
-    interactive: boolean,
-    operationEpoch: number,
-  ) => {
-    if (operationEpoch !== locationOperationEpoch.current) return
-    setCalculatedLocation(coordinates)
-    setLocationMode('calculated')
-    setLocationSelectionSource(source)
-    if (interactive) {
-      closeLocationDialog()
-      pulseHaptic()
-    }
-    consumeBackground(services.saveCalculatedLocation(coordinates, source))
-  }, [closeLocationDialog, services])
-
-  const selectOfficialLocation = useCallback((nextLocationId: string) => {
-    const operationEpoch = ++locationOperationEpoch.current
-    applyOfficialLocation(nextLocationId, 'manual', true, operationEpoch)
-  }, [applyOfficialLocation])
-
-  const locateAutomatically = useCallback(async (
-    interactive = true,
-    existingOperationEpoch?: number,
-  ) => {
-    if (!meta) return
-    const operationEpoch = existingOperationEpoch ?? ++locationOperationEpoch.current
-    if (interactive) automaticLocationAttempted.current = true
-    let coarseResult: Awaited<ReturnType<AppServices['getPosition']>>
-    try {
-      coarseResult = await services.getPosition('coarse')
-    } catch (error) {
-      if (operationEpoch !== locationOperationEpoch.current) return
-      throw error
-    }
-    if (operationEpoch !== locationOperationEpoch.current) return
-    if (!coarseResult.ok) throw new Error(locationErrorMessage(coarseResult.error))
-
-    let bestPosition = coarseResult.value
-    let preciseResult: Awaited<ReturnType<AppServices['getPosition']>>
-    try {
-      preciseResult = await services.getPosition('precise')
-    } catch (error) {
-      if (operationEpoch !== locationOperationEpoch.current) return
-      throw error
-    }
-    if (operationEpoch !== locationOperationEpoch.current) return
-    if (preciseResult.ok) bestPosition = preciseResult.value
-
-    let resolvedPlace: ResolvedPlace | null = null
-    try {
-      const resolvedResult = await services.resolvePlaceName({
-        ...bestPosition,
-        timeZone: services.getDeviceTimeZone(),
-        source: 'gps',
-      })
-      if (operationEpoch !== locationOperationEpoch.current) return
-      if (resolvedResult.ok) resolvedPlace = resolvedResult.value
-    } catch {
-      if (operationEpoch !== locationOperationEpoch.current) return
-      // Координат достаточно для расчёта, даже если сетевое уточнение недоступно.
-    }
-
-    if (
-      resolvedPlace
-      && isConfirmedTatarstan(resolvedPlace.regionEvidence)
-    ) {
-      const officialLocation = findNearestLocation(
-        bestPosition.latitude,
-        bestPosition.longitude,
-        meta.locations,
-      )
-      if (officialLocation) {
-        applyOfficialLocation(
-          officialLocation.id,
-          'automatic',
-          interactive,
-          operationEpoch,
-        )
-        return
-      }
-    }
-
-    applyCalculatedLocation({
-      ...bestPosition,
-      timeZone: services.getDeviceTimeZone(),
-      source: 'gps',
-      ...(resolvedPlace?.name
-        ? { name: resolvedPlace.name, nameSource: 'nominatim' as const }
-        : {}),
-    }, 'automatic', interactive, operationEpoch)
-  }, [applyCalculatedLocation, applyOfficialLocation, meta, services])
-
-  const selectPresetCity = useCallback((city: City) => {
-    const operationEpoch = ++locationOperationEpoch.current
-    if (!meta) return
-    if (isConfirmedTatarstan({
-      source: 'geonames',
-      countryCode: city.countryCode,
-      admin1Code: city.admin1Code,
-    })) {
-      const officialLocation = findNearestLocation(
-        city.latitude,
-        city.longitude,
-        meta.locations,
-      )
-      if (officialLocation) {
-        applyOfficialLocation(officialLocation.id, 'manual', true, operationEpoch)
-        return
-      }
-    }
-
-    applyCalculatedLocation({
-      latitude: city.latitude,
-      longitude: city.longitude,
-      timeZone: city.timeZone,
-      accuracy: null,
-      timestamp: services.now().getTime(),
-      name: formatCityLabel(city),
-      cityId: city.id,
-      nameSource: 'geonames',
-      source: 'preset',
-    }, 'manual', true, operationEpoch)
-  }, [applyCalculatedLocation, applyOfficialLocation, meta, services])
-
-  const reverseCalculatedLocation = useCallback(async () => {
-    if (!calculatedLocation) return
-    const operationEpoch = ++locationOperationEpoch.current
-    let result: Awaited<ReturnType<AppServices['resolvePlaceName']>>
-    try {
-      result = await services.resolvePlaceName(calculatedLocation)
-    } catch (error) {
-      if (operationEpoch !== locationOperationEpoch.current) return
-      throw error
-    }
-    if (operationEpoch !== locationOperationEpoch.current) return
-    if (!result.ok || !result.value.name) {
-      throw new Error('Не удалось уточнить название местоположения')
-    }
-    const updatedLocation: SavedCoordinates = {
-      ...calculatedLocation,
-      name: result.value.name,
-      nameSource: 'nominatim',
-    }
-    setCalculatedLocation(updatedLocation)
-    consumeBackground(services.saveCalculatedLocation(
-      updatedLocation,
-      locationSelectionSource ?? 'manual',
-    ))
-  }, [calculatedLocation, locationSelectionSource, services])
-
-  useEffect(() => {
-    if (
-      !meta
-      || automaticLocationAttempted.current
-      || !shouldStartAutomaticLocation({ source: locationSelectionSource })
-    ) return
-    automaticLocationAttempted.current = true
-    const operationEpoch = ++locationOperationEpoch.current
-    void services.getPermission().then((permission) => {
-      if (operationEpoch !== locationOperationEpoch.current) return
-      if (permission === 'granted') {
-        void locateAutomatically(false, operationEpoch).catch(() => undefined)
-      }
-    }).catch(() => undefined)
-  }, [locateAutomatically, locationSelectionSource, meta, services])
-
   if (loading) return <LoadingScreen version={version} />
 
   if (error || !meta) {
@@ -474,7 +281,7 @@ export function App({
     setCalculationSettings(settings)
     consumeBackground(services.saveCalculationSettings(settings))
   }
-  const calculatedLocationLabel = calculatedLocation?.name ?? 'Текущее местоположение'
+  const calculatedLocationLabel = calculatedLocation?.name ?? 'Моё местоположение'
   const timeZoneOffset = canonicalTimeZone(selectedTimeZone) === canonicalTimeZone(deviceTimeZone)
     ? null
     : getUtcOffset(currentTime, selectedTimeZone)
@@ -509,6 +316,10 @@ export function App({
             onShowDatePicker={showDatePicker}
           />
 
+          {officialLocation && place?.selection !== 'official' ? (
+            <p className="location-schedule-note">Таблица ДУМ РТ: {officialLocation.name} — ближайший опубликованный пункт. Время и дата таблицы: Europe/Moscow.</p>
+          ) : null}
+          {locationNotice ? <p role="status" className="location-schedule-note">{locationNotice}</p> : null}
           <ScheduleContent
             schedule={schedule}
             key={contextKey}
@@ -547,13 +358,14 @@ export function App({
         cityCatalogStatus={cityCatalogStatus}
         selectedOfficialId={officialMode ? locationId : null}
         selectedCityId={officialMode ? null : calculatedLocation?.cityId ?? null}
-        calculatedLocation={officialMode ? null : calculatedLocation}
+        place={place}
+        officialLocation={officialLocation}
+        onTimeZoneChange={changeTimeZone}
         open={locationDialogOpen}
         onClose={closeLocationDialog}
         onSelectOfficial={selectOfficialLocation}
         onSelectCity={selectPresetCity}
         onLocate={locateAutomatically}
-        onReverse={reverseCalculatedLocation}
         onLoadCities={loadCities}
         onSearchCities={services.cities.search}
       />

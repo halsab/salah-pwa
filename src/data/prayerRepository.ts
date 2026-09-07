@@ -1,3 +1,5 @@
+import type { Place } from '../domain/place'
+import { migratePlaceChoice, restoreSavedCoordinates } from '../domain/placeMigration'
 import type {
   DataFailure,
   StorageFailure,
@@ -13,7 +15,7 @@ import {
   type CalculationSettings,
 } from '../domain/prayerCalculation'
 import { failure, success, type Result } from '../domain/result'
-import { getDeviceTimeZone, isValidTimeZone } from '../domain/locationTime'
+import { isValidTimeZone } from '../domain/locationTime'
 import type {
   PrayerDataset,
   PrayerDatasetManifest,
@@ -50,6 +52,7 @@ export type PrayerRepositoryInitializationOperations = Partial<
   PrayerDatasetByteOperations
 > & {
   fetch?: Fetcher
+  onCached?: (state: PrayerRepositoryState) => void
 }
 
 export interface PrayerRepositoryState {
@@ -161,6 +164,7 @@ function restoreLocationChoice(
       mode: 'official',
       locationId: choice.locationId,
       source: choice.source,
+      ...(choice.place ? { place: choice.place } : {}),
     }
   }
 
@@ -171,6 +175,7 @@ function restoreLocationChoice(
         mode: 'calculated',
         coordinates,
         source: choice.source,
+        ...(choice.place ? { place: choice.place } : {}),
       }
     }
   }
@@ -191,6 +196,14 @@ export async function initializePrayerRepository(
   if (!cachedMetaResult.ok) return cachedMetaResult
 
   const cachedMeta = cachedMetaResult.value
+  if (cachedMeta && operations.onCached) {
+    const [choice, settings] = await Promise.all([getLocationChoice(), getSetting('calculationSettings')])
+    if (choice.ok && settings.ok) {
+      const restored = restoreLocationChoice(choice.value, cachedMeta)
+      if (restored) operations.onCached({ meta: cachedMeta, locationChoice: migratePlaceChoice(restored, cachedMeta.locations),
+        calculationSettings: isCalculationSettings(settings.value) ? settings.value : DEFAULT_CALCULATION_SETTINGS, warning: null })
+    }
+  }
   let meta = cachedMeta
   let warning: UpdateFailure | null = null
   const fetcher = operations.fetch
@@ -232,38 +245,12 @@ export async function initializePrayerRepository(
 
   return success({
     meta,
-    locationChoice,
+    locationChoice: migratePlaceChoice(locationChoice, meta.locations),
     calculationSettings: isCalculationSettings(storedSettingsResult.value)
       ? storedSettingsResult.value
       : DEFAULT_CALCULATION_SETTINGS,
     warning,
   })
-}
-
-function restoreSavedCoordinates(value: unknown): SavedCoordinates | null {
-  if (!value || typeof value !== 'object') return null
-  const coordinates = value as Partial<SavedCoordinates>
-  const fieldsAreValid =
-    Number.isFinite(coordinates.latitude)
-    && Number.isFinite(coordinates.longitude)
-    && (coordinates.accuracy === null || Number.isFinite(coordinates.accuracy))
-    && Number.isFinite(coordinates.timestamp)
-    && (coordinates.name === undefined || typeof coordinates.name === 'string')
-    && (coordinates.cityId === undefined || Number.isInteger(coordinates.cityId))
-    && (coordinates.nameSource === undefined
-      || ['geonames', 'nominatim'].includes(coordinates.nameSource))
-    && (coordinates.source === undefined
-      || ['gps', 'preset'].includes(coordinates.source))
-    && (coordinates.timeZone === undefined
-      || (typeof coordinates.timeZone === 'string'
-        && isValidTimeZone(coordinates.timeZone)))
-
-  if (!fieldsAreValid) return null
-
-  return {
-    ...(coordinates as SavedCoordinates),
-    timeZone: coordinates.timeZone ?? getDeviceTimeZone(),
-  }
 }
 
 function isCalculationSettings(value: unknown): value is CalculationSettings {
@@ -279,21 +266,25 @@ function isCalculationSettings(value: unknown): value is CalculationSettings {
 }
 
 export const prayerRepository = {
-  initialize: initializePrayerRepository,
+  initialize: (onCached?: (state: PrayerRepositoryState) => void) => initializePrayerRepository(onCached ? { onCached } : {}),
   getDay: getPrayerDay,
   getDays: getPrayerDays,
   saveOfficialLocation: (
     locationId: string,
     source: LocationSelectionSource,
-  ) => saveLocationChoice({ mode: 'official', locationId, source }),
+    place?: Place,
+    isCurrent?: () => boolean,
+  ) => saveLocationChoice({ mode: 'official', locationId, source, ...(place ? { place } : {}) }, isCurrent),
   saveCalculatedLocation: (
     coordinates: SavedCoordinates,
     source: LocationSelectionSource,
+    isCurrent?: () => boolean,
   ) => {
     if (!isValidTimeZone(coordinates.timeZone)) {
       return Promise.resolve(failure(dataFailure('invalid')))
     }
-    return saveLocationChoice({ mode: 'calculated', coordinates, source })
+    const place = 'selection' in coordinates ? coordinates as Place : undefined
+    return saveLocationChoice({ mode: 'calculated', coordinates, source, ...(place ? { place } : {}) }, isCurrent)
   },
   saveCalculationSettings: (settings: CalculationSettings) =>
     setSetting('calculationSettings', settings),

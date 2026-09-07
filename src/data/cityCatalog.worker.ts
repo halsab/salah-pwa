@@ -9,7 +9,7 @@ const catalog = createCityCatalogEngine()
 workerScope.addEventListener('message', ({ data: request }) => {
   const operation = request.type === 'load' ? catalog.load()
     : request.type === 'search' ? catalog.search(request.query)
-      : catalog.findNearest(request.latitude, request.longitude, request.maxDistanceKm)
+      : catalog.findNearest(request.latitude, request.longitude, request.maxDistanceKm, request.localOnly)
   void operation.then(result => workerScope.postMessage(result.ok
     ? { id: request.id, ok: true, result: result.value }
     : { id: request.id, ok: false, error: result.error }))

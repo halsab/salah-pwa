@@ -116,12 +116,12 @@ export function createCityCatalogEngine(repository: CatalogRepository = {
         return result
       })
     },
-    findNearest: (latitude, longitude, maxDistanceKm) => serial(async () => {
+    findNearest: (latitude, longitude, maxDistanceKm, localOnly = false) => serial(async () => {
       if (!validNearestQuery(latitude, longitude, maxDistanceKm) || maxDistanceKm > 200) return failure({ kind: 'data', reason: 'invalid' })
       const loaded = await getIndex()
       if (!loaded.ok) return loaded
       const index = loaded.value
-      const result = await nearestIndex(index, latitude, longitude, maxDistanceKm, false)
+      const result = await nearestIndex(index, latitude, longitude, maxDistanceKm, localOnly)
       if (!result.ok) {
         const previous = await repository.previousIndex()
         if (previous && previous.version !== index.version) {

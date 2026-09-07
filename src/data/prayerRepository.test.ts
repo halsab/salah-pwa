@@ -137,7 +137,7 @@ describe('initializePrayerRepository', () => {
 
     const state = unwrap(await initializeWithDigest())
 
-    expect(state.locationChoice).toEqual({
+    expect(state.locationChoice).toMatchObject({
       mode: 'official',
       locationId: 'kazan',
       source: 'default',
@@ -173,7 +173,7 @@ describe('initializePrayerRepository', () => {
 
     const state = unwrap(await initializeWithDigest())
 
-    expect(state.locationChoice).toEqual({
+    expect(state.locationChoice).toMatchObject({
       mode: 'calculated',
       coordinates: {
         ...legacyCoordinates,
@@ -200,7 +200,7 @@ describe('initializePrayerRepository', () => {
 
     const state = unwrap(await initializeWithDigest())
 
-    expect(state.locationChoice).toEqual({
+    expect(state.locationChoice).toMatchObject({
       mode: 'official',
       locationId: 'kazan',
       source: 'default',
@@ -462,4 +462,47 @@ describe('prayerRepository location writes', () => {
       error: { kind: 'storage', reason: 'unavailable' },
     })
   })
+})
+
+it('returns cached place before a pending network manifest check', async () => {
+  unwrap(await replaceDataset(dataset, manifestWithHash()))
+  let finish!: (response: Response) => void
+  const network = new Promise<Response>(resolve => { finish = resolve })
+  const onCached = vi.fn()
+  const initializing = initializePrayerRepository({ fetch: () => network, onCached })
+  await vi.waitFor(() => expect(onCached).toHaveBeenCalled())
+  const cached = onCached.mock.calls[0]?.[0] as { locationChoice: LocationChoice }
+  expect(cached.locationChoice.place?.name).toBe('Казань')
+  finish(responseWithJson(manifestWithHash()))
+  expect((await initializing).ok).toBe(true)
+})
+
+it.each([null, {}, { mode: 'official', locationId: 'kazan', source: 'invalid' }, { mode: 'official', locationId: 'missing', source: 'manual' }, { mode: 'unknown', source: 'manual' }])('restores a safe place for malformed persisted choices: %j', async choice => {
+  unwrap(await saveLocationChoice(choice as LocationChoice))
+  stubSuccessfulUpdate()
+  const state = unwrap(await initializeWithDigest())
+  expect(state.locationChoice.place?.name).toBe('Казань')
+})
+
+it('default service initializer restores local state and preserves new place metadata', async () => {
+  unwrap(await replaceDataset(dataset, manifestWithHash()))
+  const { createCityPlace } = await import('../domain/place')
+  const place = createCityPlace({ id: 1, name: 'Berlin', latitude: 52.52, longitude: 13.4,
+    timeZone: 'Europe/Berlin', countryCode: 'DE', admin1Code: '16', admin1Name: 'Berlin', population: 1 }, 123)
+  expect((await prayerRepository.saveCalculatedLocation(place, 'manual')).ok).toBe(true)
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(responseWithJson(manifestWithHash()))))
+  const onCached = vi.fn()
+  expect(unwrap(await prayerRepository.initialize(onCached)).locationChoice.place).toEqual(place)
+  expect(onCached).toHaveBeenCalledOnce()
+  expect((await prayerRepository.initialize()).ok).toBe(true)
+  expect((await prayerRepository.saveCalculatedLocation({ ...place, timeZone: 'invalid' }, 'manual')).ok).toBe(false)
+})
+
+it('persists calculation settings independently of the place timezone', async () => {
+  const { DEFAULT_CALCULATION_SETTINGS } = await import('../domain/prayerCalculation')
+  const { getSetting } = await import('../storage/database')
+  const settings = { ...DEFAULT_CALCULATION_SETTINGS, asrMethod: 'standard' as const }
+  expect((await prayerRepository.saveCalculationSettings(settings)).ok).toBe(true)
+  expect(unwrap(await getSetting('calculationSettings'))).toEqual(settings)
+  expect(unwrap(await getLocationChoice())).toBeUndefined()
 })

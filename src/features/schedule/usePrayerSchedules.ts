@@ -42,7 +42,7 @@ export function usePrayerSchedules({
   calculationSettings, selectedDate, timeZone,
 }: UsePrayerSchedulesOptions) {
   const official = locationMode === 'official'
-  const location = official ? meta?.locations.find(({ id }) => id === locationId) : calculatedLocation
+  const location = calculatedLocation ?? (official ? meta?.locations.find(({ id }) => id === locationId) : null)
   const id = official ? locationId : calculatedLocation?.cityId?.toString() ?? null
   const latitude = location?.latitude
   const longitude = location?.longitude

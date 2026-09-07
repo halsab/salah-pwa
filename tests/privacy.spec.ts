@@ -38,28 +38,14 @@ test('статическая privacy page точно описывает данн
   )
   await expect(page.locator('main')).toContainText(/GitHub Pages.+IP-адрес.+запрос.+устройств/is)
 
-  const location = page.getByRole('region', { name: 'Геопозиция и Nominatim' })
-  await expect(location).toContainText('автоматическом определении')
-  await expect(location).toContainText('на старте при ранее разрешённой геопозиции')
-  await expect(location).toContainText('«Уточнить название онлайн»')
-  await expect(location).toContainText('широта и долгота')
-  await expect(location).toContainText('до трёх знаков (0,001°)')
-  await expect(page.getByText(/точность браузера и timestamp не передаются/i)).toBeVisible()
-  for (const parameter of [
-    'format=jsonv2',
-    'zoom=10',
-    'addressdetails=1',
-    'accept-language=ru',
-  ]) {
-    await expect(page.getByText(parameter, { exact: true })).toBeVisible()
-  }
-  await expect(location).toContainText('не ведёт непрерывное отслеживание')
-  await expect(location).toContainText('Nominatim получает IP-адрес')
-  await expect(location).toContainText('технические данные запроса')
-  await expect(page.getByRole('link', { name: 'политике OSMF' })).toHaveAttribute(
-    'href',
-    'https://osmfoundation.org/wiki/Privacy_Policy',
-  )
+  const location = page.getByRole('region', { name: 'Локальная геопозиция' })
+  await expect(location).toContainText('Координаты не отправляются в Nominatim')
+  await expect(location).toContainText('при запуске с ранее разрешённым GPS')
+  await expect(location).toContainText('непрерывное отслеживание')
+  await expect(location).toContainText('зона устройства')
+  await expect(location).toContainText('30 минут')
+  await expect(location).not.toContainText('Уточнить название онлайн')
+
 })
 
 test('указывает источники, преобразования и границы атрибуции', async ({ page }) => {
@@ -93,7 +79,7 @@ test('указывает источники, преобразования и г�
   await expect(geonames).toContainText('нормализованный поисковый индекс')
   await expect(geonames).toContainText('компактные записи')
 
-  await expect(page.getByRole('link', { name: 'OpenStreetMap / Nominatim' })).toHaveAttribute(
+  await expect(page.getByRole('link', { name: 'OpenStreetMap' })).toHaveAttribute(
     'href',
     'https://www.openstreetmap.org/copyright',
   )
@@ -101,7 +87,7 @@ test('указывает источники, преобразования и г�
     'href',
     'https://opendatacommons.org/licenses/odbl/1-0/',
   )
-  await expect(page.locator('main')).toContainText(/возвращённое название сохраняется локально.+код региона/is)
+  await expect(page.locator('main')).toContainText(/Названия, ранее полученные из Nominatim, сохраняются при миграции без сетевого запроса/is)
 })
 
 test('переходит из приложения в privacy page и обратно без роутера', async ({ page }) => {
@@ -176,4 +162,57 @@ test('репозиторий содержит MIT лицензию и уведо
   ]) {
     expect(notices).toMatch(dependency)
   }
+})
+
+test('GPS and automatic startup keep coordinates out of every request and never call Nominatim', async ({ context, page }) => {
+  const latitude = 55.812345
+  const longitude = 49.123456
+  const requests: { url: string; body: string }[] = []
+  const messages: string[] = []
+  page.on('request', request => requests.push({ url: request.url(), body: request.postData() ?? '' }))
+  page.on('console', message => messages.push(message.text()))
+  await context.grantPermissions(['geolocation'])
+  await context.setGeolocation({ latitude, longitude, accuracy: 15 })
+  await page.goto('./')
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await expect(page.getByRole('button', { name: 'Уточнить название онлайн' })).toHaveCount(0)
+  await page.getByRole('button', { name: 'Определить автоматически' }).click()
+  await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open('salah')
+    request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
+    request.onsuccess = () => {
+      const db = request.result
+      const tx = db.transaction('settings', 'readwrite')
+      const store = tx.objectStore('settings')
+      const read = store.get('locationChoice')
+      read.onsuccess = () => {
+        const record = read.result as { key: string; value: { place?: { timestamp: number }; source: string } } | undefined
+        if (!record?.value.place) { tx.abort(); return }
+        record.value.place.timestamp = 1
+        store.put(record)
+      }
+      tx.oncomplete = () => { db.close(); resolve() }
+      tx.onabort = () => { db.close(); reject(new Error('Не удалось состарить GPS-выбор')) }
+    }
+  }))
+  let starts = 0
+  page.on('request', request => { if (request.url().endsWith('/data/tatarstan-boundary.json')) starts += 1 })
+  await page.reload()
+  await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
+  await expect.poll(() => starts).toBeGreaterThan(0)
+  await page.getByRole('button', { name: /Моё местоположение|Рядом:/ }).click()
+  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
+  await expect(page.getByText(/точность ±15 м/)).toBeVisible()
+  expect(requests.filter(request => !request.url.startsWith('http://127.0.0.1:4175/'))).toEqual([])
+  for (const request of requests) {
+    expect(request.url).not.toMatch(/nominatim/i)
+    for (const coordinate of [latitude, longitude]) {
+      for (const value of [String(coordinate), coordinate.toFixed(3), coordinate.toFixed(4)]) {
+        expect(request.url + request.body).not.toContain(value)
+      }
+    }
+  }
+  expect(messages.join('\n')).not.toMatch(/55\.812345|49\.123456/)
 })

@@ -96,7 +96,7 @@ export const cityCatalogService: CityCatalogService = {
     if (!catalogResult.ok) return failure(catalogResult.error)
     return request({ type: 'search', query })
   },
-  findNearest: async (latitude, longitude, maxDistanceKm) => {
+  findNearest: async (latitude, longitude, maxDistanceKm, localOnly = false) => {
     const catalogResult = await cityCatalogService.load()
     if (!catalogResult.ok) return failure(catalogResult.error)
     return request({
@@ -104,6 +104,7 @@ export const cityCatalogService: CityCatalogService = {
       latitude,
       longitude,
       maxDistanceKm,
+      ...(localOnly ? { localOnly } : {}),
     })
   },
 }

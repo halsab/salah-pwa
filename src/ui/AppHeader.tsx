@@ -51,9 +51,7 @@ export function AppHeader({
   onDateInput,
   onShowDatePicker,
 }: AppHeaderProps) {
-  const locationLabel = officialMode
-    ? selectedLocation?.name ?? 'Выберите населённый пункт'
-    : calculatedLocationLabel
+  const locationLabel = calculatedLocationLabel || selectedLocation?.name || 'Выберите населённый пункт'
   const displayLocationLabel = timeZoneOffset
     ? `${locationLabel} · ${timeZoneOffset}`
     : locationLabel

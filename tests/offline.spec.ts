@@ -123,18 +123,17 @@ test('GPS-расписание вне Татарстана рассчитыва�
   page,
 }) => {
   let cityCatalogRequests = 0
-  await page.route('**/data/cities/**/*.json', (route) => {
+  await page.route('**/data/cities/*/*.json', (route) => {
     cityCatalogRequests += 1
     return route.abort()
   })
-  await page.route('https://nominatim.openstreetmap.org/**', (route) => route.abort())
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
   await page.goto('./')
 
   await page.getByRole('button', { name: /Казань/ }).click()
   await page.getByRole('button', { name: 'Определить автоматически' }).click()
-  await expect(page.getByRole('button', { name: /Текущее местоположение/i })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Моё местоположение/i })).toBeVisible()
   expect(cityCatalogRequests).toBe(0)
   await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
   await expect(
@@ -150,7 +149,7 @@ test('GPS-расписание вне Татарстана рассчитыва�
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /Текущее местоположение/i })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Моё местоположение/i })).toBeVisible()
     await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
     await expect(
       page
@@ -192,4 +191,27 @@ test('город из офлайн-справочника сохраняется
   } finally {
     await context.setOffline(false)
   }
+})
+
+test('prepared local boundary resolves GPS in Tatarstan identically offline', async ({ context, page }) => {
+  await context.grantPermissions(['geolocation'])
+  await context.setGeolocation({ latitude: 55.7961, longitude: 49.1064, accuracy: 20 })
+  await page.goto('./')
+  await expect(page.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
+  await page.evaluate(async () => navigator.serviceWorker.ready)
+  await page.reload()
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  expect(await page.evaluate(async () => Boolean(await caches.match('/salah-pwa/data/tatarstan-boundary.json', { ignoreSearch: true })))).toBe(true)
+  await context.setOffline(true)
+  try {
+    await page.getByRole('button', { name: /Казань/ }).click()
+    await page.getByRole('button', { name: 'Определить автоматически' }).click()
+    await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
+    await expect(page.getByText(/Таблица ДУМ РТ: Казань/)).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+    await page.getByRole('button', { name: /Моё местоположение|Рядом:/ }).click()
+    await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
+    await expect(page.getByText('Регион: Татарстан', { exact: true })).toBeVisible()
+    await expect(page.getByText(/Часовой пояс: Europe\/Moscow · по локальной границе/)).toBeVisible()
+  } finally { await context.setOffline(false) }
 })

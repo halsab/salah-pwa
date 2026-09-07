@@ -134,7 +134,7 @@ describe('usePrayerSchedules', () => {
     const hook = observe(initial)
     await waitFor(() => expect(hook.result.current.schedule).not.toBeNull())
     const calls = calculate.mock.calls.length
-    hook.rerender({ ...initial, calculatedLocation: { ...required(initial.calculatedLocation), name: 'Москва', nameSource: 'nominatim', timestamp: 1 }, calculationSettings: { ...initial.calculationSettings } })
+    hook.rerender({ ...initial, calculatedLocation: { ...required(initial.calculatedLocation), name: 'Москва', timestamp: 1 }, calculationSettings: { ...initial.calculationSettings } })
     await act(async () => {})
     expect(calculate).toHaveBeenCalledTimes(calls)
     calculate.mockRestore()
@@ -198,4 +198,17 @@ describe('окно событий и гонки источников', () => {
     act(() => hook.result.current.retrySchedule())
     await waitFor(() => expect(hook.result.current.schedule).toMatchObject({ locationId: 'A' }))
   })
+})
+
+it('invalidates official schedule context when the real GPS point changes under the same provider town', async () => {
+  const initial = { ...options(), calculatedLocation: { latitude: 55.79, longitude: 49.12, accuracy: 1000, timestamp: 1, timeZone: 'Europe/Moscow' } }
+  const hook = observe(initial)
+  await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+  const oldKey = hook.result.current.contextKey
+  const next = deferred<(PrayerDay | undefined)[]>()
+  vi.mocked(initial.services.getDays).mockReturnValueOnce(next.promise)
+  hook.rerender({ ...initial, calculatedLocation: { ...initial.calculatedLocation, latitude: 55.8, accuracy: 10 } })
+  expect(hook.result.current.contextKey).not.toBe(oldKey)
+  expect(hook.result.current.schedule).toBeNull()
+  await act(async () => { next.resolve([day('A', initial.selectedDate)]); await next.promise })
 })

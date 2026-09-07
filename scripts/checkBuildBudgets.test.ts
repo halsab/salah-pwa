@@ -156,3 +156,35 @@ describe('build budgets', () => {
    expect(errors.some(e=>e.startsWith('cityShard:'))).toBe(true)
    expect(errors.some(e=>e.startsWith('cityTotal:'))).toBe(true)
  })
+
+it('reports corrupt catalog input and duplicate artifacts in a production directory', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'salah-corrupt-budget-'))
+  try {
+    await mkdir(join(root, 'data/cities'), { recursive: true })
+    await writeFile(join(root, 'data/cities/index.json'), '{broken')
+    await expect(checkBuildBudgets(root)).rejects.toThrow('cities:')
+    const artifacts = [...validArtifacts(), { path: shardPath, size: 1 }]
+    expect(validateBuildArtifacts(artifacts, catalog)).toContain(`cities: повторный artifact ${shardPath}`)
+  } finally { await rm(root, { recursive: true }) }
+})
+
+it.each(['filter', 'timezone', 'missing-city'] as const)('rejects a self-consistent checksum with inconsistent %s data', async kind => {
+  const { sha256 } = await import('./buildCityPackages')
+  const index = structuredClone(catalog)
+  const descriptor = index.shards[0]
+  const city = index.overview[0]
+  if (!descriptor || !city) throw new Error('Отсутствует город fixture')
+  if (kind === 'filter') descriptor.filter = 'A'.repeat(descriptor.filter.length)
+  if (kind === 'timezone') city[8] = 'Europe/Samara'
+  if (kind === 'missing-city') city[0] = 9999
+  index.checksum = sha256(JSON.stringify({ ...index, checksum: '' }))
+  const root = await mkdtemp(join(tmpdir(), 'salah-data-budget-'))
+  try {
+    await mkdir(join(root, `data/cities/${index.version}`), { recursive: true })
+    await writeFile(join(root, 'data/cities/index.json'), JSON.stringify(index))
+    await writeFile(join(root, shardPath), JSON.stringify(generated.shards['RU-0']))
+    const expected = kind === 'filter' ? 'Повреждён поисковый индекс'
+      : kind === 'timezone' ? 'Обзор расходится с пакетом' : 'Обзор содержит отсутствующий город'
+    await expect(checkBuildBudgets(root)).rejects.toThrow(expected)
+  } finally { await rm(root, { recursive: true }) }
+})

@@ -40,13 +40,27 @@ Salah включает данные, шрифт и программные зав
   [GeoNames readme](https://download.geonames.org/export/dump/readme.txt).
   Региональные названия не являются данными о границах.
 
-### OpenStreetMap и Nominatim
+### OpenStreetMap через geoBoundaries
 
-- Атрибуция и условия: [OpenStreetMap](https://www.openstreetmap.org/copyright).
-- Лицензия базы данных: [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
-- Политика конфиденциальности сервиса: [OSMF Privacy Policy](https://osmfoundation.org/wiki/Privacy_Policy).
-- Nominatim возвращает название и код региона; название может сохраняться локально,
-  а код региона используется для подтверждения территории.
+- © OpenStreetMap contributors. Атрибуция: [OpenStreetMap](https://www.openstreetmap.org/copyright).
+- Источник: OpenStreetMap / Wambacher, geoBoundaries gbOpen `RUS-ADM1-28173009`,
+  снимок территории 2017 года, сборка 12 декабря 2023 года, фиксированная версия `9469f09`.
+  [Метаданные источника](https://www.geoboundaries.org/api/current/gbOpen/RUS/ADM1/).
+- Лицензия исходной и производной базы границ: [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/).
+  Лицензия MIT к геоданным не применяется. Полный текст ODbL поставляется в `public/data/ODbL-1.0.txt`.
+- Производная база — только feature `RU-TA`, MultiPolygon с сохранением колец, островов и отверстий.
+  Исходная извлечённая геометрия находится в `scripts/geography/tatarstan-source.geojson`,
+  происхождение, URL и SHA-256 — в `scripts/geography/provenance.json` и `source-metadata.json`.
+  Эти файлы доступны в открытом исходном коде проекта для воспроизведения производной базы.
+- Компактный результат `public/data/tatarstan-boundary.json` создаётся
+  `scripts/buildLocalGeography.ts`: упрощение 100 м и округление до 5 знаков,
+  полоса неопределённости 2 км плюс точность GPS. Запас не является оценкой
+  гарантированной точности исходного снимка. Подробнее: [локальная геолокация](docs/local-geography.md).
+- Runtime Nominatim удалён. Исторические текстовые названия сохраняются локально
+  при миграции; новых запросов к Nominatim приложение не делает.
+- IANA timezone `Europe/Moscow`: [IANA tzdb](https://www.iana.org/time-zones),
+  таблица `zone1970.tab` (public domain); Татарстан относится к московской зоне.
+  Правила DST/исторических переходов выполняет `Intl` браузера; фиксированные offsets не сохраняются.
 
 ## Шрифт
 

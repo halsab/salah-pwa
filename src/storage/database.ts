@@ -1,3 +1,5 @@
+import type { Place } from '../domain/place'
+import { migratePlaceChoice } from '../domain/placeMigration'
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 import { getDatasetRevision } from '../domain/scheduleContext'
@@ -14,11 +16,11 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 6
+const DATABASE_VERSION = 7
 
 export type LocationMode = 'official' | 'calculated'
 
-export type LocationChoice =
+export type LocationChoice = { place?: Place } & (
   | {
       mode: 'official'
       locationId: string
@@ -29,6 +31,8 @@ export type LocationChoice =
       coordinates: SavedCoordinates
       source: LocationSelectionSource
     }
+
+)
 
 interface SettingValueMap {
   locationChoice: LocationChoice
@@ -137,6 +141,7 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       if (oldVersion < 4) {
         // Таймзона добавляется при чтении старой записи, поэтому данные v3 не переписываются.
       }
+      let previousMigration: Promise<unknown> = Promise.resolve()
       if (oldVersion < 5) {
         const store = transaction.objectStore('settings')
         const migration = Promise.all([
@@ -165,10 +170,19 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
           return Promise.all(writes)
         })
 
+        previousMigration = migration
         void migration.catch(() => transaction.abort())
       }
       if (oldVersion < 6) {
         // Идентичность артефакта появится при следующей атомарной замене набора.
+      }
+      if (oldVersion < 7) {
+        const store = transaction.objectStore('settings')
+        void previousMigration.then(async () => {
+          const [record, meta] = await Promise.all([store.get('locationChoice'), transaction.objectStore('meta').get('current')])
+          if (record?.key !== 'locationChoice') return
+          await store.put({ key: 'locationChoice', value: migratePlaceChoice(record.value, meta?.locations ?? []) })
+        }).catch(() => transaction.abort())
       }
     },
   })
@@ -314,8 +328,13 @@ export function getSetting<Key extends SettingKey>(
 
 export function saveLocationChoice(
   choice: LocationChoice,
+  isCurrent: () => boolean = () => true,
 ): Promise<Result<void, StorageFailure>> {
-  return setSetting('locationChoice', choice)
+  return storageResult(async () => {
+    const database = await getDatabase()
+    if (!isCurrent()) return
+    await database.put('settings', { key: 'locationChoice', value: choice })
+  })
 }
 
 export function getLocationChoice(): Promise<

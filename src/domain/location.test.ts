@@ -53,21 +53,4 @@ describe('isConfirmedTatarstan', () => {
     })).toBe(false)
   })
 
-  it('принимает только ISO-код RU-TA из Nominatim', () => {
-    expect(isConfirmedTatarstan({
-      source: 'nominatim',
-      regionCode: 'RU-TA',
-    })).toBe(true)
-    expect(isConfirmedTatarstan({
-      source: 'nominatim',
-      regionCode: 'RU-MOW',
-    })).toBe(false)
-    expect(isConfirmedTatarstan({
-      source: 'nominatim',
-      regionCode: 'ru-ta',
-    })).toBe(false)
-    expect(isConfirmedTatarstan({
-      source: 'nominatim',
-    })).toBe(false)
-  })
 })

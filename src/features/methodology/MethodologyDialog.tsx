@@ -8,7 +8,6 @@ const ADHAN_METHODS_URL = 'https://github.com/batoulapps/adhan-js/blob/master/ME
 const GEONAMES_URL = 'https://www.geonames.org/'
 const CC_BY_URL = 'https://creativecommons.org/licenses/by/4.0/'
 const OPENSTREETMAP_URL = 'https://www.openstreetmap.org/copyright'
-const NOMINATIM_URL = 'https://nominatim.org/'
 
 interface MethodologyDialogProps {
   open: boolean
@@ -98,12 +97,12 @@ export function MethodologyDialog({
               (<a href={CC_BY_URL} target="_blank" rel="noreferrer">CC BY 4.0</a>).
             </p>
             <p>
-              При автоматическом определении местоположения, в том числе на старте с ранее
-              выданным разрешением, и после нажатия «Уточнить название онлайн» координаты,
-              округлённые до трёх знаков, отправляются в{' '}
-              <a href={NOMINATIM_URL} target="_blank" rel="noreferrer">Nominatim</a>.
-              Сервис используется для названия и кода региона на основе данных{' '}
-              <a href={OPENSTREETMAP_URL} target="_blank" rel="noreferrer">OpenStreetMap</a>.
+              Координаты не отправляются геокодерам. Название-ориентир находится в локальных
+              пакетах GeoNames, а территория Татарстана проверяется по локальной границе{' '}
+              <a href={OPENSTREETMAP_URL} target="_blank" rel="noreferrer">OpenStreetMap</a>
+              {' '}через geoBoundaries (ODbL). У границы или при недостаточной точности
+              используется расчёт. Для GPS внутри подтверждённой территории выбирается
+              таблица ближайшего опубликованного пункта, а не отдельная таблица для точки GPS.
             </p>
           </section>
 

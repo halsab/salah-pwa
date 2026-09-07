@@ -47,12 +47,6 @@ export default defineConfig({
           functions: 100,
           lines: 96
         },
-        'src/data/reverseGeocoder.ts': {
-          statements: 98,
-          branches: 92,
-          functions: 100,
-          lines: 97
-        },
         'src/data/prayerDatasetManifest.ts': {
           statements: 86,
           branches: 90,

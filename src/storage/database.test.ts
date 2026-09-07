@@ -52,9 +52,9 @@ async function createVersion5Database(fixture: {
     locations: PrayerDataset['locations']
   }
   settings?: ReadonlyArray<{ key: string; value: unknown }>
-}): Promise<void> {
+}, version = 5): Promise<void> {
   await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('salah', 5)
+    const request = indexedDB.open('salah', version)
     request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
     request.onupgradeneeded = () => {
       const database = request.result
@@ -165,7 +165,7 @@ describe('database', () => {
     })
   })
 
-  it('открывает настоящую v5 как v6 без потери расписания, meta и настроек', async () => {
+  it('открывает настоящую v5 как v7 без потери расписания, meta и настроек', async () => {
     const choice: LocationChoice = {
       mode: 'official',
       locationId: 'kazan',
@@ -196,11 +196,11 @@ describe('database', () => {
       dataset.days[0],
     )
     expect(unwrap(await getDatasetMeta())).toEqual(legacyMeta)
-    expect(unwrap(await getLocationChoice())).toEqual(choice)
+    expect(unwrap(await getLocationChoice())).toMatchObject(choice)
     expect(unwrap(await getSetting('calculationSettings'))).toEqual(
       calculationSettings,
     )
-    expect(await getDatabaseVersion()).toBe(6)
+    expect(await getDatabaseVersion()).toBe(7)
   })
 
   it('читает legacy meta без идентичности артефакта для офлайн-fallback', async () => {
@@ -263,10 +263,10 @@ describe('database', () => {
 
     unwrap(await saveLocationChoice(choice))
 
-    expect(unwrap(await getLocationChoice())).toEqual(choice)
+    expect(unwrap(await getLocationChoice())).toMatchObject(choice)
   })
 
-  it('мигрирует GPS-выбор v4 в автоматический calculated-выбор v5', async () => {
+  it('мигрирует GPS-выбор v4 в автоматический calculated-выбор v7', async () => {
     const legacyCoordinates = {
       latitude: 55.7558,
       longitude: 37.6173,
@@ -281,12 +281,12 @@ describe('database', () => {
       { key: 'locationId', value: 'kazan' },
     ])
 
-    expect(unwrap(await getLocationChoice())).toEqual({
+    expect(unwrap(await getLocationChoice())).toMatchObject({
       mode: 'calculated',
       coordinates: legacyCoordinates,
       source: 'automatic',
     })
-    expect(await getDatabaseVersion()).toBe(6)
+    expect(await getDatabaseVersion()).toBe(7)
   })
 
   it('мигрирует preset-выбор v4 в ручной calculated-выбор', async () => {
@@ -303,7 +303,7 @@ describe('database', () => {
       { key: 'locationMode', value: 'calculated' },
     ])
 
-    expect(unwrap(await getLocationChoice())).toEqual({
+    expect(unwrap(await getLocationChoice())).toMatchObject({
       mode: 'calculated',
       coordinates: legacyCoordinates,
       source: 'manual',
@@ -316,7 +316,7 @@ describe('database', () => {
       { key: 'locationMode', value: 'official' },
     ])
 
-    expect(unwrap(await getLocationChoice())).toEqual({
+    expect(unwrap(await getLocationChoice())).toMatchObject({
       mode: 'official',
       locationId: 'naberezhnye-chelny',
       source: 'manual',
@@ -327,7 +327,7 @@ describe('database', () => {
     await createLegacyVersion4Database([])
 
     expect(unwrap(await getLocationChoice())).toBeUndefined()
-    expect(await getDatabaseVersion()).toBe(6)
+    expect(await getDatabaseVersion()).toBe(7)
   })
 
   it('возвращает типизированную ошибку недоступного IndexedDB', async () => {
@@ -359,4 +359,27 @@ describe('согласованное окно расписаний', () => {
     unwrap(await replaceDataset(updated, { ...identity, version: 'v2', sha256: 'hash2' }))
     expect(await getPrayerDays('kazan', ['2026-09-01'], revision)).toEqual({ ok: false, error: { kind: 'data', reason: 'invalid' } })
   })
+})
+
+it('migrates real v6 Nominatim names without requesting the network or deleting the place', async () => {
+  const legacy = { latitude: 55.8, longitude: 49.1, accuracy: 20, timestamp: 123,
+    timeZone: 'Europe/Moscow', name: 'Сохранённое название', nameSource: 'nominatim', source: 'gps' }
+  await createVersion5Database({ settings: [{ key: 'locationChoice', value: { mode: 'calculated', source: 'automatic', coordinates: legacy } }] }, 6)
+  const choice = unwrap(await getLocationChoice())
+  expect(choice?.place).toMatchObject({ name: legacy.name, latitude: legacy.latitude, longitude: legacy.longitude,
+    selection: 'gps', automaticTimeZone: { id: 'Europe/Moscow', source: 'legacy' } })
+  expect(choice?.place).not.toHaveProperty('nameSource')
+  expect(await getDatabaseVersion()).toBe(7)
+})
+
+it('checks operation epoch after opening IndexedDB so obsolete saves do not start', async () => {
+  unwrap(await saveLocationChoice({ mode: 'official', locationId: 'kazan', source: 'manual' }, () => false))
+  expect(unwrap(await getLocationChoice())).toBeUndefined()
+})
+
+it('recovers after a browser rejects opening a newer incompatible database', async () => {
+  await createVersion5Database({}, 8)
+  expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
+  await deleteSalahDatabase()
+  expect(unwrap(await getLocationChoice())).toBeUndefined()
 })

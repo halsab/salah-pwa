@@ -1,3 +1,4 @@
+import type { Place } from '../../domain/place'
 import {
   memo,
   useEffect,
@@ -16,7 +17,7 @@ import {
 } from '../../domain/cities'
 import type { DataFailure } from '../../domain/errors'
 import type { Result } from '../../domain/result'
-import type { PrayerLocation, SavedCoordinates } from '../../domain/types'
+import type { PrayerLocation } from '../../domain/types'
 import {
   CheckIcon,
   CloseIcon,
@@ -32,13 +33,14 @@ interface LocationDialogProps {
   cityCatalogStatus: CityCatalogStatus
   selectedOfficialId: string | null
   selectedCityId: number | null
-  calculatedLocation: SavedCoordinates | null
+  place: Place | null
+  officialLocation: PrayerLocation | null
+  onTimeZoneChange: (zone: string | null) => Promise<string>
   open: boolean
   onClose: () => void
   onSelectOfficial: (locationId: string) => void
   onSelectCity: (city: City) => void
   onLocate: () => Promise<void>
-  onReverse: () => Promise<void>
   onLoadCities: () => void
   onSearchCities: (query: string) => Promise<Result<CitySearchResult, DataFailure>>
 }
@@ -309,12 +311,13 @@ function OpenLocationDialog({
   cityCatalogStatus,
   selectedOfficialId,
   selectedCityId,
-  calculatedLocation,
+  place,
+  officialLocation,
+  onTimeZoneChange,
   onClose,
   onSelectOfficial,
   onSelectCity,
   onLocate,
-  onReverse,
   onLoadCities,
   onSearchCities,
 }: OpenLocationDialogProps) {
@@ -327,7 +330,6 @@ function OpenLocationDialog({
   const [previousVersion, setPreviousVersion] = useState(false)
   const [retrySearch, setRetrySearch] = useState(0)
   const [locating, setLocating] = useState(false)
-  const [resolving, setResolving] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const dialogRef = useModalDialog(true, onClose, searchRef)
@@ -408,7 +410,7 @@ function OpenLocationDialog({
         ref={dialogRef}
         aria-labelledby={searchMode ? 'location-search-title' : 'location-dialog-title'}
         aria-modal="true"
-        className={`location-dialog${searchMode ? ' location-search-dialog' : ''}`}
+        className={`location-dialog${searchMode ? ' location-search-dialog' : ' location-choice-dialog'}`}
         role="dialog"
         tabIndex={-1}
       >
@@ -451,35 +453,18 @@ function OpenLocationDialog({
               <strong>В других регионах</strong> — расчёт по вашим настройкам.
             </p>
 
+            {place ? <PlaceDetails key={place.id} place={place} officialLocation={officialLocation} onTimeZoneChange={onTimeZoneChange} /> : null}
             <div className="location-actions">
               <button
                 className="auto-location-button"
                 type="button"
                 onClick={() => void runLocationAction(onLocate, setLocating)}
-                disabled={locating || resolving}
+                disabled={locating}
               >
                 <CompassIcon />
                 <span>{locating ? 'Определяем…' : 'Определить автоматически'}</span>
               </button>
 
-              {calculatedLocation ? (
-                <button
-                  className="reverse-location-button"
-                  type="button"
-                  onClick={() => void runLocationAction(onReverse, setResolving)}
-                  disabled={
-                    locating ||
-                    resolving ||
-                    calculatedLocation.nameSource === 'nominatim'
-                  }
-                >
-                  {resolving
-                    ? 'Уточняем…'
-                    : calculatedLocation.nameSource === 'nominatim'
-                      ? 'Название уточнено онлайн'
-                      : 'Уточнить название онлайн'}
-                </button>
-              ) : null}
               {locationError ? <p className="location-error" role="alert">{locationError}</p> : null}
             </div>
 
@@ -516,11 +501,55 @@ function OpenLocationDialog({
                 (<a href={cityCatalog.source.licenseUrl} target="_blank" rel="noreferrer">CC BY 4.0</a>) ·{' '}
               </>
             ) : null}
-            Онлайн:{' '}
+            Локальные границы:{' '}
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>
           </p>
         )}
       </section>
     </div>
+  )
+}
+
+function PlaceDetails({ place, officialLocation, onTimeZoneChange }: {
+  place: Place
+  officialLocation: PrayerLocation | null
+  onTimeZoneChange: (zone: string | null) => Promise<string>
+}) {
+  const [zone, setZone] = useState(place.timeZone)
+  const [error, setError] = useState<string | null>(null)
+  const changeZone = async (value: string | null) => {
+    try {
+      setZone(await onTimeZoneChange(value))
+      setError(null)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Неизвестная часовая зона')
+    }
+  }
+  const sourceLabel = place.timeZoneOverride ? 'выбрана вручную'
+    : place.automaticTimeZone.source === 'boundary' ? 'по локальной границе Татарстана'
+      : place.automaticTimeZone.source === 'city' ? 'из данных населённого пункта'
+        : place.automaticTimeZone.source === 'device' ? 'зона устройства: локальное покрытие недостаточно'
+          : 'сохранённая зона: происхождение неизвестно'
+  return (
+    <details className="place-details">
+      <summary>Сведения о месте и часовой пояс</summary>
+      <p>{place.name} · {place.selection === 'gps' ? 'GPS' : 'Выбор населённого пункта'}</p>
+      <p>{place.latitude.toFixed(5)}, {place.longitude.toFixed(5)}{place.accuracy !== null ? ` · точность ±${Math.round(place.accuracy)} м` : ''}</p>
+      <p>Регион: {place.region?.name || 'не подтверждён локальными данными'}</p>
+      {place.nearbyCity ? <p>Ориентир: {place.nearbyCity.name} · {place.nearbyCity.distanceKm.toFixed(1)} км. Для расчёта сохранена точка GPS.</p> : null}
+      {place.coverage === 'uncertain' ? <p>Точность GPS или близость границы не позволяют подтвердить территорию ДУМ РТ.</p> : null}
+      {place.coverage === 'unavailable' ? <p>Локальные геоданные недоступны; покрытие ДУМ РТ не подтверждено.</p> : null}
+      <p role="status">Часовой пояс: {place.timeZone} · {sourceLabel}</p>
+      <label className="timezone-label">Часовой пояс IANA
+        <input value={zone} onChange={event => setZone(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Europe/Moscow" />
+      </label>
+      <div className="timezone-actions">
+        <button type="button" className="city-catalog-retry" onClick={() => void changeZone(zone.trim())}>Применить часовой пояс</button>
+        <button type="button" className="city-catalog-retry" onClick={() => void changeZone(null)}>Определять часовой пояс автоматически</button>
+      </div>
+      {error ? <p role="alert">{error}</p> : null}
+      {officialLocation ? <p>Таблица ДУМ РТ опубликована для {officialLocation.name}. Её часы и календарная дата показаны в Europe/Moscow, независимо от зоны места. Ручная зона не изменяет моменты намаза.</p> : null}
+      <p>Новый выбор города сбрасывает ручную зону. Повторное определение GPS сохраняет её для текущего GPS-места.</p>
+    </details>
   )
 }

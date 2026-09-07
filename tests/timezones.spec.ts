@@ -153,7 +153,7 @@ test('ручной город сохраняется при доступной �
     locationId: 'naberezhnye-chelny',
     source: 'manual',
   }
-  await expect.poll(() => readSavedLocationChoice(page)).toEqual(savedChoice)
+  await expect.poll(() => readSavedLocationChoice(page)).toMatchObject(savedChoice)
 
   await page.reload()
 
@@ -164,7 +164,7 @@ test('ручной город сохраняется при доступной �
     getCurrentPosition: 0,
     watchPosition: 0,
   })
-  expect(await readSavedLocationChoice(page)).toEqual(savedChoice)
+  expect(await readSavedLocationChoice(page)).toMatchObject(savedChoice)
   expect(reverseRequests).toBe(0)
 })
 
@@ -196,4 +196,49 @@ test('около полуночи сохраняет поздний сухур �
   await expect(page.getByText(/Дата завершения сухура 23:54.*не уточнена/)).toBeVisible()
   await expect(page.locator('.next-name')).toHaveText('Иша · 22:00')
   await expect(page.getByRole('timer')).toHaveAccessibleName('До утреннего в мечети, осталось 02:12:00')
+})
+
+test('manual timezone, DST and automatic reset preserve place and calculation settings', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-03-29T01:30:00Z'))
+  await page.goto('./')
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByRole('button', { name: 'Найти город или район' }).click()
+  await page.getByRole('searchbox').fill('Берлин')
+  await page.getByRole('button', { name: 'Берлин, Берлин, Германия', exact: true }).click()
+  await expect(page.getByRole('button', { name: /Берлин.*UTC\+2/ })).toBeVisible()
+  await page.getByRole('button', { name: /Берлин/ }).click()
+  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
+  await expect(page.getByText(/Часовой пояс: Europe\/Berlin · из данных/)).toBeVisible()
+  await page.getByLabel('Часовой пояс IANA').fill('America/New_York')
+  await page.getByRole('button', { name: 'Применить часовой пояс', exact: true }).click()
+  await expect(page.getByText(/Часовой пояс: America\/New_York · выбрана вручную/)).toBeVisible()
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-03-28')
+  await expect.poll(() => readSavedLocationChoice(page)).toMatchObject({ place: { timeZoneOverride: { id: 'America/New_York', source: 'user' } } })
+  await page.reload()
+  await page.getByRole('button', { name: /Берлин/ }).click()
+  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
+  await expect(page.getByLabel('Часовой пояс IANA')).toHaveValue('America/New_York')
+  await page.getByRole('button', { name: 'Определять часовой пояс автоматически' }).click()
+  await expect(page.getByText(/Часовой пояс: Europe\/Berlin · из данных/)).toBeVisible()
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-03-29')
+})
+
+test('official table retains provider instants with a manual place timezone', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-04T09:30:00Z'))
+  await page.goto('./')
+  const timer = await page.getByRole('timer').getAttribute('aria-label')
+  if (!timer) throw new Error('Таймер не отображается')
+  const times = await page.locator('.prayer-time').allTextContents()
+  expect(times).toHaveLength(8)
+  await page.getByRole('button', { name: /Казань/ }).click()
+  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
+  await page.getByLabel('Часовой пояс IANA').fill('America/New_York')
+  await page.getByRole('button', { name: 'Применить часовой пояс', exact: true }).click()
+  await expect(page.getByText(/Её часы и календарная дата показаны в Europe\/Moscow/)).toBeVisible()
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await expect(page.getByRole('timer')).toHaveAttribute('aria-label', timer)
+  expect(await page.locator('.prayer-time').allTextContents()).toEqual(times)
+  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-09-04')
 })

@@ -20,7 +20,7 @@ const CONTENT_SECURITY_POLICY = [
   "style-src-attr 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self'",
-  "connect-src 'self' https://nominatim.openstreetmap.org",
+  "connect-src 'self'",
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-src 'none'",
@@ -60,7 +60,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['app-icon.svg', 'apple-touch-icon.png', 'paper-texture.svg'],
+      includeAssets: ['app-icon.svg', 'apple-touch-icon.png', 'paper-texture.svg', 'data/ODbL-1.0.txt', 'data/tatarstan-boundary.NOTICE.txt'],
       manifest: {
         name: 'Salah — времена намаза',
         short_name: 'Salah',

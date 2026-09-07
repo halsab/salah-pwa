@@ -10,7 +10,7 @@ const CSP = [
   "style-src-attr 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self'",
-  "connect-src 'self' https://nominatim.openstreetmap.org",
+  "connect-src 'self'",
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-src 'none'",
@@ -71,19 +71,9 @@ test('production CSP разрешает приложение и блокируе
     if (url.origin === 'http://127.0.0.1:4175') localFailures.push(url.pathname)
   })
 
-  let reverseUrl: URL | undefined
-  await page.route('https://nominatim.openstreetmap.org/**', async (route) => {
-    reverseUrl = new URL(route.request().url())
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        address: {
-          city: 'Москва',
-          country: 'Россия',
-          'ISO3166-2-lvl4': 'RU-MOW',
-        },
-      }),
-    })
+  const externalRequests: string[] = []
+  page.on('request', request => {
+    if (new URL(request.url()).origin !== 'http://127.0.0.1:4175') externalRequests.push(request.url())
   })
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
@@ -104,8 +94,8 @@ test('production CSP разрешает приложение и блокируе
 
   await page.getByRole('button', { name: /Казань/ }).click()
   await page.getByRole('button', { name: 'Определить автоматически' }).click()
-  await expect(page.getByRole('button', { name: /Москва, Россия/ })).toBeVisible()
-  expect(reverseUrl?.hostname).toBe('nominatim.openstreetmap.org')
+  await expect(page.getByRole('button', { name: /Моё местоположение|Рядом: Москва/ })).toBeVisible()
+  expect(externalRequests).toEqual([])
 
   await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'QR-код Salah' })).toBeVisible()

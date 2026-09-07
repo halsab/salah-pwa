@@ -206,7 +206,6 @@ button:disabled {
 .today-button,
 .primary-button,
 .auto-location-button,
-.reverse-location-button,
 .search-control,
 .location-option {
   border: 2px solid var(--outline);
@@ -834,14 +833,6 @@ button:disabled {
   gap: 9px;
 }
 
-.reverse-location-button {
-  min-height: 46px;
-  padding: 8px 14px;
-  border-radius: 14px;
-  color: var(--ink);
-  background: transparent;
-  font-weight: 500;
-}
 
 .location-attribution {
   margin: 0;
@@ -1304,7 +1295,6 @@ button:disabled {
 @media (hover: hover) and (pointer: fine) {
   .icon-button:not(:disabled):hover,
   .today-button:hover,
-  .reverse-location-button:hover,
   .location-option:hover {
     background: color-mix(in srgb, var(--accent) 16%, var(--paper-strong));
   }
@@ -1337,7 +1327,6 @@ button:disabled {
 .primary-button:active,
 .auto-location-button:active,
 .search-entry-button:active,
-.reverse-location-button:active,
 .location-option:active,
 .share-button:active {
   transform: scale(0.97);
@@ -1900,3 +1889,42 @@ button:disabled {
     transition-duration: 0.01ms !important;
   }
 }
+
+.place-details {
+  margin-block: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+
+.place-details summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.place-details p,
+.location-schedule-note {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.location-schedule-note { margin: 12px 20px; }
+.timezone-label { display: grid; gap: 6px; }
+.timezone-label input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  font: inherit;
+}
+.timezone-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+
+.location-choice-dialog { overflow-y: auto; }
+.location-choice-dialog > * { flex-shrink: 0; }
+.location-choice-dialog .location-results { flex: none; overflow: visible; }

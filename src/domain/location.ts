@@ -2,17 +2,12 @@ import type { PrayerLocation } from './types'
 
 const EARTH_RADIUS_KM = 6_371
 const TATARSTAN_GEONAMES_ADMIN1_CODE = '73'
-const TATARSTAN_ISO_REGION_CODE = 'RU-TA'
 
 export type LocationRegionEvidence =
   | {
       readonly source: 'geonames'
       readonly countryCode?: string
       readonly admin1Code?: string
-    }
-  | {
-      readonly source: 'nominatim'
-      readonly regionCode?: string
     }
 
 function toRadians(degrees: number): number {
@@ -61,10 +56,6 @@ export function findNearestLocation(
 }
 
 export function isConfirmedTatarstan(evidence: LocationRegionEvidence): boolean {
-  if (evidence.source === 'geonames') {
-    return evidence.countryCode === 'RU'
-      && evidence.admin1Code === TATARSTAN_GEONAMES_ADMIN1_CODE
-  }
-
-  return evidence.regionCode === TATARSTAN_ISO_REGION_CODE
+  return evidence.countryCode === 'RU'
+    && evidence.admin1Code === TATARSTAN_GEONAMES_ADMIN1_CODE
 }

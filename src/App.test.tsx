@@ -1,3 +1,5 @@
+import geometry from '../public/data/tatarstan-boundary.json'
+import { parseCoverageGeometry } from './domain/localGeography'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -118,10 +120,7 @@ function createServices(
     saveOfficialLocation: vi.fn().mockResolvedValue(success(undefined)),
     saveCalculatedLocation: vi.fn().mockResolvedValue(success(undefined)),
     saveCalculationSettings: vi.fn().mockResolvedValue(success(undefined)),
-    resolvePlaceName: vi.fn().mockResolvedValue(success({
-      name: 'Набережные Челны, Россия',
-      regionEvidence: { source: 'nominatim', regionCode: 'RU-TA' },
-    })),
+    loadGeography: vi.fn().mockResolvedValue(parseCoverageGeometry(geometry)),
     getPermission: vi.fn().mockResolvedValue('prompt'),
     getPosition: vi.fn().mockResolvedValue(success({
       latitude: 55.742,
@@ -161,8 +160,7 @@ describe('Salah', () => {
           timestamp: 1_788_256_800_000,
           name: 'Istanbul, Турция',
           cityId: 745044,
-          nameSource: 'geonames',
-          source: 'preset',
+              source: 'preset',
           },
         },
       })),
@@ -384,17 +382,19 @@ describe('Salah', () => {
 
     render(<App services={services} />)
 
-    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Моё местоположение/ })).toBeVisible()
     expect(services.getPermission).toHaveBeenCalledTimes(1)
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
     expect(services.saveOfficialLocation).toHaveBeenCalledWith(
       'naberezhnye-chelny',
       'automatic',
+      expect.objectContaining({ selection: 'gps' }),
+      expect.any(Function),
     )
     expect(services.cities.load).not.toHaveBeenCalled()
     expect(services.cities.search).not.toHaveBeenCalled()
-    expect(services.cities.findNearest).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).toHaveBeenCalled()
   })
 
   it('игнорирует позднее разрешение startup permission после ручного выбора', async () => {
@@ -423,76 +423,10 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(services.getPosition).not.toHaveBeenCalled()
     expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual', expect.objectContaining({ selection: 'official' }), expect.any(Function))
   })
 
-  it('игнорирует поздние координаты после ручного выбора', async () => {
-    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
-    const services = createServices({
-      getPosition: vi.fn()
-        .mockReturnValueOnce(coarse.promise)
-        .mockResolvedValue(success({
-          latitude: 55.7946,
-          longitude: 49.1115,
-          accuracy: 10,
-          timestamp: 200,
-        })),
-    })
-    const user = userEvent.setup()
-    render(<App services={services} />)
 
-    await user.click(await screen.findByRole('button', { name: /Казань/ }))
-    await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
-    await waitFor(() => expect(services.getPosition).toHaveBeenCalledWith('coarse'))
-    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => {
-      coarse.resolve(success({
-        latitude: 55.7946,
-        longitude: 49.1115,
-        accuracy: 500,
-        timestamp: 100,
-      }))
-      await coarse.promise
-    })
-
-    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(services.getPosition).toHaveBeenCalledTimes(1)
-    expect(services.resolvePlaceName).not.toHaveBeenCalled()
-    expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
-  })
-
-  it('игнорирует позднее подтверждение региона после ручного выбора', async () => {
-    const reverse = deferred<Awaited<ReturnType<AppServices['resolvePlaceName']>>>()
-    const position = success({
-      latitude: 55.7946,
-      longitude: 49.1115,
-      accuracy: 10,
-      timestamp: 200,
-    })
-    const services = createServices({
-      getPosition: vi.fn().mockResolvedValue(position),
-      resolvePlaceName: vi.fn().mockReturnValue(reverse.promise),
-    })
-    const user = userEvent.setup()
-    render(<App services={services} />)
-
-    await user.click(await screen.findByRole('button', { name: /Казань/ }))
-    await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
-    await waitFor(() => expect(services.resolvePlaceName).toHaveBeenCalledTimes(1))
-    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => {
-      reverse.resolve(success({
-        name: 'Казань, Россия',
-        regionEvidence: { source: 'nominatim', regionCode: 'RU-TA' },
-      }))
-      await reverse.promise
-    })
-
-    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(services.saveOfficialLocation).toHaveBeenCalledTimes(1)
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
-  })
 
   it('меняет населённый пункт через доступный диалог', async () => {
     const user = userEvent.setup()
@@ -508,7 +442,7 @@ describe('Salah', () => {
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(screen.getByText('16:37')).toBeVisible()
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual', expect.objectContaining({ selection: 'official' }), expect.any(Function))
   })
 
   it('переключает шит в сфокусированный режим поиска', async () => {
@@ -711,17 +645,19 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
-    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Моё местоположение/ })).toBeVisible()
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
     expect(services.getPosition).toHaveBeenCalledTimes(2)
     expect(services.getPermission).not.toHaveBeenCalled()
     expect(services.cities.load).not.toHaveBeenCalled()
     expect(services.cities.search).not.toHaveBeenCalled()
-    expect(services.cities.findNearest).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).toHaveBeenCalled()
     expect(services.saveOfficialLocation).toHaveBeenCalledWith(
       'naberezhnye-chelny',
       'automatic',
+      expect.objectContaining({ selection: 'gps' }),
+      expect.any(Function),
     )
   })
 
@@ -738,17 +674,13 @@ describe('Salah', () => {
       getPosition: vi.fn()
         .mockResolvedValueOnce(success(coarse))
         .mockResolvedValueOnce(success(precise)),
-      resolvePlaceName: vi.fn().mockResolvedValue(success({
-        name: 'Москва, Россия',
-        regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
-      })),
     })
     render(<App services={services} />)
 
     await user.click(await screen.findByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
-    expect(await screen.findByRole('button', { name: /Москва, Россия/i })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Моё местоположение/i })).toBeVisible()
     const schedule = screen.getByRole('list', { name: 'Времена намаза' })
     expect(within(schedule).getAllByRole('listitem')).toHaveLength(7)
     expect(within(schedule).getByText('Фаджр')).toBeVisible()
@@ -758,16 +690,15 @@ describe('Salah', () => {
     expect(screen.getByRole('button', { name: 'Методика' })).toBeVisible()
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
-    expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({
       ...precise,
       timeZone: 'Europe/Moscow',
-      name: 'Москва, Россия',
-      nameSource: 'nominatim',
-      source: 'gps',
-    }, 'automatic')
+      name: 'Моё местоположение',
+      selection: 'gps',
+    }), 'automatic', expect.any(Function))
     expect(services.cities.load).not.toHaveBeenCalled()
     expect(services.cities.search).not.toHaveBeenCalled()
-    expect(services.cities.findNearest).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).toHaveBeenCalled()
   })
 
   it('считает по грубым координатам, если точное определение не удалось', async () => {
@@ -782,10 +713,6 @@ describe('Salah', () => {
       getPosition: vi.fn()
         .mockResolvedValueOnce(success(coarse))
         .mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'timeout' })),
-      resolvePlaceName: vi.fn().mockResolvedValue(failure({
-        kind: 'data',
-        reason: 'offline',
-      })),
     })
     render(<App services={services} />)
 
@@ -793,11 +720,11 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
     expect(await screen.findByText('Фаджр')).toBeVisible()
-    expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({
       ...coarse,
       timeZone: 'Europe/Moscow',
-      source: 'gps',
-    }, 'automatic')
+      selection: 'gps',
+    }), 'automatic', expect.any(Function))
   })
 
   it('рассчитывает по GPS без названия города, когда справочник недоступен', async () => {
@@ -813,10 +740,6 @@ describe('Salah', () => {
       getPosition: vi.fn()
         .mockResolvedValueOnce(success(coarse))
         .mockResolvedValueOnce(success(precise)),
-      resolvePlaceName: vi.fn().mockResolvedValue(failure({
-        kind: 'data',
-        reason: 'offline',
-      })),
       getDeviceTimeZone: () => 'America/Los_Angeles',
     })
     render(<App services={services} />)
@@ -825,16 +748,16 @@ describe('Salah', () => {
     expect(services.cities.load).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
-    expect(await screen.findByRole('button', { name: /Текущее местоположение/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Моё местоположение/ })).toBeVisible()
     expect(screen.getByRole('list', { name: 'Времена намаза' }).children).toHaveLength(7)
-    expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({
       ...precise,
       timeZone: 'America/Los_Angeles',
-      source: 'gps',
-    }, 'automatic')
+      selection: 'gps',
+    }), 'automatic', expect.any(Function))
     expect(services.cities.load).not.toHaveBeenCalled()
     expect(services.cities.search).not.toHaveBeenCalled()
-    expect(services.cities.findNearest).not.toHaveBeenCalled()
+    expect(services.cities.findNearest).toHaveBeenCalled()
   })
 
   it('ищет и выбирает город из офлайн-справочника', async () => {
@@ -849,7 +772,7 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Стамбул, Стамбул, Турция' }))
 
     expect(await screen.findByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
-    expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({
       latitude: 41.0138,
       longitude: 28.9497,
       timeZone: 'Europe/Istanbul',
@@ -857,9 +780,8 @@ describe('Salah', () => {
       timestamp: 1_788_256_800_000,
       name: 'Стамбул, Стамбул, Турция',
       cityId: 745044,
-      nameSource: 'geonames',
-      source: 'preset',
-    }, 'manual')
+      selection: 'city',
+    }), 'manual', expect.any(Function))
   })
 
   it('назначает официальное расписание только городу GeoNames из RU.73', async () => {
@@ -872,7 +794,7 @@ describe('Salah', () => {
     await user.type(screen.getByRole('searchbox'), 'Казань')
     await user.click(await screen.findByRole('button', { name: 'Казань, Татарстан, Россия' }))
 
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'manual')
+    expect(services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'manual', expect.objectContaining({ selection: 'city' }), expect.any(Function))
     expect(services.saveCalculatedLocation).not.toHaveBeenCalled()
   })
 
@@ -951,89 +873,7 @@ describe('Salah', () => {
     expect(within(searchDialog).getByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible()
   })
 
-  it('отправляет округлённую геопозицию во внешний сервис только по кнопке и кеширует название', async () => {
-    const user = userEvent.setup()
-    const calculatedLocation = {
-      latitude: 55.7558,
-      longitude: 37.6173,
-      timeZone: 'Europe/Moscow',
-      accuracy: 12,
-      timestamp: 200,
-      name: 'Moscow, Россия',
-      cityId: 524901,
-      nameSource: 'geonames' as const,
-      source: 'gps' as const,
-    }
-    const services = createServices({
-      initialize: vi.fn().mockResolvedValue(initialized({
-        locationChoice: {
-          mode: 'calculated',
-          source: 'manual',
-          coordinates: calculatedLocation,
-        },
-      })),
-      resolvePlaceName: vi.fn().mockResolvedValue(success({
-        name: 'Москва, Россия',
-        regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
-      })),
-    })
-    render(<App services={services} />)
 
-    expect(await screen.findByRole('button', { name: /Moscow, Россия/ })).toBeVisible()
-    expect(services.resolvePlaceName).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: /Moscow, Россия/ }))
-    expect(screen.queryByText(/приблизительные координаты передаются OpenStreetMap/i)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Уточнить название онлайн' }))
-
-    expect(services.resolvePlaceName).toHaveBeenCalledWith(calculatedLocation)
-    expect(services.saveCalculatedLocation).toHaveBeenCalledWith({
-      ...calculatedLocation,
-      name: 'Москва, Россия',
-      nameSource: 'nominatim',
-    }, 'manual')
-    expect(screen.getByText('Москва, Россия')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Название уточнено онлайн' })).toBeDisabled()
-  })
-
-  it('игнорирует позднее уточнение названия после нового ручного выбора', async () => {
-    const calculatedLocation = {
-      latitude: 55.7558,
-      longitude: 37.6173,
-      timeZone: 'Europe/Moscow',
-      accuracy: 12,
-      timestamp: 200,
-      source: 'gps' as const,
-    }
-    const reverse = deferred<Awaited<ReturnType<AppServices['resolvePlaceName']>>>()
-    const services = createServices({
-      initialize: vi.fn().mockResolvedValue(initialized({
-        locationChoice: {
-          mode: 'calculated',
-          source: 'manual',
-          coordinates: calculatedLocation,
-        },
-      })),
-      resolvePlaceName: vi.fn().mockReturnValue(reverse.promise),
-    })
-    const user = userEvent.setup()
-    render(<App services={services} />)
-
-    await user.click(await screen.findByRole('button', { name: /Текущее местоположение/ }))
-    await user.click(screen.getByRole('button', { name: 'Уточнить название онлайн' }))
-    await waitFor(() => expect(services.resolvePlaceName).toHaveBeenCalledTimes(1))
-    await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-    await act(async () => {
-      reverse.resolve(success({
-        name: 'Москва, Россия',
-        regionEvidence: { source: 'nominatim', regionCode: 'RU-MOW' },
-      }))
-      await reverse.promise
-    })
-
-    expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(services.saveCalculatedLocation).not.toHaveBeenCalled()
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual')
-  })
 
   it('сохраняет Аср, профиль и северное правило независимо', async () => {
     const user = userEvent.setup()
@@ -1182,10 +1022,7 @@ describe('Salah', () => {
       'href',
       'https://www.openstreetmap.org/copyright',
     )
-    expect(within(dialog).getByRole('link', { name: 'Nominatim' })).toHaveAttribute(
-      'href',
-      'https://nominatim.org/',
-    )
+    expect(within(dialog).queryByRole('link', { name: 'Nominatim' })).not.toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
