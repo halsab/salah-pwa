@@ -1,20 +1,25 @@
+import { staticText } from '../../ui/staticText'
+import { useCallback, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
-import { effectiveCalculationSettings, selectionFromSettings } from '../../domain/calculationSettings'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
-import { useRef, type ReactNode, type RefObject } from 'react'
-
-import {
-  CALCULATION_PROFILES,
-  type CalculationProfileCapability,
-  type CalculationProfileId,
-  type CalculationSettings,
-  type HighLatitudeMethod,
-} from '../../domain/prayerCalculation'
+import { selectionFromSettings } from '../../domain/calculationSettings'
+import type { CalculationProfileCapability, CalculationProfileId, CalculationSettings } from '../../domain/prayerCalculation'
+import type { Appearance } from '../../storage/database'
+import { StaticContent } from '../../ui/StaticContent'
 import { CloseIcon } from '../../ui/Icons'
-import { ASR_METHOD_LABELS } from '../../ui/calculationLabels'
 import { useDialogViewport, useModalDialog } from '../../ui/dialogHooks'
+import { AdvancedSettings } from './AdvancedSettings'
 
 interface SettingsDialogProps {
+  returnFocusId?: string | null
+  appearance?: Appearance
+  onAppearanceChange?: (value: Appearance) => void
+  placeLabel?: string
+  timeZone?: string
+  onOpenLocation?: () => void
+  onOpenShare?: () => void
+  version?: string | undefined
+  onReset?: () => Promise<boolean>
   persistenceNotice?: ReactNode
   preferences: SourcePreferences
   onSourceChange: (preferences: SourcePreferences) => void
@@ -27,147 +32,77 @@ interface SettingsDialogProps {
     profile: CalculationProfileId,
   ) => CalculationProfileCapability
   onClose: () => void
-  onChange: (settings: CalculationSettings) => void
   onOpenMethodology: () => void
 }
 
-export function SettingsDialog({
-  persistenceNotice,
-  preferences,
-  onSourceChange,
-  open,
-  officialMode,
-  settings,
-  focusMethodologyOnOpen,
-  methodologyTriggerRef,
-  getCalculationProfileCapability,
-  onClose,
-  onChange,
-  onOpenMethodology,
+type Page = 'base' | 'time' | 'advanced' | 'data' | 'confirm'
+const TITLES: Record<Page, string> = { base: 'Настройки', time: 'Время намаза', advanced: 'Расширенные настройки', data: 'Данные', confirm: 'Сбросить данные приложения?' }
+
+export function SettingsDialog({ persistenceNotice, preferences, onSourceChange, open, officialMode, settings,
+  focusMethodologyOnOpen, methodologyTriggerRef, getCalculationProfileCapability, onClose, onOpenMethodology,
+  returnFocusId, appearance = 'system', onAppearanceChange, placeLabel = 'Выберите место', timeZone, onOpenLocation,
+  onOpenShare, version, onReset,
 }: SettingsDialogProps) {
+  const [pageFocusId, setPageFocusId] = useState<string | null>(null)
+  const [page, setPage] = useState<Page>('base')
+  const [resetStatus, setResetStatus] = useState<'idle' | 'busy' | 'failed'>('idle')
   const closeRef = useRef<HTMLButtonElement>(null)
-  const dialogRef = useModalDialog(
-    open,
-    onClose,
-    focusMethodologyOnOpen ? methodologyTriggerRef : closeRef,
-  )
+  const go = useCallback((next: Page, focusId?: string) => {
+    setPage(next)
+    setPageFocusId(focusId ?? null)
+  }, [])
+  const close = useCallback(() => {
+    if (resetStatus === 'busy') return
+    if (page === 'confirm') { go('data', 'reset-trigger'); return }
+    setPage('base'); setPageFocusId(null); onClose()
+  }, [go, onClose, page, resetStatus])
+  const dialogRef = useModalDialog(open, close, focusMethodologyOnOpen ? methodologyTriggerRef : closeRef, page === 'base' && returnFocusId ? returnFocusId : pageFocusId)
   const layerRef = useDialogViewport(open)
   if (!open) return null
-  const ummAlQuraCapability = getCalculationProfileCapability('ummAlQura')
-
-  const update = <Key extends keyof CalculationSettings>(
-    key: Key,
-    value: CalculationSettings[Key],
-  ) => {
-    onChange(key === 'profile'
-      ? effectiveCalculationSettings({ profile: value as CalculationProfileId, overrides: preferences.mode === 'manual' && preferences.source.kind === 'calculated' ? preferences.source.calculation.overrides : {} })
-      : { ...settings, [key]: value })
-  }
-
-  return (
-    <div ref={layerRef} className="dialog-layer" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section
-        ref={dialogRef}
-        aria-labelledby="settings-dialog-title"
-        aria-modal="true"
-        className="location-dialog settings-dialog"
-        role="dialog"
-        tabIndex={-1}
-      >
-        <div className="dialog-handle" aria-hidden="true" />
-        <header className="dialog-header">
-          <h2 id="settings-dialog-title">Настройки расчёта</h2>
-          <button ref={closeRef} className="icon-button" type="button" aria-label="Закрыть" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </header>
-        {persistenceNotice}
-
-        <label className="setting-field">
-          <span>Источник</span>
-          <select aria-label="Источник" value={preferences.mode === 'automatic' ? 'automatic' : preferences.source.kind === 'official' ? preferences.source.provider : 'calculated'}
-            onChange={event => {
-              const value = event.target.value
-              onSourceChange(value === 'automatic' ? automaticPreferences(preferences.calculationDraft)
-                : value === 'calculated' ? manualCalculation(preferences.calculationDraft ?? selectionFromSettings(settings))
-                  : { mode: 'manual', source: { kind: 'official', provider: value }, ...(preferences.calculationDraft ? { calculationDraft: preferences.calculationDraft } : {}) })
-            }}>
-            <option value="automatic">Автоматически</option>
-            <option value="calculated">Ручной расчёт</option>
-            {PRAYER_PROVIDERS.map(provider => <option key={provider.id} value={provider.id}>Официальный · {provider.label}</option>)}
-          </select>
-        </label>
-        <p className="settings-mode-note">{preferences.mode === 'automatic' ? 'Автоматический выбор источника по месту и дате.' : 'Источник выбран вручную.'}</p>
-        {preferences.mode === 'manual' ? <button className="primary-button" type="button" onClick={() => onSourceChange(automaticPreferences(preferences.calculationDraft))}>Вернуться к автоматическому выбору</button> : null}
-
-        <p className="settings-mode-note" data-active={!officialMode || undefined}>
-          {officialMode
-            ? 'Сейчас используется официальное расписание. Изменение параметров включит ручной расчёт.'
-            : 'Сейчас расписание пересчитывается по этим параметрам. Изменения применяются сразу.'}
-        </p>
-
-        <label className="setting-field">
-          <span>Аср</span>
-          <select
-            aria-label="Аср"
-            value={settings.asrMethod}
-            onChange={(event) => update('asrMethod', event.target.value as CalculationSettings['asrMethod'])}
-          >
-            <option value="hanafi">{ASR_METHOD_LABELS.hanafi}</option>
-            <option value="standard">{ASR_METHOD_LABELS.standard}</option>
-          </select>
-        </label>
-
-        <label className="setting-field">
-          <span>Профиль</span>
-          <select
-            aria-label="Профиль"
-            aria-describedby={!ummAlQuraCapability.supported
-              ? 'umm-al-qura-capability'
-              : undefined}
-            value={settings.profile}
-            onChange={(event) => update('profile', event.target.value as CalculationProfileId)}
-          >
-            {CALCULATION_PROFILES.map((profile) => (
-              <option
-                disabled={profile.id === 'ummAlQura' && !ummAlQuraCapability.supported}
-                key={profile.id}
-                value={profile.id}
-              >
-                {profile.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {!ummAlQuraCapability.supported ? (
-          <p id="umm-al-qura-capability" className="settings-mode-note">
-            {ummAlQuraCapability.reason}
-          </p>
-        ) : null}
-
-        <label className="setting-field">
-          <span>Северные правила</span>
-          <select
-            aria-label="Северные правила"
-            value={settings.highLatitudeRule}
-            onChange={(event) => update('highLatitudeRule', event.target.value as HighLatitudeMethod)}
-          >
-            <option value="dumRt">ДУМ РТ · 120/90 мин</option>
-            <option value="seventhOfNight">1/7 ночи</option>
-            <option value="twilightAngle">Доля ночи по углу</option>
-            <option value="nearestDay">Ближайший день</option>
-          </select>
-        </label>
-
-        <button
-          ref={methodologyTriggerRef}
-          className="methodology-settings-trigger"
-          type="button"
-          onClick={onOpenMethodology}
-        >
-          Как рассчитывается время
-        </button>
-      </section>
-    </div>
-  )
+  const automatic = () => onSourceChange(automaticPreferences(preferences.calculationDraft))
+  return <div ref={layerRef} className="dialog-layer" onPointerDown={event => event.target === event.currentTarget && close()}>
+    <section ref={dialogRef} aria-labelledby="settings-dialog-title" aria-modal="true" className="location-dialog settings-dialog" role="dialog" tabIndex={-1}>
+      <div className="dialog-handle" aria-hidden="true" />
+      <header className="dialog-header"><h2 id="settings-dialog-title">{TITLES[page]}</h2><button ref={closeRef} className="icon-button" type="button" aria-label="Закрыть" onClick={close} disabled={resetStatus === 'busy'}><CloseIcon /></button></header>
+      {page !== 'base' && page !== 'confirm' ? <button type="button" className="settings-link" onClick={() => go(page === 'advanced' ? 'time' : 'base', page === 'advanced' ? 'advanced-trigger' : `${page}-trigger`)}>← Назад</button> : null}
+      {persistenceNotice}
+      {page === 'base' ? <>
+        <button className="settings-link" id="settings-location" type="button" onClick={onOpenLocation}>Местоположение · {placeLabel}</button>
+        {timeZone ? <p className="settings-mode-note">Часовой пояс места: {timeZone}. Зона таблицы указана в сведениях об источнике.</p> : null}
+        <button className="settings-link" id="time-trigger" type="button" onClick={() => go('time')}>Время намаза</button>
+        <p className="settings-mode-note">Определение времени: <strong>{preferences.mode === 'automatic' ? 'Автоматически — рекомендуется' : 'Вручную — автоматический выбор отключён'}</strong></p>
+        {preferences.mode === 'manual' ? <button className="primary-button" type="button" onClick={automatic}>Вернуться к автоматическому выбору</button> : null}
+        <label className="setting-field"><span>Оформление</span><select value={appearance} onChange={event => onAppearanceChange?.(event.target.value as Appearance)}><option value="system">Системное</option><option value="light">Светлое</option><option value="dark">Тёмное</option></select></label>
+        <button className="settings-link" id="data-trigger" type="button" onClick={() => go('data')}>Данные</button>
+        <button className="settings-link share-button" id="settings-share" type="button" onClick={onOpenShare}>Поделиться</button>
+        <a className="settings-link" href={`${import.meta.env.BASE_URL}privacy/`}>Конфиденциальность</a>
+        {version ? <small className="app-version">{version}</small> : null}
+      </> : null}
+      {page === 'time' ? <>
+        <p className="settings-mode-note">{preferences.mode === 'automatic' ? staticText('settings-copy-3') : 'Источник выбран вручную. Автоматический выбор отключён.'}</p>
+        {preferences.mode === 'manual' ? <button className="primary-button" type="button" onClick={automatic}>Вернуться к автоматическому выбору</button> : null}
+        <p className="settings-mode-note">{officialMode ? staticText('settings-copy-4') : 'Сейчас используется расчётное время.'}</p>
+        <p className="settings-mode-note">{staticText('settings-copy-1')}</p>
+        <label className="setting-field"><span>Источник</span><select aria-label="Источник" value={preferences.mode === 'automatic' ? 'automatic' : preferences.source.kind === 'official' ? preferences.source.provider : 'calculated'} onChange={event => {
+          const value = event.target.value
+          onSourceChange(value === 'automatic' ? automaticPreferences(preferences.calculationDraft) : value === 'calculated' ? manualCalculation(preferences.calculationDraft ?? selectionFromSettings(settings)) : { mode: 'manual', source: { kind: 'official', provider: value }, ...(preferences.calculationDraft ? {calculationDraft: preferences.calculationDraft} : {}) })
+        }}><option value="automatic">Автоматически — рекомендуется</option><option value="calculated">Ручной расчёт</option>{PRAYER_PROVIDERS.map(provider => <option key={provider.id} value={provider.id}>Официальный · {provider.label}</option>)}</select></label>
+        <button className="settings-link" id="advanced-trigger" type="button" onClick={() => go('advanced')}>Расширенные настройки</button>
+      </> : null}
+      {page === 'advanced' ? <AdvancedSettings settings={settings} onSourceChange={onSourceChange} getCapability={getCalculationProfileCapability} methodologyRef={methodologyTriggerRef} onOpenMethodology={onOpenMethodology} /> : null}
+      {page === 'data' ? <>
+        <p className="settings-mode-note">{staticText('settings-copy-2')}</p>
+        <button id="reset-trigger" className="settings-link danger-button" type="button" onClick={() => {setResetStatus('idle'); go('confirm')}}>Сбросить данные приложения</button>
+      </> : null}
+      {page === 'confirm' ? <>
+        <StaticContent id="reset-description" />
+        {resetStatus === 'failed' ? <p role="alert">Не удалось сбросить данные. Повторите попытку.</p> : null}
+        <button className="primary-button" type="button" disabled={resetStatus === 'busy'} onClick={() => go('data', 'reset-trigger')}>Отмена</button>
+        <button className="settings-link danger-button" type="button" disabled={resetStatus === 'busy'} onClick={() => { void (async () => {
+          setResetStatus('busy')
+          try { setResetStatus(await onReset?.() ? 'idle' : 'failed') } catch { setResetStatus('failed') }
+        })() }}>{resetStatus === 'busy' ? 'Удаляем данные…' : resetStatus === 'failed' ? 'Повторить сброс' : 'Удалить данные'}</button>
+      </> : null}
+    </section>
+  </div>
 }

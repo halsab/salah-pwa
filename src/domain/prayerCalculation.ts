@@ -179,6 +179,18 @@ function profileParameters(
   return parameters
 }
 
+function applyPrayerAngles(parameters: CalculationParameters, settings: CalculationSettings) {
+  if (settings.fajrAngle !== undefined) parameters.fajrAngle = settings.fajrAngle
+  if (settings.isha?.kind === 'angle') { parameters.ishaAngle = settings.isha.angle; parameters.ishaInterval = 0 }
+  if (settings.isha?.kind === 'interval') parameters.ishaInterval = settings.isha.minutes
+}
+
+export function getEffectiveParameters(settings: CalculationSettings, date: string, timeZone: string) {
+  const parameters = profileParameters(settings.profile, date, timeZone)
+  applyPrayerAngles(parameters, settings)
+  return { fajrAngle: parameters.fajrAngle, ishaAngle: parameters.ishaAngle, ishaInterval: parameters.ishaInterval }
+}
+
 function applyUserRules(
   parameters: CalculationParameters,
   settings: CalculationSettings,
@@ -308,9 +320,7 @@ export function calculatePrayerSchedule(
   const coordinates = new Coordinates(location.latitude, location.longitude)
   const parameters = profileParameters(settings.profile, date, timeZone)
   applyUserRules(parameters, settings)
-  if (settings.fajrAngle !== undefined) parameters.fajrAngle = settings.fajrAngle
-  if (settings.isha?.kind === 'angle') { parameters.ishaAngle = settings.isha.angle; parameters.ishaInterval = 0 }
-  if (settings.isha?.kind === 'interval') parameters.ishaInterval = settings.isha.minutes
+  applyPrayerAngles(parameters, settings)
 
   const polarResolutionApplied = hasPolarGap(coordinates, calendarDate)
   if (settings.highLatitudeRule === 'dumRt') {

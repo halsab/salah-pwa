@@ -140,11 +140,12 @@ function createServices(
 }
 
 describe('Salah', () => {
-  it('показывает номер релизной сборки внизу приложения', async () => {
+  it('показывает номер релизной сборки в настройках', async () => {
     render(<App services={createServices()} version="v26.4" />)
 
     await screen.findByRole('button', { name: /Казань/ })
 
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
     const version = screen.getByText('v26.4')
     expect(version).toBeVisible()
     expect(version).toHaveClass('app-version')
@@ -176,7 +177,7 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', {
       name: 'Местоположение: Istanbul, Турция · UTC+3',
     })).toBeVisible()
-    const schedule = await screen.findByRole('list', { name: 'Времена намаза' })
+    const schedule = await screen.findByRole('list', { name: 'Расписание дня' })
     expect(within(schedule).getByText('04:53')).toBeVisible()
     expect(document.body).not.toHaveTextContent('Europe/Istanbul')
     expect(document.querySelector('[aria-label*="Europe/Istanbul"]')).toBeNull()
@@ -210,62 +211,62 @@ describe('Salah', () => {
     expect(screen.queryByRole('button', { name: /Los Angeles.+UTC/ })).not.toBeInTheDocument()
   })
 
-  it('показывает текущее событие, выделяет его и считает до следующего', async () => {
+  it('выделяет следующий намаз и считает время до него', async () => {
     render(<App services={createServices()} />)
 
     expect(await screen.findByRole('button', { name: /Казань/ })).toBeVisible()
     expect(screen.getByRole('heading', { name: 'Salah' })).toBeVisible()
     expect(await screen.findByText('До асра')).toBeVisible()
-    expect(screen.getByText('Последнее событие')).toBeVisible()
+    expect(screen.getByText('Следующий намаз')).toBeVisible()
     expect(screen.queryByText('Сейчас')).not.toBeInTheDocument()
-    expect(screen.getByText('Зухр · 12:00')).toBeVisible()
+    expect(document.querySelector('.next-name')).toHaveTextContent('Аср')
     expect(screen.getByText('03:24:00')).toBeVisible()
 
-    const schedule = screen.getByRole('list', { name: 'Времена намаза' })
+    const schedule = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(schedule).getAllByRole('listitem')).toHaveLength(8)
     expect(within(schedule).getByText('Завершение сухура')).toBeVisible()
     expect(within(schedule).getByText(/в мечетях/i)).toBeVisible()
     expect(within(schedule).getByText('20:33')).toBeVisible()
-    expect(within(schedule).getByText('Зухр').closest('li')).toHaveAttribute('data-active', 'true')
-    expect(within(schedule).getByText('Аср').closest('li')).not.toHaveAttribute('data-active')
+    expect(within(schedule).getByText('Аср').closest('li')).toHaveAttribute('data-active', 'true')
+    expect(within(schedule).getByText('Зухр').closest('li')).not.toHaveAttribute('data-active')
     expect(within(schedule).queryByLabelText('Текущий намаз')).not.toBeInTheDocument()
-    expect(document.querySelector('.source-note')).toHaveTextContent(/Официальное расписание ДУМ РТ/i)
+    expect(screen.getByRole('button', { name: /Официальное расписание · ДУМ РТ/ })).toBeVisible()
     expect(screen.queryByText(/Координаты и выбранный город/i)).not.toBeInTheDocument()
   })
 
-  it('выделяет зенит и считает до зухра', async () => {
+  it('после зенита выделяет Зухр и считает до него', async () => {
     render(<App services={createServices({
       now: () => new Date('2026-09-01T08:50:00.000Z'),
     })} />)
 
-    expect(await screen.findByText('Зенит · 11:44')).toBeVisible()
+    expect(await screen.findByText('До зухра')).toBeVisible()
     expect(screen.getByText('До зухра')).toBeVisible()
     expect(screen.getByText('00:10:00')).toBeVisible()
 
-    const schedule = screen.getByRole('list', { name: 'Времена намаза' })
-    expect(within(schedule).getByText('Зенит').closest('li')).toHaveAttribute('data-active', 'true')
-    expect(within(schedule).getByText('Зухр').closest('li')).not.toHaveAttribute('data-active')
+    const schedule = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(schedule).getByText('Зухр').closest('li')).toHaveAttribute('data-active', 'true')
+    expect(within(schedule).getByText('Зенит').closest('li')).not.toHaveAttribute('data-active')
   })
 
-  it('точно переключает текущее и следующее событие на его границе', async () => {
+  it('точно переключает следующий намаз на его границе', async () => {
     let now = new Date('2026-09-01T13:23:59.000Z')
     const services = createServices({ now: () => new Date(now) })
     render(<App services={services} />)
 
-    expect(await screen.findByText('Зухр · 12:00')).toBeVisible()
+    expect(await screen.findByText('До асра')).toBeVisible()
     expect(screen.getByText('До асра')).toBeVisible()
     expect(screen.getByText('00:00:01')).toBeVisible()
 
     now = new Date(now.getTime() + 1_000)
     await new Promise((resolve) => setTimeout(resolve, 1_100))
 
-    expect(screen.getByText('Аср · 16:24')).toBeVisible()
+    expect(document.querySelector('.next-name')).toHaveTextContent('Магриб')
     expect(screen.getByText('До магриба')).toBeVisible()
     expect(screen.getByText('02:15:00')).toBeVisible()
     expect(
-      screen.getByRole('list', { name: 'Времена намаза' })
+      screen.getByRole('list', { name: 'Расписание дня' })
         .querySelector('[data-active="true"] .prayer-name'),
-    ).toHaveTextContent('Аср')
+    ).toHaveTextContent('Магриб')
   })
 
   it('для утреннего намаза использует уточнённую подпись таймера', async () => {
@@ -273,7 +274,7 @@ describe('Salah', () => {
       now: () => new Date('2026-09-01T00:00:00.000Z'),
     })} />)
 
-    expect(await screen.findByText('Завершение сухура · 02:21')).toBeVisible()
+    expect(await screen.findByText('Ближайший джамаат')).toBeVisible()
     expect(screen.getByText('До утреннего в мечети')).toBeVisible()
   })
 
@@ -281,7 +282,7 @@ describe('Salah', () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
 
-    await screen.findByText('Зухр · 12:00')
+    await screen.findByText('До асра')
     await user.click(screen.getByRole('button', { name: 'Следующий день' }))
 
     expect((await screen.findAllByText('среда, 2 сентября'))[0]).toBeVisible()
@@ -445,7 +446,7 @@ describe('Salah', () => {
     await user.click(within(searchDialog).getByRole('button', { name: 'Набережные Челны' }))
 
     expect(await screen.findByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(screen.getByText('16:37')).toBeVisible()
+    expect(within(screen.getByRole('list')).getByText('16:37')).toBeVisible()
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'manual', expect.objectContaining({ selection: 'official' }), expect.any(Function))
   })
 
@@ -685,13 +686,13 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
     expect(await screen.findByRole('button', { name: /Моё местоположение/i })).toBeVisible()
-    const schedule = screen.getByRole('list', { name: 'Времена намаза' })
+    const schedule = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(schedule).getAllByRole('listitem')).toHaveLength(7)
     expect(within(schedule).getByText('Фаджр')).toBeVisible()
     expect(within(schedule).queryByText(/сухура/i)).not.toBeInTheDocument()
     expect(within(schedule).queryByText(/в мечетях/i)).not.toBeInTheDocument()
-    expect(screen.getByText(/Расчёт по настройкам · Muslim World League/i)).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Методика' })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({
@@ -753,7 +754,7 @@ describe('Salah', () => {
     await user.click(screen.getByRole('button', { name: 'Определить автоматически' }))
 
     expect(await screen.findByRole('button', { name: /Моё местоположение/ })).toBeVisible()
-    expect(screen.getByRole('list', { name: 'Времена намаза' }).children).toHaveLength(7)
+    expect(screen.getByRole('list', { name: 'Расписание дня' }).children).toHaveLength(7)
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({
       ...precise,
       timeZone: 'America/Los_Angeles',
@@ -890,10 +891,12 @@ describe('Salah', () => {
     await user.click(await screen.findByRole('button', { name: 'Стамбул, Стамбул, Турция' }))
     expect(await screen.findByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
 
-    await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
-    const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
-    expect(within(dialog).getByText(/Сейчас расписание пересчитывается/i)).toBeVisible()
-    const asrSelect = within(dialog).getByLabelText('Аср')
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    const dialog = screen.getByRole('dialog', { name: 'Расширенные настройки' })
+    expect(within(dialog).getByText(/Автоматический выбор источника будет отключён/)).toBeVisible()
+    const asrSelect = within(dialog).getByRole('combobox', { name: 'Аср' })
     expect(asrSelect).toBeEnabled()
     expect(within(asrSelect).getByRole('option', { name: 'Ханафитский' })).toBeVisible()
     expect(within(asrSelect).getByRole('option', {
@@ -903,6 +906,7 @@ describe('Salah', () => {
     await user.selectOptions(asrSelect, 'standard')
     await user.selectOptions(within(dialog).getByLabelText('Профиль'), 'dumRf')
     await user.selectOptions(within(dialog).getByLabelText('Северные правила'), 'seventhOfNight')
+    await user.click(screen.getByRole('button', { name: 'Применить ручной расчёт' }))
 
     expect(services.saveCalculationSettings).toHaveBeenLastCalledWith({
       asrMethod: 'standard',
@@ -923,8 +927,10 @@ describe('Salah', () => {
     })
     render(<App services={services} />)
 
-    await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
-    const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    const dialog = screen.getByRole('dialog', { name: 'Расширенные настройки' })
 
     expect(within(dialog).getByRole('option', { name: 'Умм аль-Кура' })).toBeDisabled()
     expect(within(dialog).getByText(
@@ -972,15 +978,18 @@ describe('Salah', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(reason)
     expect(services.saveCalculationSettings).not.toHaveBeenCalled()
 
-    await user.click(screen.getByRole('button', { name: 'Настройки автономного расчёта' }))
-    const dialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    await user.click(screen.getByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    const dialog = screen.getByRole('dialog', { name: 'Расширенные настройки' })
     const profileSelect = within(dialog).getByLabelText('Профиль')
     expect(profileSelect).toHaveValue('ummAlQura')
     await user.selectOptions(profileSelect, 'dumRf')
+    await user.click(screen.getByRole('button', { name: 'Применить ручной расчёт' }))
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
 
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
-    expect(screen.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
+    expect(screen.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
     expect(services.saveCalculationSettings).toHaveBeenLastCalledWith({
       ...DEFAULT_CALCULATION_SETTINGS,
       profile: 'dumRf',
@@ -991,7 +1000,10 @@ describe('Salah', () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
 
-    const methodologyButton = await screen.findByRole('button', { name: 'Методика' })
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    const methodologyButton = screen.getByRole('button', { name: 'Как рассчитывается время' })
     await user.click(methodologyButton)
 
     const dialog = screen.getByRole('dialog', { name: 'Как рассчитывается время' })
@@ -1031,20 +1043,22 @@ describe('Salah', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
 
     expect(screen.queryByRole('dialog', { name: 'Как рассчитывается время' })).not.toBeInTheDocument()
-    await waitFor(() => expect(methodologyButton).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Как рассчитывается время' })).toHaveFocus())
   })
 
   it('открывает методику из настроек и возвращается к ним после закрытия', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} version="v26.4" />)
 
-    await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
     const background = document.querySelector<HTMLElement>('.app-background')
     expect(background).not.toBeNull()
     if (!background) throw new Error('Не найден фон приложения')
     expect(background).toHaveAttribute('inert')
     expect(background).toHaveAttribute('aria-hidden', 'true')
-    const settingsDialog = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    const settingsDialog = screen.getByRole('dialog', { name: 'Расширенные настройки' })
     const exposureStates: boolean[] = []
     const observer = new MutationObserver(() => {
       exposureStates.push(
@@ -1058,13 +1072,13 @@ describe('Salah', () => {
     })
     await user.click(within(settingsDialog).getByRole('button', { name: 'Как рассчитывается время' }))
 
-    expect(screen.queryByRole('dialog', { name: 'Настройки расчёта' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Расширенные настройки' })).not.toBeInTheDocument()
     const methodologyDialog = screen.getByRole('dialog', { name: 'Как рассчитывается время' })
     expect(methodologyDialog.closest('[inert]')).toBeNull()
     expect(background).toHaveAttribute('inert')
     await user.click(within(methodologyDialog).getByRole('button', { name: 'Закрыть' }))
 
-    const reopenedSettings = screen.getByRole('dialog', { name: 'Настройки расчёта' })
+    const reopenedSettings = screen.getByRole('dialog', { name: 'Расширенные настройки' })
     expect(background).toHaveAttribute('inert')
     expect(exposureStates).not.toContain(true)
     observer.disconnect()
@@ -1081,16 +1095,12 @@ describe('Salah', () => {
       dialogName: 'Выбор местоположения',
     },
     {
-      triggerName: 'Настройки автономного расчёта',
-      dialogName: 'Настройки расчёта',
+      triggerName: 'Настройки',
+      dialogName: 'Настройки',
     },
     {
-      triggerName: 'Методика',
-      dialogName: 'Как рассчитывается время',
-    },
-    {
-      triggerName: 'Поделиться',
-      dialogName: 'QR-код Salah',
+      triggerName: /Официальное расписание · ДУМ РТ/,
+      dialogName: 'Сведения об источнике',
     },
   ])('делает единый фон inert для диалога $dialogName', async ({
     triggerName,
@@ -1104,8 +1114,7 @@ describe('Salah', () => {
     expect(background).not.toBeNull()
     if (!background) throw new Error('Не найден фон приложения')
     expect(background).toContainElement(document.querySelector('.app-frame'))
-    expect(background).toContainElement(screen.getByRole('button', { name: 'Поделиться' }))
-    expect(background).toContainElement(screen.getByText('v26.4'))
+    expect(background).toContainElement(screen.getByRole('button', { name: 'Настройки' }))
 
     const focusStates: boolean[] = []
     trigger.addEventListener('focus', () => focusStates.push(background.hasAttribute('inert')))
@@ -1129,7 +1138,12 @@ describe('Salah', () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
 
-    const shareButton = await screen.findByRole('button', { name: 'Поделиться' })
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    await user.click(screen.getByRole('button', { name: '← Назад' }))
+    await user.click(screen.getByRole('button', { name: '← Назад' }))
+    const shareButton = screen.getByRole('button', { name: 'Поделиться' })
     await user.click(shareButton)
     const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
     const copyButton = within(dialog).getByRole('button', { name: 'Скопировать ссылку' })
@@ -1144,16 +1158,21 @@ describe('Salah', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
 
     expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
-    await waitFor(() => expect(shareButton).toHaveFocus())
-    expect(shareButton.closest('.app-background')).not.toHaveAttribute('inert')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Поделиться' })).toHaveFocus())
+    expect(screen.getByRole('dialog', { name: 'Настройки' })).not.toHaveAttribute('inert')
   })
 
   it('открывает QR-код для приложения и возвращает фокус после закрытия', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
 
-    const shareButton = await screen.findByRole('button', { name: 'Поделиться' })
-    expect(document.querySelector('.app-frame')?.nextElementSibling).toBe(shareButton)
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    await user.click(screen.getByRole('button', { name: '← Назад' }))
+    await user.click(screen.getByRole('button', { name: '← Назад' }))
+    const shareButton = screen.getByRole('button', { name: 'Поделиться' })
+    expect(shareButton.closest('[role=dialog]')).toHaveAccessibleName('Настройки')
 
     await user.click(shareButton)
 
@@ -1170,14 +1189,19 @@ describe('Salah', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Закрыть' }))
 
     expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
-    await waitFor(() => expect(shareButton).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Поделиться' })).toHaveFocus())
   })
 
   it('закрывает QR-код по касанию вне модалки', async () => {
     const user = userEvent.setup()
     render(<App services={createServices()} />)
 
-    const shareButton = await screen.findByRole('button', { name: 'Поделиться' })
+    await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+    await user.click(screen.getByRole('button', { name: '← Назад' }))
+    await user.click(screen.getByRole('button', { name: '← Назад' }))
+    const shareButton = screen.getByRole('button', { name: 'Поделиться' })
     await user.click(shareButton)
 
     const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
@@ -1186,7 +1210,7 @@ describe('Salah', () => {
     fireEvent.pointerDown(layer, { pointerType: 'touch' })
 
     expect(screen.queryByRole('dialog', { name: 'QR-код Salah' })).not.toBeInTheDocument()
-    await waitFor(() => expect(shareButton).toHaveFocus())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Поделиться' })).toHaveFocus())
   })
 
   it('показывает восстановимую ошибку загрузки', async () => {
@@ -1219,12 +1243,12 @@ describe('Salah', () => {
     )
     expect(screen.getByText('Расписание временно недоступно')).toBeVisible()
     expect(screen.queryByText('Следующее расписание ещё не опубликовано')).not.toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Времена намаза' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
 
     shouldFail = false
     await user.click(screen.getByRole('button', { name: 'Повторить' }))
 
-    expect(await screen.findByRole('list', { name: 'Времена намаза' })).toBeVisible()
+    expect(await screen.findByRole('list', { name: 'Расписание дня' })).toBeVisible()
     expect(getDays).toHaveBeenCalledTimes(2)
   })
 })
@@ -1247,7 +1271,7 @@ describe('согласованность контекста в интерфей�
     await user.click(screen.getByRole('button', { name: /Казань/ }))
     await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Времена намаза' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /Набережные Челны/ }))
     await user.click(screen.getByRole('button', { name: 'Апастово' }))
     await act(async () => { chelny.resolve(success([undefined, chelnyToday, undefined])); await chelny.promise })
@@ -1256,7 +1280,7 @@ describe('согласованность контекста в интерфей�
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     expect(container.querySelector('[data-active]')).toBeNull()
     await act(async () => { apastovo.resolve(success([undefined, { ...kazanToday, locationId: 'apastovo', asr: '16:45' }, undefined])); await apastovo.promise })
-    expect(await screen.findByText('16:45')).toBeVisible()
+    expect(await within(screen.getByRole('list')).findByText('16:45')).toBeVisible()
     expect(screen.queryByText('16:37')).not.toBeInTheDocument()
     expect(screen.getByRole('timer')).toBeVisible()
   })
@@ -1266,9 +1290,13 @@ it('selects manual calculation independently of city and returns to automatic in
   const user = userEvent.setup()
   const services = createServices()
   render(<App services={services} />)
-  await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
-  expect(screen.getByLabelText('Источник')).toHaveValue('automatic')
+  await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
+  expect(screen.getByText(/Автоматический выбор источника будет отключён/)).toBeVisible()
   await user.selectOptions(screen.getByLabelText('Профиль'), 'karachi')
+  await user.click(screen.getByRole('button', { name: 'Применить ручной расчёт' }))
+  await user.click(screen.getByRole('button', { name: '← Назад' }))
   expect(screen.getByLabelText('Источник')).toHaveValue('calculated')
   await user.click(screen.getByRole('button', { name: 'Закрыть' }))
   expect(await screen.findByText('Фаджр')).toBeVisible()
@@ -1276,7 +1304,8 @@ it('selects manual calculation independently of city and returns to automatic in
   await user.click(screen.getByRole('button', { name: /Казань/ }))
   await user.click(screen.getByText('Татарстан', { exact: true }))
   await user.click(screen.getByRole('button', { name: 'Набережные Челны' }))
-  await user.click(screen.getByRole('button', { name: 'Настройки автономного расчёта' }))
+  await user.click(screen.getByRole('button', { name: 'Настройки' }))
+  await user.click(screen.getByRole('button', { name: 'Время намаза' }))
   expect(screen.getByLabelText('Источник')).toHaveValue('calculated')
   await user.click(screen.getByRole('button', { name: 'Вернуться к автоматическому выбору' }))
   expect(screen.getByLabelText('Источник')).toHaveValue('automatic')
@@ -1294,7 +1323,7 @@ it('allows calculated cold start without meta while the official refresh is hang
   await user.type(screen.getByRole('searchbox'), 'Стамбул')
   await user.click(await screen.findByRole('button', { name: 'Стамбул, Стамбул, Турция' }))
   expect(await screen.findByText('Фаджр')).toBeVisible()
-  expect(screen.getByText(/Расчёт по настройкам · Турция/)).toBeVisible()
+  expect(screen.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
   expect(services.getDays).not.toHaveBeenCalled()
 })
 
@@ -1303,8 +1332,12 @@ it.each(['rejection', 'result'] as const)('shows one nonblocking persistence not
   const save = vi.fn<AppServices['saveSettings']>().mockImplementationOnce(() => kind === 'rejection' ? Promise.reject(new Error('quota')) : Promise.resolve(failure({ kind: 'storage', reason: 'unavailable' }))).mockResolvedValue(success(undefined))
   const services = createServices({ saveSettings: save })
   render(<App services={services} />)
-  await user.click(await screen.findByRole('button', { name: 'Настройки автономного расчёта' }))
+  await user.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await user.click(screen.getByRole('button', { name: 'Время намаза' }))
+    await user.click(screen.getByRole('button', { name: 'Расширенные настройки' }))
   await user.selectOptions(screen.getByLabelText('Профиль'), 'karachi')
+  await user.click(screen.getByRole('button', { name: 'Применить ручной расчёт' }))
+  await user.click(screen.getByRole('button', { name: '← Назад' }))
   expect(await screen.findByText('Изменение действует сейчас, но сохранить его не удалось')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Повторить' }))
   await waitFor(() => expect(screen.queryByText('Изменение действует сейчас, но сохранить его не удалось')).not.toBeInTheDocument())
@@ -1318,9 +1351,24 @@ it('automatic expiration calculates but manual official expiration remains expli
   await screen.findByText('Утренний намаз в мечетях')
   fireEvent.change(screen.getByLabelText('Выбрать дату'), { target: { value: '2027-01-01' } })
   expect(await screen.findByText('Фаджр')).toBeVisible()
-  await user.click(screen.getByRole('button', { name: 'Настройки автономного расчёта' }))
+  await user.click(screen.getByRole('button', { name: 'Настройки' }))
+  await user.click(screen.getByRole('button', { name: 'Время намаза' }))
   await user.selectOptions(screen.getByLabelText('Источник'), 'dumRt')
   await user.click(screen.getByRole('button', { name: 'Закрыть' }))
   expect(await screen.findByRole('alert')).toHaveTextContent('не покрывает это место или дату')
   expect(screen.queryByText('Фаджр')).not.toBeInTheDocument()
+})
+
+it('повторяет сохранение оформления и показывает его текущее действие', async () => {
+  const user = userEvent.setup()
+  const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValueOnce(failure({kind:'storage',reason:'unavailable'})).mockResolvedValue(success(undefined))
+  render(<App services={createServices({saveSettings})} />)
+  await user.click(await screen.findByRole('button', {name:'Настройки'}))
+  expect(screen.getByLabelText('Оформление')).toHaveValue('system')
+  await user.selectOptions(screen.getByLabelText('Оформление'), 'dark')
+  expect(document.documentElement.dataset.theme).toBe('dark')
+  expect(await screen.findByText('Изменение действует сейчас, но сохранить его не удалось')).toBeVisible()
+  await user.click(screen.getByRole('button', {name:'Повторить'}))
+  await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2))
+  expect(saveSettings.mock.lastCall?.[0]).toEqual({appearance:'dark'})
 })

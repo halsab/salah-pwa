@@ -80,7 +80,7 @@ test('production CSP разрешает приложение и блокируе
 
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
   expect(await page.evaluate(() => document.fonts.check("16px 'Alegreya Sans'"))).toBe(true)
 
   await page.getByRole('button', { name: /Казань/ }).click()
@@ -97,6 +97,7 @@ test('production CSP разрешает приложение и блокируе
   await expect(page.getByRole('button', { name: /Моё местоположение|Рядом: Москва/ })).toBeVisible()
   expect(externalRequests).toEqual([])
 
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
   await expect(page.getByRole('dialog', { name: 'QR-код Salah' })).toBeVisible()
   await page.getByRole('button', { name: 'Закрыть' }).click()

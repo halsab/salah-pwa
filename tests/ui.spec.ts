@@ -3,6 +3,7 @@ import type { Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 const stageFiveViewports = [
+  { label: 'mobile 320×640 portrait', width: 320, height: 640 },
   { label: 'mobile 360×800 portrait', width: 360, height: 800 },
   { label: 'mobile 390×844 portrait', width: 390, height: 844 },
   { label: 'mobile 844×390 landscape', width: 844, height: 390 },
@@ -80,7 +81,7 @@ test.describe('мобильная компоновка', () => {
   test('показывает таймер и минимум четыре времени без прокрутки', async ({ page }) => {
     await page.goto('./')
 
-    const schedule = page.getByRole('list', { name: 'Времена намаза' })
+    const schedule = page.getByRole('list', { name: 'Расписание дня' })
     const rows = schedule.getByRole('listitem')
     await expect(rows).toHaveCount(8)
     await expect(page.getByRole('timer')).toBeVisible()
@@ -191,7 +192,10 @@ test.describe('мобильная компоновка', () => {
   test('растягивает скролл методики до краёв экрана', async ({ page }) => {
     await page.setViewportSize({ width: 420, height: 1324 })
     await page.goto('./')
-    await page.getByRole('button', { name: 'Методика' }).click()
+    await page.getByRole('button', { name: 'Настройки' }).click()
+    await page.getByRole('button', { name: 'Время намаза' }).click()
+    await page.getByRole('button', { name: 'Расширенные настройки' }).click()
+    await page.getByRole('button', { name: 'Как рассчитывается время' }).click()
 
     const layout = await page.locator('.methodology-content').evaluate((element) => {
       const scrollBounds = element.getBoundingClientRect()
@@ -332,13 +336,8 @@ test.describe('адаптивность', () => {
     await page.setViewportSize({ width: 319, height: 812 })
     await page.goto('./')
 
+    await page.getByRole('button', { name: 'Настройки' }).click()
     const shareButton = page.getByRole('button', { name: 'Поделиться', exact: true })
-    const [shareButtonWidth, appFrameWidth] = await Promise.all([
-      shareButton.evaluate((element) => Number.parseFloat(getComputedStyle(element).width)),
-      page.locator('.app-frame').evaluate((element) => Number.parseFloat(getComputedStyle(element).width)),
-    ])
-    expect(await shareButton.evaluate((element) => element.previousElementSibling?.className)).toBe('app-frame')
-    expect(Math.abs(shareButtonWidth - appFrameWidth)).toBeLessThanOrEqual(1)
     await shareButton.click()
 
     const dialog = page.getByRole('dialog', { name: 'QR-код Salah' })
@@ -515,11 +514,11 @@ test.describe('Stage 5 production matrix', () => {
       await expectControlTargetsAtLeast44Px(dialog)
       await dialog.getByRole('button', { name: 'Закрыть' }).click()
 
-      await page.getByRole('button', { name: 'Настройки автономного расчёта' }).click()
-      dialog = page.getByRole('dialog', { name: 'Настройки расчёта' })
+      await page.getByRole('button', { name: 'Настройки' }).click()
+      dialog = page.getByRole('dialog', { name: 'Настройки' })
       await expectInsideViewport(dialog, page)
       const settings = dialog.getByRole('combobox')
-      await expect(settings).toHaveCount(4)
+      await expect(settings).toHaveCount(1)
       for (const select of await settings.all()) {
         await expect(select).toBeEnabled()
         await expect(select).not.toHaveAttribute('aria-disabled', 'true')
@@ -527,7 +526,8 @@ test.describe('Stage 5 production matrix', () => {
       await expectControlTargetsAtLeast44Px(dialog)
       await dialog.getByRole('button', { name: 'Закрыть' }).click()
 
-      await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
+      await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
       dialog = page.getByRole('dialog', { name: 'QR-код Salah' })
       await expectInsideViewport(dialog, page)
       await expectControlTargetsAtLeast44Px(dialog)
@@ -563,7 +563,8 @@ test.describe('Stage 5 production matrix', () => {
   test('копирует ссылку без видимого лейбла и сохраняет фокус в share-dialog', async ({ context, page }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('./')
-    await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'QR-код Salah' })
     const copyButton = dialog.getByRole('button', { name: 'Скопировать ссылку' })
 
@@ -579,6 +580,7 @@ test.describe('Stage 5 production matrix', () => {
   test('показывает номер локальной или релизной сборки', async ({ page }) => {
     await page.goto('./')
 
+    await page.getByRole('button', { name: 'Настройки' }).click()
     await expect(page.locator('.app-version')).toBeVisible()
     await expect(page.locator('.app-version')).toHaveText(/^v\d+(?:\.\d+)+$/)
   })
@@ -593,7 +595,8 @@ test.describe('Stage 5 production matrix', () => {
       })
     })
     await page.goto('./')
-    await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: 'QR-код Salah' })
     const copyButton = dialog.getByRole('button', { name: 'Скопировать ссылку' })
 
@@ -609,7 +612,7 @@ test.describe('Stage 5 production matrix', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto('./')
     await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Поделиться', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toBeVisible()
 
     const result = await page.evaluate(() => {
       const css = Array.from(document.styleSheets)
@@ -617,7 +620,7 @@ test.describe('Stage 5 production matrix', () => {
         .map((rule) => rule.cssText)
         .join('\n')
       const app = document.querySelector('.app-frame')
-      const share = document.querySelector('.share-button')
+      const share = document.querySelector('.settings-button')
       if (!app || !share) throw new Error('Не найдены основные поверхности')
       const appStyle = getComputedStyle(app)
       const shareStyle = getComputedStyle(share)
@@ -670,7 +673,7 @@ test.describe('Stage 5 production matrix', () => {
       await page.goto('./')
       await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
       await expect(page.getByRole('timer')).toBeVisible()
-      await expect(page.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
+      await expect(page.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
       await page.evaluate(() => document.fonts.ready)
       const paper = await page.locator('.app-frame').evaluate((element) => getComputedStyle(element).backgroundColor)
       if (capture.colorScheme === 'light') lightPaper = paper

@@ -1,61 +1,27 @@
-import { useCallback, useMemo, useState, type RefObject } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 
 import { formatDateLabel } from '../../domain/date'
 import { buildScheduleEvents, selectEventPair } from '../../domain/scheduleEvents'
-import {
-  CALCULATION_PROFILES,
-  type CalculationProfileId,
-  type CalculationSettings,
-} from '../../domain/prayerCalculation'
 import type {
   CalculatedPrayerKey,
-  PrayerDay,
-  PrayerKey,
   SchedulePrayerKey,
 } from '../../domain/types'
 import {
-  CheckIcon,
   ClockIcon,
   MoonIcon,
   SunIcon,
   SunriseIcon,
   SunsetIcon,
 } from '../../ui/Icons'
-import { ASR_METHOD_LABELS } from '../../ui/calculationLabels'
 import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
 
 type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
-const PRIVACY_URL = `${import.meta.env.BASE_URL}privacy/`
 
-const OFFICIAL_PRAYER_ROWS: ReadonlyArray<{
-  key: PrayerKey
-  label: string
-  icon: ScheduleIconKind
-}> = [
-  { key: 'suhurEnd', label: 'Завершение сухура', icon: 'moon' },
-  { key: 'fajrJamaat', label: 'Утренний намаз в мечетях', icon: 'sunrise' },
-  { key: 'sunrise', label: 'Восход', icon: 'sunrise' },
-  { key: 'zenith', label: 'Зенит', icon: 'sun' },
-  { key: 'dhuhr', label: 'Зухр', icon: 'sun' },
-  { key: 'asr', label: 'Аср', icon: 'sunset' },
-  { key: 'maghrib', label: 'Магриб', icon: 'sunset' },
-  { key: 'isha', label: 'Иша', icon: 'moon' },
-]
-
-const CALCULATED_PRAYER_ROWS: ReadonlyArray<{
-  key: CalculatedPrayerKey
-  label: string
-  icon: ScheduleIconKind
-}> = [
-  { key: 'fajr', label: 'Фаджр', icon: 'moon' },
-  { key: 'sunrise', label: 'Восход', icon: 'sunrise' },
-  { key: 'zenith', label: 'Зенит', icon: 'sun' },
-  { key: 'dhuhr', label: 'Зухр', icon: 'sun' },
-  { key: 'asr', label: 'Аср', icon: 'sunset' },
-  { key: 'maghrib', label: 'Магриб', icon: 'sunset' },
-  { key: 'isha', label: 'Иша', icon: 'moon' },
-]
+const EVENT_ICONS: Record<SchedulePrayerKey, ScheduleIconKind> = {
+  suhurEnd: 'moon', fajrJamaat: 'sunrise', fajr: 'moon', sunrise: 'sunrise',
+  zenith: 'sun', dhuhr: 'sun', asr: 'sunset', maghrib: 'sunset', isha: 'moon',
+}
 
 function ScheduleIcon({ kind }: { kind: ScheduleIconKind }) {
   const props = { className: 'schedule-icon' }
@@ -73,18 +39,16 @@ function PrayerSchedule({
   activePrayer: SchedulePrayerKey | undefined
 }) {
   const calculated = 'entries' in schedule
-  const rows = calculated ? CALCULATED_PRAYER_ROWS : OFFICIAL_PRAYER_ROWS
   const events = buildScheduleEvents(schedule)
 
   return (
-    <ol className="prayer-list" aria-label="Времена намаза">
-      {rows.map(({ key, label, icon }) => {
+    <ol className="prayer-list" aria-label="Расписание дня">
+      {events.map(event => {
+        const { key, label, time } = event
         const entry = calculated
           ? schedule.entries[key as CalculatedPrayerKey]
           : null
-        const time = entry?.time ?? (schedule as PrayerDay)[key as PrayerKey]
-        const event = events.find((event) => event.key === key)
-        const dateTime = event?.status === 'resolved' ? new Date(event.instant).toISOString() : undefined
+        const dateTime = event.status === 'resolved' ? new Date(event.instant).toISOString() : undefined
         const estimated = entry?.estimated ?? false
 
         return (
@@ -94,8 +58,8 @@ function PrayerSchedule({
             data-estimated={estimated || undefined}
             key={key}
           >
-            <ScheduleIcon kind={icon} />
-            <span className="prayer-name">{label}</span>
+            <ScheduleIcon kind={EVENT_ICONS[key]} />
+            <span className="prayer-name">{label}{event.dayOffset ? <small> · {formatDateLabel(event.date)}</small> : null}</span>
             <span className="prayer-dots" aria-hidden="true" />
             <time className="prayer-time" dateTime={dateTime}>
               {time}
@@ -112,10 +76,6 @@ function PrayerSchedule({
   )
 }
 
-function calculationProfileLabel(profileId: CalculationProfileId): string {
-  return CALCULATION_PROFILES.find(({ id }) => id === profileId)?.label ?? 'ДУМ РТ'
-}
-
 interface ScheduleContentProps {
   schedule: DisplaySchedule | null
   schedules: DisplaySchedule[]
@@ -125,14 +85,10 @@ interface ScheduleContentProps {
   today: string
   currentTime: Date
   now: () => Date
-  officialProviderName?: string | undefined
   officialMode: boolean
-  calculationSettings: CalculationSettings
-  officialScheduleUrl: string
-  methodologyButtonRef: RefObject<HTMLButtonElement | null>
+  sourceBadge?: ReactNode
   onChangeDate: (date: string) => void
   onRetrySchedule: () => void
-  onOpenMethodology: () => void
 }
 
 export function ScheduleContent({
@@ -144,14 +100,10 @@ export function ScheduleContent({
   today,
   currentTime,
   now,
-  officialProviderName = 'ДУМ РТ',
   officialMode,
-  calculationSettings,
-  officialScheduleUrl,
-  methodologyButtonRef,
+  sourceBadge,
   onChangeDate,
   onRetrySchedule,
-  onOpenMethodology,
 }: ScheduleContentProps) {
   const [eventBoundaryTime, setEventBoundaryTime] = useState<Date | null>(null)
   const effectiveCurrentTime = eventBoundaryTime
@@ -165,17 +117,15 @@ export function ScheduleContent({
   }, [now])
   const activeSchedule = scheduleLoading || scheduleError ? null : schedule
   const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
-  const { next: nextPrayer, current: currentPrayer } = selectedDate === today && activeSchedule
-    ? selectEventPair(effectiveCurrentTime, events)
-    : { next: null, current: null }
+  const { next: nextPrayer } = selectedDate === today && activeSchedule
+    ? selectEventPair(effectiveCurrentTime, events.filter(event => event.kind !== 'marker'))
+    : { next: null }
+  const nextEstimated = nextPrayer && schedules.some(day => day.date === nextPrayer.scheduleDate && 'entries' in day && day.estimatedPrayers.includes(nextPrayer.key as CalculatedPrayerKey))
   const calculatedSchedule = activeSchedule && 'entries' in activeSchedule ? activeSchedule : null
-  const ambiguousSuhur = activeSchedule && events.find((event) =>
-    event.scheduleDate === activeSchedule.date && event.status === 'ambiguous-date')
-  const profileLabel = calculationProfileLabel(calculationSettings.profile)
 
   return (
     <div className="content-grid" data-loading={scheduleLoading || undefined}>
-      <section className="next-prayer-panel" aria-label="Текущее событие и время до следующего">
+      <section className="next-prayer-panel" aria-label="Следующий намаз">
         {scheduleError ? (
           <div className="no-next-prayer"><ClockIcon /><p>Расписание временно недоступно</p></div>
         ) : scheduleLoading ? (
@@ -185,11 +135,11 @@ export function ScheduleContent({
             <>
               <div className="current-prayer">
                 <p className="current-label">
-                  {currentPrayer ? 'Последнее событие' : 'Сейчас'}
+                  {nextPrayer.kind === 'jamaat' ? 'Ближайший джамаат' : 'Следующий намаз'}
                 </p>
-                <p className="next-name">
-                  {currentPrayer ? `${currentPrayer.label} · ${currentPrayer.time}` : 'До первого события'}
-                </p>
+                <p className="next-name">{nextPrayer.label}</p>
+                <time className="next-time" dateTime={new Date(nextPrayer.instant).toISOString()}>{nextEstimated ? <span aria-label="Приблизительное время">≈ </span> : null}{nextPrayer.time}</time>
+                {nextPrayer.date !== today ? <span>{formatDateLabel(nextPrayer.date)}</span> : null}
               </div>
               <ScheduleCountdown
                 key={`${nextPrayer.date}:${nextPrayer.key}:${nextPrayer.instant}`}
@@ -219,7 +169,7 @@ export function ScheduleContent({
             <button className="primary-button" type="button" onClick={onRetrySchedule}>Повторить</button>
           </div>
         ) : activeSchedule ? (
-          <PrayerSchedule schedule={activeSchedule} activePrayer={currentPrayer?.scheduleDate === activeSchedule.date ? currentPrayer.key : undefined} />
+          <PrayerSchedule schedule={activeSchedule} activePrayer={nextPrayer?.scheduleDate === activeSchedule.date ? nextPrayer.key : undefined} />
         ) : scheduleLoading ? (
           <div className="schedule-skeleton" aria-label="Загружаем расписание" />
         ) : (
@@ -232,48 +182,8 @@ export function ScheduleContent({
         )}
 
         <div>
-          {ambiguousSuhur ? (
-            <p className="calculation-note">
-              Дата завершения сухура {ambiguousSuhur.time} в источнике не уточнена. Эта отметка не участвует в таймере.
-            </p>
-          ) : null}
-          {calculatedSchedule?.estimatedPrayers.some((key) => key === 'fajr' || key === 'isha') ? (
-            <p className="calculation-note">Фаджр и/или Иша определены по правилу северных широт.</p>
-          ) : null}
-          {calculatedSchedule?.polarResolutionApplied ? (
-            <p className="calculation-note">Солнечный цикл восстановлен по ближайшей подходящей широте или дню.</p>
-          ) : null}
-          <footer className="source-note">
-            <CheckIcon />
-            {officialMode ? (
-              <span>
-                Официальное расписание <a href={officialScheduleUrl} target="_blank" rel="noreferrer">{officialProviderName}</a> · Настройки расчёта не влияют ·{' '}
-                <button
-                  ref={methodologyButtonRef}
-                  className="methodology-trigger"
-                  type="button"
-                  onClick={onOpenMethodology}
-                >
-                  Методика
-                </button>{' '}
-                {activeSchedule ? '· Доступно офлайн · ' : '· '}<a href={PRIVACY_URL}>Конфиденциальность</a>
-              </span>
-            ) : (
-              <span>
-                Расчёт по настройкам · {profileLabel} · Аср: {ASR_METHOD_LABELS[calculationSettings.asrMethod]} ·{' '}
-                <button
-                  ref={methodologyButtonRef}
-                  className="methodology-trigger"
-                  type="button"
-                  onClick={onOpenMethodology}
-                >
-                  Методика
-                </button>{' '}
-                · Доступно офлайн · <a href={PRIVACY_URL}>Конфиденциальность</a>
-              </span>
-            )}
-            <span className="source-spark" aria-hidden="true">✦</span>
-          </footer>
+          {calculatedSchedule?.estimatedPrayers.length ? <p className="calculation-note">≈ Есть приблизительные значения</p> : null}
+          {sourceBadge}
         </div>
       </section>
     </div>

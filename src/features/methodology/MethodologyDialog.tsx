@@ -1,13 +1,9 @@
 import { useRef } from 'react'
 
+import { StaticContent } from '../../ui/StaticContent'
 import { CloseIcon } from '../../ui/Icons'
 import { useDialogViewport, useModalDialog } from '../../ui/dialogHooks'
 
-const ADHAN_URL = 'https://github.com/batoulapps/adhan-js'
-const ADHAN_METHODS_URL = 'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md'
-const GEONAMES_URL = 'https://www.geonames.org/'
-const CC_BY_URL = 'https://creativecommons.org/licenses/by/4.0/'
-const OPENSTREETMAP_URL = 'https://www.openstreetmap.org/copyright'
 
 interface MethodologyDialogProps {
   open: boolean
@@ -53,64 +49,7 @@ export function MethodologyDialog({
           </button>
         </header>
 
-        <div className="methodology-content">
-          <section className="methodology-section">
-            <h3>В Татарстане</h3>
-            <p>
-              Это готовое расписание: приложение его не пересчитывает. Источник —{' '}
-              <a href={officialScheduleUrl} target="_blank" rel="noreferrer">ДУМ РТ</a>.
-            </p>
-          </section>
-
-          <section className="methodology-section">
-            <h3>В других местах</h3>
-            <p>
-              Время рассчитывается прямо на устройстве библиотекой{' '}
-              <a href={ADHAN_URL} target="_blank" rel="noreferrer">Adhan JS 4.4.6</a>.
-              Для расчёта интернет не нужен.
-            </p>
-            <p>
-              Профиль задаёт углы Фаджра и Иша: ДУМ РТ — 18°/15°, ДУМ РФ — 16°/15°.
-              Аср и правило для северных широт выбираются отдельно.
-            </p>
-            <p>
-              Если сумерек нет, правило ДУМ РТ ставит Фаджр за 120 минут до восхода,
-              а Иша — через 90 минут после заката. Другие варианты перечислены здесь:{' '}
-              <a href={ADHAN_METHODS_URL} target="_blank" rel="noreferrer">описание профилей</a>.
-            </p>
-          </section>
-
-          <section className="methodology-section methodology-timezone">
-            <h3>Часовой пояс</h3>
-            <p>
-              Дата и время показываются в часовом поясе выбранного места. Для готового
-              расписания ДУМ РТ используется московское время, а для автономного расчёта —
-              часовой пояс сохранённого города или геопозиции.
-            </p>
-          </section>
-
-          <section className="methodology-section">
-            <h3>Местоположение</h3>
-            <p>
-              GPS обрабатывается на устройстве. Справочник городов —{' '}
-              <a href={GEONAMES_URL} target="_blank" rel="noreferrer">GeoNames</a>{' '}
-              (<a href={CC_BY_URL} target="_blank" rel="noreferrer">CC BY 4.0</a>).
-            </p>
-            <p>
-              Координаты не отправляются геокодерам. Название-ориентир находится в локальных
-              пакетах GeoNames, а территория Татарстана проверяется по локальной границе{' '}
-              <a href={OPENSTREETMAP_URL} target="_blank" rel="noreferrer">OpenStreetMap</a>
-              {' '}через geoBoundaries (ODbL). У границы или при недостаточной точности
-              используется расчёт. Для GPS внутри подтверждённой территории выбирается
-              таблица ближайшего опубликованного пункта, а не отдельная таблица для точки GPS.
-            </p>
-          </section>
-
-          <p className="methodology-disclaimer">
-            Расчётное время может отличаться от расписания местной мечети. Если есть местное
-            официальное расписание, ориентируйтесь на него.
-          </p>
-        </div>
+        <StaticContent id="methodology-content" sourceUrl={officialScheduleUrl} />
       </section>
     </div>
   )

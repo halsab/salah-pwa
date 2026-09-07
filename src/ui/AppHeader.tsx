@@ -81,7 +81,7 @@ export function AppHeader({
             ref={settingsButtonRef}
             className="icon-button settings-button"
             type="button"
-            aria-label="Настройки автономного расчёта"
+            aria-label="Настройки"
             onClick={onOpenSettings}
           >
             <SettingsIcon />

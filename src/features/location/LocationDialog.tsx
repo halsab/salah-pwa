@@ -1,3 +1,4 @@
+import { staticText } from '../../ui/staticText'
 import type { Place } from '../../domain/place'
 import {
   memo,
@@ -236,7 +237,7 @@ const LocationResults = memo(function LocationResults({
           ) : null}
           {cityMatches.length > 0 ? (
             <section className="location-section" aria-labelledby="city-search-title">
-              <h3 id="city-search-title">Города мира · автономный расчёт</h3>
+              <h3 id="city-search-title">Города мира</h3>
               <ul className="location-list">
                 {cityMatches.map((city) => (
                   <CityOption
@@ -261,10 +262,10 @@ const LocationResults = memo(function LocationResults({
             <div><p className="empty-search">Не удалось выполнить поиск городов.</p><button className="city-catalog-retry" type="button" onClick={onRetrySearch}>Повторить поиск</button></div>
           ) : null}
           {!citySearchPending && !citySearchFailed && searchStatus === 'needs-download' ? (
-            <div role="status" className="city-catalog-state"><p>Для полного поиска нужно загрузить данные. Подключитесь к сети и повторите поиск.</p><button className="city-catalog-retry" type="button" onClick={onRetrySearch}>Повторить поиск</button></div>
+            <div role="status" className="city-catalog-state"><p>{staticText('location-copy-1')}</p><button className="city-catalog-retry" type="button" onClick={onRetrySearch}>Повторить поиск</button></div>
           ) : null}
-          {!citySearchPending && searchStatus === 'refine' ? <p className="empty-search">Уточните название города: введите не менее трёх букв или добавьте регион. Показаны крупные города.</p> : null}
-          {!citySearchPending && previousVersion ? <p role="status">Используем сохранённую версию каталога. Обновление пока недоступно.</p> : null}
+          {!citySearchPending && searchStatus === 'refine' ? <p className="empty-search">{staticText('location-copy-2')}</p> : null}
+          {!citySearchPending && previousVersion ? <p role="status">{staticText('location-copy-3')}</p> : null}
           {cityCatalogStatus === 'ready' &&
           !citySearchPending &&
           !citySearchFailed &&
@@ -452,10 +453,7 @@ function OpenLocationDialog({
             </header>
         {persistenceNotice}
 
-            <p className="location-mode-guide">
-              <strong>В Татарстане</strong> — готовое расписание ДУМ РТ.{' '}
-              <strong>В других регионах</strong> — расчёт по вашим настройкам.
-            </p>
+            <p className="location-mode-guide">Выберите место. Источник времени определяется настройками и доступным покрытием.</p>
 
             {place ? <PlaceDetails key={place.id} place={place} officialLocation={officialLocation} onTimeZoneChange={onTimeZoneChange} /> : null}
             <div className="location-actions">
@@ -541,8 +539,8 @@ function PlaceDetails({ place, officialLocation, onTimeZoneChange }: {
       <p>{place.latitude.toFixed(5)}, {place.longitude.toFixed(5)}{place.accuracy !== null ? ` · точность ±${Math.round(place.accuracy)} м` : ''}</p>
       <p>Регион: {place.region?.name || 'не подтверждён локальными данными'}</p>
       {place.nearbyCity ? <p>Ориентир: {place.nearbyCity.name} · {place.nearbyCity.distanceKm.toFixed(1)} км. Для расчёта сохранена точка GPS.</p> : null}
-      {place.coverage === 'uncertain' ? <p>Точность GPS или близость границы не позволяют подтвердить территорию ДУМ РТ.</p> : null}
-      {place.coverage === 'unavailable' ? <p>Локальные геоданные недоступны; покрытие ДУМ РТ не подтверждено.</p> : null}
+      {place.coverage === 'uncertain' ? <p>{staticText('location-copy-4')}</p> : null}
+      {place.coverage === 'unavailable' ? <p>{staticText('location-copy-5')}</p> : null}
       <p role="status">Часовой пояс: {place.timeZone} · {sourceLabel}</p>
       <label className="timezone-label">Часовой пояс IANA
         <input value={zone} onChange={event => setZone(event.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Europe/Moscow" />
@@ -553,7 +551,7 @@ function PlaceDetails({ place, officialLocation, onTimeZoneChange }: {
       </div>
       {error ? <p role="alert">{error}</p> : null}
       {officialLocation ? <p>Таблица ДУМ РТ опубликована для {officialLocation.name}. Её часы и календарная дата показаны в Europe/Moscow, независимо от зоны места. Ручная зона не изменяет моменты намаза.</p> : null}
-      <p>Новый выбор города сбрасывает ручную зону. Повторное определение GPS сохраняет её для текущего GPS-места.</p>
+      <p>{staticText('location-copy-6')}</p>
     </details>
   )
 }

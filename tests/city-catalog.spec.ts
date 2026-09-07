@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { expect, test } from './fixtures'
+import { expect, readSavedSetting, test } from './fixtures'
 
 const index = JSON.parse(await readFile('public/data/cities/index.json', 'utf8')) as {
   version: string
@@ -37,13 +37,14 @@ test('старт и обзор не загружают пакеты; Киров 
   expect(fetched.length).toBeLessThanOrEqual(32)
   console.log(JSON.stringify({ query: 'Киров', shards: fetched.map(url => url.split('/').pop()), bytes: fetched.reduce((n, url) => n + (index.shards.find(s => url.endsWith(`/${s.id}.json`))?.bytes ?? 0), 0) }))
   await large.click()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({place:{name:'Киров, Кировская Область, Россия'}})
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
     await page.getByRole('button', { name: /Киров, Кировская/ }).click()
     await page.getByRole('button', { name: 'Найти город или район' }).click()
     await page.getByRole('searchbox').fill('Киров')
@@ -66,12 +67,12 @@ test('базовый обзор работает после установки �
     void globalThis.caches.open('city-data').then(cache => cache.put('/salah-pwa/data/cities-current.json', new Response('{}')))
   })
   await page.goto('./')
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await expect.poll(() => page.evaluate(async () => (await globalThis.caches.keys()).includes('city-data'))).toBe(false)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
   await context.setOffline(true)
   try {
     await page.getByRole('button', { name: /Казань/ }).click()

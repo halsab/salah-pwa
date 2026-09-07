@@ -1,3 +1,4 @@
+import { staticText } from './ui/staticText'
 import {
   useCallback,
   useEffect,
@@ -13,8 +14,8 @@ import { loadLocalGeography } from './data/localGeography'
 import type { CoverageGeometry } from './domain/localGeography'
 import { PRAYER_PROVIDERS, DEFAULT_OFFICIAL_LOCATIONS, officialDatasets } from './data/prayerProviders'
 import { resolvePrayerTimeSource } from './domain/prayerSource'
-import { automaticPreferences, manualCalculation, type SourcePreferences } from './domain/sourcePreferences'
-import { effectiveCalculationSettings, selectionFromSettings } from './domain/calculationSettings'
+import { automaticPreferences, type SourcePreferences } from './domain/sourcePreferences'
+import { effectiveCalculationSettings } from './domain/calculationSettings'
 import { useSettingsPersistence } from './features/settings/useSettingsPersistence'
 import { usePlaceSelection } from './features/location/usePlaceSelection'
 import type { GeolocationFailure } from './domain/errors'
@@ -24,7 +25,6 @@ import {
   getCalculationProfileCapability,
   type CalculationProfileCapability,
   type CalculationProfileId,
-  type CalculationSettings,
 } from './domain/prayerCalculation'
 import {
   getDeviceTimeZone,
@@ -49,9 +49,11 @@ import {
 } from './platform/browser'
 import type { LocationChoice } from './storage/database'
 import { AppHeader } from './ui/AppHeader'
-import { ShareIcon } from './ui/Icons'
+import { SourceBadge, SourceInfo } from './features/source/SourceInfo'
+import { useDataReset } from './features/settings/useDataReset'
+import type { Appearance } from './storage/database'
 
-export interface AppServices extends Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
+export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
   getPermission: () => Promise<GeolocationPermission>
@@ -80,11 +82,7 @@ function canonicalTimeZone(timeZone: string): string {
   return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone
 }
 
-function AppVersion({ version }: { version: string | undefined }) {
-  return version ? <small className="app-version">{version}</small> : null
-}
-
-function LoadingScreen({ version }: { version: string | undefined }) {
+function LoadingScreen() {
   return (
     <main className="page-shell loading-page">
       <section className="app-frame" aria-busy="true">
@@ -92,7 +90,6 @@ function LoadingScreen({ version }: { version: string | undefined }) {
         <div className="loading-mark" aria-hidden="true" />
         <p>Открываем расписание…</p>
       </section>
-      <AppVersion version={version} />
     </main>
   )
 }
@@ -110,7 +107,13 @@ export function App({
   const [preferences, setPreferences] = useState<SourcePreferences>(automaticPreferences)
   const persistence = useSettingsPersistence(services.saveSettings)
   const saveSettings = persistence.save
+  const invalidateSaves = persistence.invalidateAndDrain
   const persistPlace = useCallback((choice: LocationChoice) => saveSettings({ locationChoice: choice }), [saveSettings])
+  const [appearance, setAppearance] = useState<Appearance>('system')
+  const [sourceOpen, setSourceOpen] = useState<string | null>(null)
+  const [settingsReturnFocus, setSettingsReturnFocus] = useState<string | null>(null)
+  const nestedReturn = useRef<'location' | null>(null)
+  const sessionHasPlace = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [locationDialogOpen, setLocationDialogOpen] = useState(false)
@@ -121,19 +124,31 @@ export function App({
   const [retryCount, setRetryCount] = useState(0)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
-  const footerMethodologyButtonRef = useRef<HTMLButtonElement>(null)
   const settingsMethodologyButtonRef = useRef<HTMLButtonElement>(null)
-  const methodologyReturnTarget = useRef<'footer' | 'settings'>('footer')
-  const shareButtonRef = useRef<HTMLButtonElement>(null)
 
   const closeLocationDialog = useCallback(() => {
     setLocationDialogOpen(false)
-    requestAnimationFrame(() => locationButtonRef.current?.focus())
+    if (nestedReturn.current === 'location') {
+      nestedReturn.current = null; setSettingsDialogOpen(true)
+      setSettingsReturnFocus('settings-location')
+    } else requestAnimationFrame(() => locationButtonRef.current?.focus())
   }, [])
   const onPlaceChosen = useCallback(() => { closeLocationDialog(); pulseHaptic() }, [closeLocationDialog])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
   const { place, notice: locationNotice, restore, locate: locateAutomatically,
-    selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, changeTimeZone } = usePlaceSelection(services, locations, onPlaceChosen, persistPlace)
+    selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, changeTimeZone, invalidate: invalidateLocation } = usePlaceSelection(services, locations, onPlaceChosen, persistPlace)
+  const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
+    invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
+    getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
+  useEffect(() => {
+    document.documentElement.dataset.theme = appearance
+    return () => { delete document.documentElement.dataset.theme }
+  }, [appearance])
+  useEffect(() => () => { void invalidateSaves() }, [invalidateSaves])
+  useEffect(() => {
+    if (place && !sessionHasPlace.current && !resetting.current) void services.refresh()
+    sessionHasPlace.current = Boolean(place)
+  }, [place, resetting, services])
   const datasets = useMemo(() => officialDatasets(meta, repositoryState.dataState), [meta, repositoryState.dataState])
   const capabilities = useMemo(() => CALCULATION_PROFILES.filter(p => services.getCalculationProfileCapability(p.id).supported).map(p => p.id), [services])
 
@@ -149,24 +164,26 @@ export function App({
       setRepositoryState(state)
       restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
       setPreferences(state.preferences)
+      setAppearance(state.appearance ?? 'system')
+      sessionHasPlace.current = Boolean(state.locationChoice)
       setLoading(false)
     }
     const unsubscribe = services.subscribe(snapshot => { if (active) setRepositoryState(snapshot) })
-    const refresh = () => { void services.refresh() }
+    const refresh = () => { if (sessionHasPlace.current && !resetting.current) void services.refresh() }
     void services.initialize().then((result) => {
       if (!active) return
       if (!result.ok) {
-        setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.')
+        setError(staticText('app-copy-2'))
         return
       }
       acceptState(result.value)
       refresh()
-    }).catch(() => active && setError('Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.'))
+    }).catch(() => active && setError(staticText('app-copy-2')))
       .finally(() => active && setLoading(false))
     window.addEventListener('online', refresh)
     window.addEventListener('pageshow', refresh)
     return () => { active = false; unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('pageshow', refresh); void services.invalidateAndDrain() }
-  }, [retryCount, services, restore])
+  }, [retryCount, services, restore, resetting])
 
   const { cityCatalog, cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -182,7 +199,6 @@ export function App({
   } = useScheduleDate(services, calendarTimeZone)
   const resolution = place ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
-  const officialProvider = resolution?.kind === 'official' ? PRAYER_PROVIDERS.find(provider => provider.id === resolution.provider) : undefined
   const locationId = resolution?.kind === 'official' ? resolution.locationId : null
   const officialLocation = officialMode ? locations.find(location => location.id === locationId) ?? null : null
   const selectedTimeZone = resolution?.timeZone ?? calendarTimeZone
@@ -197,6 +213,7 @@ export function App({
   }), [services])
   const {
     schedule,
+    context,
     schedules,
     contextKey,
     scheduleLoading,
@@ -220,29 +237,26 @@ export function App({
     requestAnimationFrame(() => settingsButtonRef.current?.focus())
   }, [])
   const openSettingsDialog = useCallback(() => {
+    setSettingsReturnFocus(null)
     setSettingsFocusMethodology(false)
     setSettingsDialogOpen(true)
   }, [])
-  const openMethodologyDialog = useCallback((returnTarget: 'footer' | 'settings') => {
-    methodologyReturnTarget.current = returnTarget
-    if (returnTarget === 'settings') setSettingsDialogOpen(false)
+  const openMethodologyDialog = useCallback(() => {
+    setSettingsDialogOpen(false)
     setMethodologyDialogOpen(true)
   }, [])
   const closeMethodologyDialog = useCallback(() => {
     setMethodologyDialogOpen(false)
-    if (methodologyReturnTarget.current === 'settings') {
-      setSettingsFocusMethodology(true)
-      setSettingsDialogOpen(true)
-      return
-    }
-    requestAnimationFrame(() => footerMethodologyButtonRef.current?.focus())
+    setSettingsFocusMethodology(true)
+    setSettingsDialogOpen(true)
   }, [])
   const closeShareDialog = useCallback(() => {
     setShareDialogOpen(false)
-    requestAnimationFrame(() => shareButtonRef.current?.focus())
+    setSettingsDialogOpen(true)
+    setSettingsReturnFocus('settings-share')
   }, [])
 
-  if (loading) return <LoadingScreen version={version} />
+  if (loading) return <LoadingScreen />
 
   if (error) {
     return (
@@ -255,8 +269,7 @@ export function App({
             Попробовать снова
           </button>
         </section>
-        <AppVersion version={version} />
-      </main>
+        </main>
     )
   }
 
@@ -265,10 +278,7 @@ export function App({
     setPreferences(next)
     persistence.save({ sourcePreferences: next })
   }
-  const updateCalculationSettings = (settings: CalculationSettings) => {
-    updatePreferences(manualCalculation(selectionFromSettings(settings)))
-  }
-  const calculatedLocationLabel = place?.name ?? 'Моё местоположение'
+  const calculatedLocationLabel = place?.name ?? 'Выберите место'
   const timeZoneOffset = canonicalTimeZone(selectedTimeZone) === canonicalTimeZone(deviceTimeZone)
     ? null
     : getUtcOffset(currentTime, selectedTimeZone)
@@ -276,6 +286,7 @@ export function App({
     || settingsDialogOpen
     || methodologyDialogOpen
     || shareDialogOpen
+    || Boolean(sourceOpen && sourceOpen === contextKey && schedule)
 
   const persistenceNotice = persistence.status === 'failed' ? (
         <div className="persistence-notice" role="status">
@@ -310,11 +321,8 @@ export function App({
             onShowDatePicker={showDatePicker}
           />
 
-          {officialLocation && place?.selection !== 'official' ? (
-            <p className="location-schedule-note">Таблица {officialProvider?.label}: {officialLocation.name} — ближайший опубликованный пункт. Время и дата таблицы: {selectedTimeZone}.</p>
-          ) : null}
           {locationNotice ? <p role="status" className="location-schedule-note">{locationNotice}</p> : null}
-          <ScheduleContent
+          {!place ? <div className="first-install"><h2>Время намаза для вашего места</h2><p>{staticText('app-copy-1')}</p><button className="primary-button" type="button" onClick={openLocationDialog}>Выбрать место</button></div> : <ScheduleContent
             schedule={schedule}
             key={contextKey}
             schedules={schedules}
@@ -326,26 +334,12 @@ export function App({
             currentTime={currentTime}
             now={services.now}
             officialMode={officialMode}
-            officialProviderName={officialProvider?.label}
-            calculationSettings={calculationSettings}
-            officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''}
-            methodologyButtonRef={footerMethodologyButtonRef}
+            sourceBadge={schedule && context && !scheduleLoading && !scheduleError ? <SourceBadge context={context} onOpen={() => setSourceOpen(contextKey)} /> : null}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
-            onOpenMethodology={() => openMethodologyDialog('footer')}
-          />
+          />}
         </section>
 
-        <button
-          ref={shareButtonRef}
-          className="share-button"
-          type="button"
-          onClick={() => setShareDialogOpen(true)}
-        >
-          <ShareIcon />
-          <span>Поделиться</span>
-        </button>
-        <AppVersion version={version} />
       </div>
 
       {!locationDialogOpen && !settingsDialogOpen ? persistenceNotice : null}
@@ -368,7 +362,17 @@ export function App({
         onLoadCities={loadCities}
         onSearchCities={services.cities.search}
       />
+      {schedule && context ? <SourceInfo open={Boolean(sourceOpen && sourceOpen === contextKey)} onClose={() => { setSourceOpen(null); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.source-badge')?.focus()) }} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel} checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} /> : null}
       <SettingsDialog
+        returnFocusId={settingsReturnFocus}
+        appearance={appearance}
+        onAppearanceChange={value => { setAppearance(value); persistence.save({ appearance: value }) }}
+        placeLabel={calculatedLocationLabel}
+        timeZone={place?.timeZone ?? ''}
+        version={version}
+        onReset={reset}
+        onOpenLocation={() => { nestedReturn.current = 'location'; setSettingsDialogOpen(false); setLocationDialogOpen(true) }}
+        onOpenShare={() => { setSettingsDialogOpen(false); setShareDialogOpen(true) }}
         persistenceNotice={persistenceNotice}
         open={settingsDialogOpen}
         officialMode={officialMode}
@@ -379,8 +383,7 @@ export function App({
         methodologyTriggerRef={settingsMethodologyButtonRef}
         getCalculationProfileCapability={services.getCalculationProfileCapability}
         onClose={closeSettingsDialog}
-        onChange={updateCalculationSettings}
-        onOpenMethodology={() => openMethodologyDialog('settings')}
+        onOpenMethodology={openMethodologyDialog}
       />
       <MethodologyDialog
         open={methodologyDialogOpen}

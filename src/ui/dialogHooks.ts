@@ -4,6 +4,7 @@ export function useModalDialog(
   open: boolean,
   onClose: () => void,
   initialFocusRef?: RefObject<HTMLElement | null>,
+  returnFocusId?: string | null,
 ) {
   const dialogRef = useRef<HTMLElement>(null)
 
@@ -15,7 +16,7 @@ export function useModalDialog(
       const coarsePointer = (
         window as unknown as { matchMedia?: Window['matchMedia'] }
       ).matchMedia?.('(pointer: coarse)').matches ?? false
-      const focusTarget = coarsePointer ? dialogRef.current : initialFocusRef?.current ?? dialogRef.current
+      const focusTarget = (returnFocusId ? document.getElementById(returnFocusId) : null) ?? (coarsePointer ? dialogRef.current : initialFocusRef?.current ?? dialogRef.current)
       focusTarget?.focus({ preventScroll: true })
     })
 
@@ -56,7 +57,7 @@ export function useModalDialog(
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [initialFocusRef, onClose, open])
+  }, [initialFocusRef, onClose, open, returnFocusId])
 
   return dialogRef
 }

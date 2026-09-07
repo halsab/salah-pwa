@@ -17,7 +17,7 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 8
+const DATABASE_VERSION = 9
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -35,7 +35,10 @@ export type LocationChoice = { place?: Place } & (
 
 )
 
+export type Appearance = 'system' | 'light' | 'dark'
+
 interface SettingValueMap {
+  appearance: Appearance
   locationChoice: LocationChoice
   sourcePreferences: SourcePreferences
   calculationSettings: CalculationSettings
@@ -76,6 +79,7 @@ export interface DatasetMeta {
 }
 
 interface SalahDatabase extends DBSchema {
+  control: { key: 'generation'; value: number }
   days: {
     key: string
     value: PrayerDayRecord
@@ -129,6 +133,8 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
   if (databasePromise) return databasePromise
 
   const opening = openDB<SalahDatabase>(DATABASE_NAME, DATABASE_VERSION, {
+    blocking() { void databasePromise?.then(database => database.close()); databasePromise = undefined },
+    terminated() { databasePromise = undefined },
     upgrade(database, oldVersion, _newVersion, transaction) {
       if (oldVersion < 1) {
         database.createObjectStore('days', { keyPath: 'key' })
@@ -197,6 +203,12 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
           await store.put({ key: 'sourcePreferences', value: restoreSourcePreferences(undefined, storedValue(settings), choice?.key === 'locationChoice' ? choice.value : undefined) })
         }).catch(() => transaction.abort())
       }
+      if (oldVersion < 9) {
+        // Поколение не содержит пользовательских данных; оно запрещает запись из старых сессий.
+        database.createObjectStore('control')
+        void transaction.objectStore('control').put(0, 'generation')
+        void transaction.objectStore('settings').put({ key: 'appearance', value: 'system' })
+      }
     },
   })
   databasePromise = opening
@@ -227,14 +239,18 @@ async function storageResult<Value>(
 export function replaceDataset(
   dataset: PrayerDataset,
   identity: DatasetIdentity,
-  guard?: { revision: string | null; isCurrent: () => boolean; provider?: string },
+  guard?: { revision: string | null; isCurrent: () => boolean; provider?: string; generation?: number },
 ): Promise<Result<void, StorageFailure | DataFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
-    const transaction = database.transaction(['days', 'meta'], 'readwrite')
+    const transaction = database.transaction(['days', 'meta', 'control'], 'readwrite')
     const dayStore = transaction.objectStore('days')
 
     try {
+      if (guard?.generation !== undefined && await transaction.objectStore('control').get('generation') !== guard.generation) {
+        await transaction.done
+        return false
+      }
       if (guard) {
         const installed = await transaction.objectStore('meta').get('current')
         if (!guard.isCurrent() || (installed ? getDatasetRevision(installed) : null) !== guard.revision
@@ -382,16 +398,19 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance'>>
 
-export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true): Promise<Result<void, StorageFailure>> {
+export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     if (!isCurrent()) return
-    const transaction = database.transaction('settings', 'readwrite')
+    const transaction = database.transaction(['settings', 'control'], 'readwrite')
     try {
-      if (patch.locationChoice) await transaction.store.put({ key: 'locationChoice', value: patch.locationChoice })
-      if (patch.sourcePreferences) await transaction.store.put({ key: 'sourcePreferences', value: patch.sourcePreferences })
+      if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) throw new Error('Сессия завершена')
+      if (!isCurrent()) { await transaction.done; return }
+      if (patch.appearance) await transaction.objectStore('settings').put({ key: 'appearance', value: patch.appearance })
+      if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
+      if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       await transaction.done
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }
@@ -408,5 +427,32 @@ export function getStoredDataset(): Promise<Result<{ dataset: PrayerDataset; met
     const [meta, records] = await Promise.all([transaction.objectStore('meta').get('current'), transaction.objectStore('days').getAll()])
     await transaction.done
     return meta ? { meta, dataset: { ...meta, days: records.map(({ key: _key, ...day }) => day) } } : null
+  })
+}
+
+export async function getDataGeneration(): Promise<number> {
+  return (await (await getDatabase()).get('control', 'generation')) ?? 0
+}
+
+export function clearAppData(): Promise<Result<void, StorageFailure>> {
+  return storageResult(async () => {
+    const database = await getDatabase()
+    // Очистка вместо deleteDB не блокируется открытыми соединениями других вкладок.
+    // Все записи salah персональны или зависят от пользовательской сессии; публичный каталог живёт отдельно.
+    const transaction = database.transaction(['settings', 'days', 'meta', 'control'], 'readwrite')
+    try {
+      const generation = (await transaction.objectStore('control').get('generation')) ?? 0
+      await Promise.all([
+        transaction.objectStore('settings').clear(),
+        transaction.objectStore('days').clear(),
+        transaction.objectStore('meta').clear(),
+        transaction.objectStore('control').put(generation + 1, 'generation'),
+      ])
+      await transaction.done
+    } catch (error) {
+      try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }
+      await transaction.done.catch(() => undefined)
+      throw error
+    }
   })
 }

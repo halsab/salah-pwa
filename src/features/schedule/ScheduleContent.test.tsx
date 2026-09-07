@@ -17,12 +17,12 @@ const base = {
 }
 
 describe('ScheduleContent', () => {
-  it('сохраняет спорное значение без неподтверждённого datetime и поясняет исключение из таймера', () => {
+  it('сохраняет спорное значение без неподтверждённого datetime и считает до намаза', () => {
     render(<ScheduleContent {...base} />)
     expect(screen.getByText('23:54')).toBeVisible()
     expect(screen.getByText('23:54')).not.toHaveAttribute('datetime')
-    expect(screen.getByText(/Дата завершения сухура.*не уточнена/)).toBeVisible()
-    expect(screen.getByRole('timer')).toHaveAccessibleName(/До зенита/)
+    expect(screen.queryByText(/Дата завершения сухура.*не уточнена/)).not.toBeInTheDocument()
+    expect(screen.getByRole('timer')).toHaveAccessibleName(/До зухра/)
   })
 
   it('loading одновременно скрывает таблицу, подсветку и countdown', () => {
@@ -30,18 +30,25 @@ describe('ScheduleContent', () => {
     expect(screen.getByRole('timer')).toBeVisible()
     rerender(<ScheduleContent {...base} scheduleLoading />)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    expect(screen.queryByRole('list', { name: 'Времена намаза' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
     expect(container.querySelector('[data-active]')).toBeNull()
     expect(screen.getByLabelText('Загружаем расписание')).toBeVisible()
   })
 
-  it('перед полуночью использует Фаджр соседней строки и подсвечивает только строку своего расписания', () => {
+  it('перед полуночью не подсвечивает прошедший Фаджр соседнего расписания', () => {
     const today = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2026-12-31', 'Europe/Moscow')
     const tomorrow = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2027-01-01', 'Europe/Moscow')
     tomorrow.entries.fajr = { instant: Date.parse('2026-12-31T23:55:00+03:00'), time: '23:55', estimated: false }
     const now = () => new Date('2026-12-31T23:56:00+03:00')
     const { container } = render(<ScheduleContent {...base} schedule={today} schedules={[tomorrow, today]} selectedDate={today.date} today={today.date} currentTime={now()} now={now} officialMode={false} />)
-    expect(screen.getByText('Фаджр · 23:55')).toBeVisible()
+    expect(screen.queryByText('Фаджр · 23:55')).not.toBeInTheDocument()
     expect(container.querySelector('[data-active]')).toBeNull()
   })
+})
+
+it('выделяет следующий намаз и его время, без конкурирующего предыдущего события', () => {
+  const { container } = render(<ScheduleContent {...base} />)
+  expect(screen.getByRole('region', { name: 'Следующий намаз' })).toHaveTextContent('Зухр')
+  expect(container.querySelector('.prayer-row[data-active]')).toHaveTextContent('Зухр')
+  expect(screen.queryByText('Последнее событие')).not.toBeInTheDocument()
 })

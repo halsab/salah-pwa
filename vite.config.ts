@@ -34,6 +34,9 @@ export default defineConfig({
     'import.meta.env.VITE_APP_PACKAGE_VERSION': JSON.stringify(LOCAL_APP_VERSION),
   },
   build: {
+    // Плотная минификация сохраняет прежний бюджет расширенного интерфейса.
+    minify: 'terser',
+    terserOptions: { compress: { passes: 2 }, maxWorkers: 2 },
     rollupOptions: {
       input: {
         app: fileURLToPath(new URL('./index.html', import.meta.url)),
@@ -41,6 +44,8 @@ export default defineConfig({
       },
     },
   },
+  // Worker минифицируется отдельно от основного пакета Terser.
+  worker: { rolldownOptions: { output: { minify: true } } },
   plugins: [
     {
       name: 'production-content-security-policy',

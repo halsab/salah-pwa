@@ -28,7 +28,7 @@ test('статическая privacy page точно описывает данн
   await expect(localData).toContainText('Cache Storage')
   await expect(localData).toContainText('обзор городов — в Cache Storage')
   await expect(localData).toContainText('Загруженные пакеты городов сохраняются в IndexedDB')
-  await expect(page.getByText(/удалить через настройки данных сайта в браузере/i)).toBeVisible()
+  await expect(page.getByText(/Настройки → Данные → Сбросить данные приложения/)).toBeVisible()
   await expect(page.getByRole('button', { name: /сброс|удалить/i })).toHaveCount(0)
 
   const githubPrivacy = page.getByRole('link', { name: 'политикой конфиденциальности GitHub' })
@@ -94,6 +94,7 @@ test('переходит из приложения в privacy page и обрат
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
 
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('link', { name: 'Конфиденциальность' }).click()
   await expect(page).toHaveURL(/\/salah-pwa\/privacy\/$/)
   await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
@@ -178,7 +179,7 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   await expect(page.getByRole('button', { name: 'Уточнить название онлайн' })).toHaveCount(0)
   await page.getByRole('button', { name: 'Определить автоматически' }).click()
   await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah')
     request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))

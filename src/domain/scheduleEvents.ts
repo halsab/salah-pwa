@@ -13,7 +13,7 @@ interface EventDefinition {
 
 const EVENT_DEFINITIONS: Record<SchedulePrayerKey, EventDefinition> = {
   suhurEnd: { kind: 'marker', label: 'Завершение сухура', countdownLabel: 'До конца сухура' },
-  fajrJamaat: { kind: 'jamaat', label: 'Утренний намаз', countdownLabel: 'До утреннего в мечети' },
+  fajrJamaat: { kind: 'jamaat', label: 'Утренний намаз в мечетях', countdownLabel: 'До утреннего в мечети' },
   fajr: { kind: 'prayer', label: 'Фаджр', countdownLabel: 'До фаджра' },
   sunrise: { kind: 'marker', label: 'Восход', countdownLabel: 'До восхода' },
   zenith: { kind: 'marker', label: 'Зенит', countdownLabel: 'До зенита' },

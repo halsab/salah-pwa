@@ -235,9 +235,8 @@ button:disabled {
 }
 
 .location-control span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .location-chevron {
@@ -1387,20 +1386,19 @@ button:disabled {
     font-size: 1rem;
   }
 
-  .location-tools {
-    grid-column: 2;
-    grid-row: 1;
-    grid-template-columns: minmax(0, 1fr) 46px;
-    gap: 6px;
-  }
+  .location-tools { display: contents; }
 
   .location-tools .location-control {
-    grid-column: 1;
-    grid-row: 1;
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .settings-button {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
     min-height: 48px;
+    width: 48px;
     padding: 9px;
   }
 
@@ -1415,7 +1413,7 @@ button:disabled {
 
   .date-controls {
     grid-column: 1 / -1;
-    grid-row: 2;
+    grid-row: 3;
     grid-template-columns: 44px minmax(0, 1fr) 44px;
     gap: 6px;
   }
@@ -1600,7 +1598,7 @@ button:disabled {
   }
 
   .location-dialog > .location-results,
-  .location-dialog > .methodology-content {
+  .location-dialog .methodology-content {
     margin-right: calc(-1 * max(16px, env(safe-area-inset-right)));
     margin-left: calc(-1 * max(16px, env(safe-area-inset-left)));
     padding-right: max(16px, env(safe-area-inset-right));
@@ -1806,7 +1804,7 @@ button:disabled {
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --page: #091410;
     --paper: #12231c;
     --paper-strong: #1a2e25;
@@ -1950,3 +1948,72 @@ button:disabled {
   position: static;
   margin-block: 12px;
 }
+
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] {
+  color-scheme: dark;
+    --page: #091410;
+    --paper: #12231c;
+    --paper-strong: #1a2e25;
+    --ink: #f4ecd9;
+    --ink-soft: #b7c1b7;
+    --outline: #b4c2b6;
+    --primary: #3d8a6c;
+    --primary-strong: #2b7155;
+    --on-primary: #fff8e8;
+    --accent: #d2a843;
+    --accent-ink: #10251d;
+    --danger: #f092a1;
+    --danger-surface: rgb(240 146 161 / 10%);
+    --focus: #e0b84e;
+    --caret: #d2a843;
+    --shadow: #020907;
+    --hairline: rgb(180 194 182 / 24%);
+    --surface-wash: rgb(244 236 217 / 8%);
+    --surface-wash-soft: rgb(244 236 217 / 5%);
+    --drawer-shadow: rgb(2 9 7 / 70%);
+    --selection: rgb(210 168 67 / 45%);
+    --backdrop: rgb(2 9 7 / 80%);
+}
+.settings-dialog { overflow-y: auto; }
+.settings-dialog > * { flex-shrink: 0; }
+.settings-link, .source-badge {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-height: 48px; margin: 4px 0; padding: 12px 4px;
+  border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0;
+  background: transparent; color: var(--ink); text-align: left; font-size: 1.15rem;
+  text-decoration: none; overflow-wrap: anywhere;
+}
+.source-badge { color: var(--ink-soft); font-size: 1rem; margin-top: 16px; }
+.setting-field input { width: 100%; min-width: 0; min-height: 48px; padding: 10px 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--paper-strong); color: var(--ink); }
+.setting-field select { min-width: 0; max-width: 100%; }
+.adjustment-fields { min-width: 0; margin: 20px 0; padding: 0; border: 0; }
+.adjustment-fields legend { font-size: 1.25rem; }
+.danger-button { color: var(--danger); }
+.source-content { overflow-y: auto; min-height: 0; font-size: 1.1rem; line-height: 1.45; overflow-wrap: anywhere; }
+.source-content a { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); }
+.source-facts { display: grid; gap: 4px; }
+.source-facts dt { color: var(--ink-soft); margin-top: 10px; }
+.source-facts dd { margin: 0; }
+.first-install { padding: 40px 20px; text-align: center; min-height: 350px; }
+.next-time { font-size: clamp(3.5rem, 7vw, 6rem); line-height: 1; font-variant-numeric: tabular-nums; }
+.next-name { margin: 0; font-size: clamp(2rem, 4vw, 3.5rem); }
+.current-prayer { gap: 10px; }
+.current-label { font-size: 1.15rem; }
+.countdown { min-height: 70px; max-width: 300px; padding: 12px 18px; }
+.countdown svg { width: 28px; height: 28px; }
+.countdown-value { font-size: 2rem; }
+@media (max-width: 960px) {
+  .next-prayer-panel { padding: 18px 12px; gap: 12px; }
+  .next-time { font-size: 3.5rem; }
+  .setting-field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+@media (max-width: 390px) {
+  .location-control { max-width: 100%; }
+  .prayer-name { overflow-wrap: anywhere; }
+  .prayer-dots { min-width: 0; }
+  .prayer-time { white-space: nowrap; }
+  .dialog-header h2 { font-size: 1.5rem; overflow-wrap: anywhere; }
+}
+
+.static-content { min-height: 0; display: contents; }

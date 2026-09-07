@@ -23,7 +23,7 @@ test('обновление service worker перезагружает прило�
     expect(await page.evaluate(() => Date.now())).toBe(FIXED_BROWSER_TIME.getTime())
     await page.goto('./')
     await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
     await page.evaluate(async () => navigator.serviceWorker.ready)
     await page.reload()
     await expect.poll(() => page.evaluate(() =>
@@ -51,7 +51,7 @@ test('обновление service worker перезагружает прило�
 
     await expect.poll(() => navigationCount, { timeout: 15_000 }).toBe(1)
     await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
     await page.evaluate(async () => {
       const registration = await navigator.serviceWorker.ready
       await registration.update()

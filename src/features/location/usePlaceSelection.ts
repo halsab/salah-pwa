@@ -38,9 +38,10 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       : { mode: 'calculated', coordinates: next, source: selectionSource, place: next })
   }, [locations, persist])
 
-  const restore = useCallback((choice: LocationChoice, availableLocations: PrayerLocation[]) => {
+  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[]) => {
     if (restored.current || current.current) return
     restored.current = true
+    if (!choice) { started.current = true; return }
     const saved = placeFromChoice(choice, availableLocations)
     current.current = saved
     setPlace(saved)
@@ -131,5 +132,6 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     apply(updated, source, operation)
     return updated.timeZone
   }, [apply, services, source])
-  return { place, source, notice, restore, locate, selectOfficial, selectCity, changeTimeZone }
+  const invalidate = useCallback(() => { epoch.current += 1; started.current = true }, [])
+  return { place, source, notice, restore, locate, selectOfficial, selectCity, changeTimeZone, invalidate }
 }

@@ -6,8 +6,8 @@ import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences }
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
-  getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getStoredDataset,
-  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch,
+  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getStoredDataset,
+  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance,
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, dumRtProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
@@ -22,7 +22,8 @@ export interface PrayerRepositorySnapshot {
   checkedAt: number | null
 }
 export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
-  locationChoice: LocationChoice
+  locationChoice: LocationChoice | null
+  appearance?: Appearance
   preferences: SourcePreferences
 }
 export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & {
@@ -50,14 +51,17 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
 export async function initializePrayerRepository(): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [snapshot, choice, preferences, legacy] = await Promise.all([
-    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'),
+  const [snapshot, choice, preferences, legacy, appearance] = await Promise.all([
+    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'),
   ])
   if (!snapshot.ok) return snapshot
   if (!choice.ok) return choice
   if (!preferences.ok) return preferences
   if (!legacy.ok) return legacy
+  if (!appearance.ok) return appearance
   return success({ ...snapshot.value, locationChoice: restoreLocationChoice(choice.value, snapshot.value.meta),
+    ...(await getDataGeneration() > 0 && !choice.value ? { locationChoice: null } : {}),
+    appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',
     preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
 
@@ -67,6 +71,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
   let controller: AbortController | null = null
   let installation: ReturnType<typeof replaceDataset> | null = null
   let epoch = 0
+  let generation = 0
   let latest: PrayerRepositorySnapshot = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null }
   const emit = (snapshot: PrayerRepositorySnapshot) => {
     latest = snapshot
@@ -75,6 +80,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
   const refresh = (): Promise<PrayerRepositorySnapshot> => {
     if (pending) return pending
     const operation = epoch
+    const dataGeneration = generation
     controller = new AbortController()
     const signal = controller.signal
     const isCurrent = () => operation === epoch && !signal.aborted
@@ -109,7 +115,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
         if (!isCurrent()) return 'superseded' as const
         const { schemaVersion: _schema, ...identity } = manifest.value
         // Внутри транзакции повторно проверяется revision: другая вкладка могла уже установить новый набор.
-        installation = (operations.replace ?? replaceDataset)(verified.value, identity, { revision, isCurrent, provider: dumRtProvider.id })
+        installation = (operations.replace ?? replaceDataset)(verified.value, identity, { revision, isCurrent, provider: dumRtProvider.id, generation: dataGeneration })
         const replacement = await installation
         if (!replacement.ok) return replacement.error.kind === 'data' ? 'superseded' as const : 'storage' as const
         return null
@@ -134,7 +140,9 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     return running
   }
   return {
-    initialize: initializePrayerRepository,
+    initialize: async () => { generation = await getDataGeneration(); return initializePrayerRepository() },
+    clearAppData,
+    getDataGeneration,
     refresh,
     subscribe: (listener: (snapshot: PrayerRepositorySnapshot) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     invalidateAndDrain: async () => { epoch += 1; controller?.abort(); await pending; await installation; latest = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null } },
@@ -142,7 +150,8 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean): Promise<Result<void, StorageFailure | DataFailure>> => {
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
-      return saveSettings(patch, isCurrent)
+      if (patch.appearance && !['system', 'light', 'dark'].includes(patch.appearance)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      return saveSettings(patch, isCurrent, generation)
     },
   }
 }

@@ -165,7 +165,7 @@ describe('database', () => {
     })
   })
 
-  it('открывает настоящую v5 как v8 без потери расписания, meta и настроек', async () => {
+  it('открывает настоящую v5 как v9 без потери расписания, meta и настроек', async () => {
     const choice: LocationChoice = {
       mode: 'official',
       locationId: 'kazan',
@@ -200,7 +200,7 @@ describe('database', () => {
     expect(unwrap(await getSetting('calculationSettings'))).toEqual(
       calculationSettings,
     )
-    expect(await getDatabaseVersion()).toBe(8)
+    expect(await getDatabaseVersion()).toBe(9)
   })
 
   it('читает legacy meta без идентичности артефакта для офлайн-fallback', async () => {
@@ -266,7 +266,7 @@ describe('database', () => {
     expect(unwrap(await getLocationChoice())).toMatchObject(choice)
   })
 
-  it('мигрирует GPS-выбор v4 в автоматический calculated-выбор v8', async () => {
+  it('мигрирует GPS-выбор v4 в автоматический calculated-выбор v9', async () => {
     const legacyCoordinates = {
       latitude: 55.7558,
       longitude: 37.6173,
@@ -286,7 +286,7 @@ describe('database', () => {
       coordinates: legacyCoordinates,
       source: 'automatic',
     })
-    expect(await getDatabaseVersion()).toBe(8)
+    expect(await getDatabaseVersion()).toBe(9)
   })
 
   it('мигрирует preset-выбор v4 в ручной calculated-выбор', async () => {
@@ -327,7 +327,7 @@ describe('database', () => {
     await createLegacyVersion4Database([])
 
     expect(unwrap(await getLocationChoice())).toBeUndefined()
-    expect(await getDatabaseVersion()).toBe(8)
+    expect(await getDatabaseVersion()).toBe(9)
   })
 
   it('возвращает типизированную ошибку недоступного IndexedDB', async () => {
@@ -369,7 +369,7 @@ it('migrates real v6 Nominatim names without requesting the network or deleting 
   expect(choice?.place).toMatchObject({ name: legacy.name, latitude: legacy.latitude, longitude: legacy.longitude,
     selection: 'gps', automaticTimeZone: { id: 'Europe/Moscow', source: 'legacy' } })
   expect(choice?.place).not.toHaveProperty('nameSource')
-  expect(await getDatabaseVersion()).toBe(8)
+  expect(await getDatabaseVersion()).toBe(9)
 })
 
 it('checks operation epoch after opening IndexedDB so obsolete saves do not start', async () => {
@@ -378,7 +378,7 @@ it('checks operation epoch after opening IndexedDB so obsolete saves do not star
 })
 
 it('recovers after a browser rejects opening a newer incompatible database', async () => {
-  await createVersion5Database({}, 9)
+  await createVersion5Database({}, 10)
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
   await deleteSalahDatabase()
   expect(unwrap(await getLocationChoice())).toBeUndefined()
@@ -392,7 +392,7 @@ it.each(['official', 'calculated'] as const)('migrates real v7 %s preferences, r
   expect(unwrap(await getSetting('sourcePreferences'))).toMatchObject({ mode: 'manual', source: { kind: mode }, calculationDraft: { profile: 'dumRf', overrides: { asrMethod: 'standard', highLatitudeRule: 'nearestDay' } } })
   expect(unwrap(await getSetting('calculationSettings'))).toEqual(legacy)
   expect(unwrap(await getLocationChoice())).toEqual(choice)
-  expect(await getDatabaseVersion()).toBe(8)
+  expect(await getDatabaseVersion()).toBe(9)
 })
 it('migrates a manual legacy city without expert settings to automatic source', async () => {
   await createVersion5Database({ settings: [{ key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'manual' } }] }, 7)

@@ -77,7 +77,7 @@ test('после первого запуска расписание полнос
 
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
   expect(prayerDatasetRequests).toBe(1)
 
   await page.evaluate(async () => {
@@ -85,7 +85,7 @@ test('после первого запуска расписание полнос
   })
   prayerDatasetRequests = 0
   await page.reload()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   expect(prayerDatasetRequests).toBe(0)
 
@@ -106,9 +106,11 @@ test('после первого запуска расписание полнос
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
-    await expect(page.getByRole('link', { name: 'ДУМ РТ' })).toBeVisible()
-    await expect(page.getByText('Доступно офлайн')).toBeVisible()
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
+    await page.getByRole('button', { name: /Официальное расписание · ДУМ РТ/ }).click()
+    await expect(page.getByRole('link', { name: 'Первичный источник · ДУМ РТ' })).toBeVisible()
+    await page.getByRole('button', { name: 'Закрыть' }).click()
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
     await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
     const qr = page.getByRole('img', { name: 'QR-код со ссылкой на Salah' })
     await expect(qr).toBeVisible()
@@ -135,13 +137,13 @@ test('GPS-расписание вне Татарстана рассчитыва�
   await page.getByRole('button', { name: 'Определить автоматически' }).click()
   await expect(page.getByRole('button', { name: /Моё местоположение/i })).toBeVisible()
   expect(cityCatalogRequests).toBe(0)
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
   await expect(
     page
-      .getByRole('list', { name: 'Времена намаза' })
+      .getByRole('list', { name: 'Расписание дня' })
       .getByText('Фаджр', { exact: true }),
   ).toBeVisible()
-  await expect(page.getByText(/Расчёт по настройкам · Muslim World League/)).toBeVisible()
+  await expect(page.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ mode: 'calculated', source: 'automatic', coordinates: { latitude: 55.7558, longitude: 37.6173 } })
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
@@ -151,13 +153,13 @@ test('GPS-расписание вне Татарстана рассчитыва�
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('button', { name: /Моё местоположение/i })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
     await expect(
       page
-        .getByRole('list', { name: 'Времена намаза' })
+        .getByRole('list', { name: 'Расписание дня' })
         .getByText('Фаджр', { exact: true }),
     ).toBeVisible()
-    await expect(page.getByText(/Расчёт по настройкам · Muslim World League/)).toBeVisible()
+    await expect(page.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
     expect(cityCatalogRequests).toBe(0)
   } finally {
     await context.setOffline(false)
@@ -175,7 +177,8 @@ test('город из офлайн-справочника сохраняется
   await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция' }).click()
 
   await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({place:{cityId:745044}})
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
@@ -184,7 +187,7 @@ test('город из офлайн-справочника сохраняется
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
     await page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ }).click()
     await page.getByRole('button', { name: 'Найти город или район' }).click()
     await page.getByRole('searchbox').fill('Москва')
@@ -198,7 +201,7 @@ test('prepared local boundary resolves GPS in Tatarstan identically offline', as
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7961, longitude: 49.1064, accuracy: 20 })
   await page.goto('./')
-  await expect(page.getByRole('list', { name: 'Времена намаза' })).toBeVisible()
+  await expect(page.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
@@ -208,8 +211,10 @@ test('prepared local boundary resolves GPS in Tatarstan identically offline', as
     await page.getByRole('button', { name: /Казань/ }).click()
     await page.getByRole('button', { name: 'Определить автоматически' }).click()
     await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
-    await expect(page.getByText(/Таблица ДУМ РТ: Казань/)).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(8)
+    await page.getByRole('button', {name:/Официальное расписание · ДУМ РТ/}).click()
+    await expect(page.getByRole('dialog').getByText('Казань',{exact:true})).toBeVisible()
+    await page.getByRole('button', {name:'Закрыть',exact:true}).click()
+    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
     await page.getByRole('button', { name: /Моё местоположение|Рядом:/ }).click()
     await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
     await expect(page.getByText('Регион: Татарстан', { exact: true })).toBeVisible()

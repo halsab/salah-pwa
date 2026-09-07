@@ -6,7 +6,7 @@ test('основной путь работает без ошибок во все
 
   await page.goto('./')
   await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem'))
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem'))
     .toHaveCount(8)
   await expect(page.getByRole('timer')).toBeVisible()
 
@@ -21,6 +21,7 @@ test('основной путь работает без ошибок во все
   await dialog.getByRole('button', { name: 'Закрыть' }).click()
   await expect(locationButton).toBeFocused()
 
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('link', { name: 'Конфиденциальность' }).click()
   await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
   expect(pageErrors).toEqual([])
@@ -52,6 +53,6 @@ test('поиск города в Worker показывает регион и с�
   await expect(city).toBeVisible()
   await expect(city).toHaveText(/Стамбул, Турция/)
   await city.click()
-  await expect(page.getByRole('list', { name: 'Времена намаза' }).getByRole('listitem')).toHaveCount(7)
+  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
   await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
 })
