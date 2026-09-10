@@ -80,14 +80,14 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
   const canRetry = ['offline', 'error'].includes(catalogStatus) || ready?.failed || ready?.data?.status === 'needs-download'
   return <Screen label="Поиск города" top={<BackButton onClick={onBack} label="Отмена" />}>
     <input className="text-field" data-screen-focus type="search" aria-label="Поиск населённого пункта" placeholder="Найти город" value={text}
-      onChange={event => { setText(event.target.value); setCompletion(null) }} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
+      onChange={event => { setText(event.target.value); if (event.target.value.trim() !== query) setCompletion(null) }} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
     <ul className="city-results" aria-label="Результаты поиска" aria-busy={pending}>
       {official.map(item => <li key={item.id}><button className="pill city-result" type="button" onClick={() => onSelectOfficial(item.id)}>
         <span>{item.name}</span><span className="note">Татарстан · таблица ДУМ РТ</span>
       </button></li>)}
       {cities.map(city => {
         const sameLabel = cities.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))
-        return <li key={city.id}><button className="pill city-result" type="button" onClick={() => onSelectCity(city)}>
+        return <li key={city.id}><button className="pill city-result" aria-label={formatCityLabel(city, sameLabel)} type="button" onClick={() => onSelectCity(city)}>
           <span>{city.name}</span><span className="note">{formatCityRegion(city)}, {getCountryName(city.countryCode)}{sameLabel ? ` · ${city.id}` : ''}</span>
         </button></li>
       })}

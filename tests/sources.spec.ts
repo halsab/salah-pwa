@@ -1,35 +1,32 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, openSchedule, openSource, setSource, expect, readSavedSetting, test } from './fixtures'
 import type { PrayerDataset } from '../src/domain/types'
 
-test('cold start calculation works while official requests hang', async ({ page }) => {
+test('расчётный холодный старт работает при зависшем официальном запросе', async ({ page }) => {
   await page.route('**/data/prayer-times-manifest.json', () => new Promise(() => {}))
   await page.goto('./')
-  await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true }).click()
-  await expect(page.getByRole('listitem')).toHaveCount(7)
-  await expect(page.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Настройки' }).click()
-  await page.getByRole('button', { name: 'Время намаза' }).click()
-  await expect(page.getByLabel('Источник', { exact: true })).toHaveValue('automatic')
+  await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
+  await openSchedule(page, 7)
+  await back(page)
+  await openSource(page)
+  await expect(page.getByRole('button', { name: 'Способ Авто' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Таблица|Параметры|Профиль/ })).toHaveCount(0)
 })
 
-test('cached first render precedes network; validated background version replaces the displayed rows', async ({ page, context }) => {
+test('сначала показывает кеш, затем проверенную фоновую версию таблицы', async ({ page, context }) => {
   await page.goto('./')
-  await expect(page.getByRole('listitem')).toHaveCount(8)
-  const before = await page.locator('.prayer-row').filter({ hasText: 'Аср' }).locator('time').textContent()
+  await choosePlace(page)
+  await openSchedule(page)
+  const asr = page.locator('.event-row').filter({ hasText: 'Аср' }).locator('time')
+  const before = await asr.textContent()
   let release!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
   const updated = JSON.parse(await readFile('dist/data/prayer-times-current.json', 'utf8')) as PrayerDataset
   for (const day of updated.days) if (day.locationId === 'kazan') day.asr = '16:25'
   const bytes = `${JSON.stringify(updated)}\n`
   const sha256 = createHash('sha256').update(bytes).digest('hex')
-  let receivedManifest = false
-  let receivedBytes = false
+  let receivedManifest = false, receivedBytes = false
   await context.route('**/data/prayer-times-manifest.json', async route => {
     receivedManifest = true
     await gate
@@ -40,60 +37,57 @@ test('cached first render precedes network; validated background version replace
     await route.fulfill({ contentType: 'application/json', body: bytes })
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await expect(page.getByRole('listitem')).toHaveCount(8)
-  await expect(page.locator('.prayer-row').filter({ hasText: 'Аср' }).locator('time')).toHaveText(before ?? '')
+  await openSchedule(page)
+  await expect(asr).toHaveText(before ?? '')
   await expect.poll(() => receivedManifest).toBe(true)
   release()
   await expect.poll(() => receivedBytes).toBe(true)
-  await expect(page.locator('.prayer-row').filter({ hasText: 'Аср' }).locator('time')).toHaveText('16:25')
-  await expect(page.getByRole('listitem')).toHaveCount(8)
+  await expect(asr).toHaveText('16:25')
 })
 
-test('source mode persists across reload and manual official does not silently fall back for expired dates', async ({ page }) => {
+test('источник и параметры сохраняются сразу; ДУМ РТ не заменяется расчётом за пределами даты', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.goto('./')
-  await expect(page).toHaveTitle(/Salah/)
-  await expect(page.getByRole('listitem')).toHaveCount(8)
-  await page.getByRole('button', { name: 'Настройки' }).click()
-  await page.getByRole('button', { name: 'Время намаза' }).click()
-  await page.getByLabel('Источник', { exact: true }).selectOption('calculated')
-  await page.getByRole('button', { name: 'Расширенные настройки' }).click()
-  await page.getByLabel('Профиль', { exact: true }).selectOption('karachi')
-  await page.getByRole('button', { name: 'Применить ручной расчёт' }).click()
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await expect(page.getByRole('listitem')).toHaveCount(7)
-  await expect.poll(() => readSavedSetting(page, 'sourcePreferences')).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'karachi' } } })
+  await choosePlace(page)
+  await openSource(page)
+  await setSource(page, 'Ручной расчёт')
+  await page.getByRole('button', { name: /^Профиль/ }).click()
+  await page.getByRole('button', { name: 'Карачи', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^Профиль/ })).toBeFocused()
+  await page.getByRole('button', { name: 'Параметры' }).click()
+  await expect(page.getByRole('combobox')).toHaveCount(2)
+  await page.getByRole('combobox', { name: 'Аср', exact: true }).selectOption('standard')
+  await expect.poll(() => readSavedSetting(page, 'sourcePreferences')).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'karachi', overrides: { asrMethod: 'standard' } } } })
   await page.reload()
-  await expect(page.getByRole('listitem')).toHaveCount(7)
-  await page.getByRole('button', { name: 'Настройки' }).click()
-  await page.getByRole('button', { name: 'Время намаза' }).click()
-  await expect(page.getByLabel('Источник', { exact: true })).toHaveValue('calculated')
-  await page.getByRole('button', { name: 'Расширенные настройки' }).click()
-  await expect(page.getByLabel('Профиль', { exact: true })).toHaveValue('karachi')
-  await page.getByRole('button', { name: '← Назад' }).click()
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.screenshot({ path: '/tmp/salah-source-settings.png' })
-  await page.getByRole('button', { name: 'Вернуться к автоматическому выбору' }).click()
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await expect(page.getByRole('listitem')).toHaveCount(8)
+  await openSchedule(page, 7)
+  await back(page)
+  await openSource(page)
+  await expect(page.getByRole('button', { name: 'Профиль Карачи' })).toBeVisible()
+  await setSource(page, 'Автоматически')
+  await back(page)
+  await back(page)
   await page.getByLabel('Выбрать дату').fill('2027-01-01')
   await expect(page.getByRole('listitem')).toHaveCount(7)
-  await page.getByRole('button', { name: 'Настройки' }).click()
-  await page.getByRole('button', { name: 'Время намаза' }).click()
-  await page.getByLabel('Источник', { exact: true }).selectOption('dumRt')
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await back(page)
+  await openSource(page)
+  await setSource(page, 'Таблица ДУМ РТ')
+  await expect(page.getByRole('button', { name: 'Таблица', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Таблица ДУМ РТ', exact: true })).toHaveCount(0)
+  await back(page)
+  await back(page)
+  await page.getByLabel('Выбрать дату').fill('2027-01-01')
   await expect(page.getByRole('alert')).toContainText('не покрывает это место или дату')
   await expect(page.getByRole('listitem')).toHaveCount(0)
   expect(errors).toEqual([])
 })
 
-test('storage failure stays visible and retry saves the latest place and settings together', async ({ page }) => {
+test('ошибка сохранения видна на экранах; повтор сохраняет последние место и настройки вместе', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', error => errors.push(error.message))
   await page.setViewportSize({ width: 320, height: 740 })
   await page.goto('./')
-  await expect(page.getByRole('listitem')).toHaveCount(8)
+  await choosePlace(page)
   await page.evaluate(() => {
     const put = Object.getOwnPropertyDescriptor(IDBObjectStore.prototype, 'put')?.value as IDBObjectStore['put']
     Object.assign(window, { restoreStorage: () => { IDBObjectStore.prototype.put = put } })
@@ -102,25 +96,18 @@ test('storage failure stays visible and retry saves the latest place and setting
       return put.apply(this, args)
     }
   })
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true }).click()
-  await expect(page.getByRole('listitem')).toHaveCount(7)
-  await expect(page.getByRole('status')).toContainText('сохранить его не удалось')
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByLabel('Оформление').selectOption('dark')
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-  await expect(page.getByRole('dialog').getByRole('status')).toContainText('сохранить его не удалось')
-  await page.screenshot({ path: '/tmp/salah-stage6-storage-retry-320.png' })
+  await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
+  await expect(page.getByRole('status')).toContainText('Не удалось сохранить изменения')
+  await openSource(page)
+  await setSource(page, 'Ручной расчёт')
+  await expect(page.getByRole('status')).toContainText('Не удалось сохранить изменения')
   await page.evaluate(() => (window as Window & { restoreStorage: () => void }).restoreStorage())
-  await page.getByRole('dialog').getByRole('button', { name: 'Повторить', exact: true }).click()
+  await page.getByRole('button', { name: 'Повторить', exact: true }).click()
   await expect(page.getByRole('status')).toHaveCount(0)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { cityId: 745044 } })
-  await expect.poll(() => readSavedSetting(page, 'appearance')).toBe('dark')
+  await expect.poll(() => readSavedSetting(page, 'sourcePreferences')).toMatchObject({ mode: 'manual' })
   await page.reload()
-  await expect(page.getByRole('button', { name: /Стамбул/ })).toBeVisible()
-  await expect(page.getByRole('listitem')).toHaveCount(7)
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+  await expect(page.locator('#home-location')).toContainText('Стамбул')
+  await openSchedule(page, 7)
   expect(errors).toEqual([])
 })

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, openSchedule, expect, readSavedSetting, test } from './fixtures'
 
 const index = JSON.parse(await readFile('public/data/cities/index.json', 'utf8')) as {
   version: string
@@ -11,12 +11,12 @@ test('старт и обзор не загружают пакеты; Киров 
   const requests: string[] = []
   context.on('request', r => requests.push(r.url()))
   await page.goto('./')
-  await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
+  await choosePlace(page)
   await page.evaluate(async () => navigator.serviceWorker.ready)
   expect(requests.filter(url => shardPattern.test(url))).toEqual([])
   await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await expect(page.getByText('Россия', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Найти город' }).click()
+  await expect(page.getByRole('searchbox')).toBeVisible()
   expect(requests.filter(url => shardPattern.test(url))).toEqual([])
   expect(requests.some(url => url.endsWith('/cities-current.json'))).toBe(false)
   const caches = await page.evaluate(async () => {
@@ -30,7 +30,7 @@ test('старт и обзор не загружают пакеты; Киров 
   await expect(large).toBeVisible()
   await expect(small).toBeVisible()
   await expect(large).toHaveText(/Кировская Область/)
-  const matches = page.locator('.city-option')
+  const matches = page.locator('.city-result')
   await expect(matches.first()).toHaveAccessibleName('Киров, Кировская Область, Россия')
   const fetched = [...new Set(requests.filter(url => shardPattern.test(url)))]
   expect(fetched.length).toBeGreaterThan(0)
@@ -38,26 +38,28 @@ test('старт и обзор не загружают пакеты; Киров 
   console.log(JSON.stringify({ query: 'Киров', shards: fetched.map(url => url.split('/').pop()), bytes: fetched.reduce((n, url) => n + (index.shards.find(s => url.endsWith(`/${s.id}.json`))?.bytes ?? 0), 0) }))
   await large.click()
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({place:{name:'Киров, Кировская Область, Россия'}})
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
+  await openSchedule(page, 7)
+    await back(page)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
+    await openSchedule(page, 7)
+    await back(page)
     await page.getByRole('button', { name: /Киров, Кировская/ }).click()
-    await page.getByRole('button', { name: 'Найти город или район' }).click()
+    await page.getByRole('button', { name: 'Найти город' }).click()
     await page.getByRole('searchbox').fill('Киров')
     await expect(large).toBeVisible()
     await expect(small).toBeVisible()
-    await expect(page.getByText('Найдено вариантов:', { exact: false })).toBeAttached()
+    await expect(page.getByRole('list', { name: 'Результаты поиска' })).toBeVisible()
     await page.getByRole('searchbox').fill('Будапешт')
-    await expect(page.getByText(/Для полного поиска нужно загрузить данные/, { exact: false }).last()).toBeVisible()
-    await expect(page.getByText('Ничего не нашли. Попробуйте другое название.')).toHaveCount(0)
+    await expect(page.getByText(/Для полного поиска нужен интернет/, { exact: false }).last()).toBeVisible()
+    await expect(page.getByText('Город не найден')).toHaveCount(0)
   } finally { await context.setOffline(false) }
-  await page.getByRole('button', { name: 'Повторить поиск' }).click()
+  await page.getByRole('button', { name: 'Повторить' }).click()
   await expect(page.getByRole('button', { name: /^Будапешт,/ })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Повторить поиск' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Повторить' })).toHaveCount(0)
 })
 
 test('базовый обзор работает после установки офлайн, старый монолитный кеш удалён без изменения выбранного места', async ({ page, context }) => {
@@ -67,17 +69,18 @@ test('базовый обзор работает после установки �
     void globalThis.caches.open('city-data').then(cache => cache.put('/salah-pwa/data/cities-current.json', new Response('{}')))
   })
   await page.goto('./')
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
+  await choosePlace(page)
+  await expect(page.getByRole('timer')).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await expect.poll(() => page.evaluate(async () => (await globalThis.caches.keys()).includes('city-data'))).toBe(false)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('timer')).toBeVisible()
   await context.setOffline(true)
   try {
     await page.getByRole('button', { name: /Казань/ }).click()
-    await page.getByRole('button', { name: 'Найти город или район' }).click()
-    await expect(page.getByText('Россия', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Найти город' }).click()
+    await expect(page.getByRole('searchbox')).toBeVisible()
     await page.getByRole('searchbox').fill('Москва')
     await expect(page.getByRole('button', { name: 'Москва, Москва, Россия', exact: true })).toBeVisible()
   } finally { await context.setOffline(false) }

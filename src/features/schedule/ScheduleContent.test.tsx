@@ -14,6 +14,19 @@ const base = {
 }
 
 describe('новое расписание', () => {
+  it('при переводе часов назад принимает новое текущее время после границы события', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-05-05T19:29:59+03:00'))
+      const now = () => new Date()
+      const { rerender } = render(<ScheduleContent {...base} currentTime={now()} now={now} />)
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(screen.getByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Магриб')
+      vi.setSystemTime(new Date('2026-05-05T19:20:00+03:00'))
+      rerender(<ScheduleContent {...base} currentTime={now()} now={now} />)
+      expect(screen.getByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Аср')
+    } finally { vi.useRealTimers() }
+  })
   it('на границе события обновляет текущее время и следующий отсчёт', () => {
     vi.useFakeTimers()
     try {

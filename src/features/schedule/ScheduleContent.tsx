@@ -61,9 +61,9 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   currentTime, now, officialMode, onChangeDate, onRetrySchedule, view = 'home', placeLabel = '', top,
   homeActions, notice, onBack,
 }: ScheduleContentProps) {
-  const [boundary, setBoundary] = useState<Date | null>(null)
-  const effectiveNow = boundary && boundary > currentTime ? boundary : currentTime
-  const onElapsed = useCallback(() => { setBoundary(now()) }, [now])
+  const [boundary, setBoundary] = useState<{ time: Date; parentTime: number } | null>(null)
+  const effectiveNow = boundary?.parentTime === currentTime.getTime() ? boundary.time : currentTime
+  const onElapsed = useCallback(() => { setBoundary({ time: now(), parentTime: currentTime.getTime() }) }, [now, currentTime])
   const events = useMemo(() => schedules.flatMap(buildScheduleEvents).filter(event => event.kind !== 'marker'), [schedules])
   const ready = !scheduleLoading && !scheduleError && schedule !== null
   const live = selectedDate === today && ready

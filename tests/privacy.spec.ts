@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, openSchedule, openSource, openReset, setSource, expect, readSavedSetting, test } from './fixtures'
 
 test('статическая privacy page точно описывает данные и внешние запросы', async ({ page }) => {
   await page.goto('./privacy/')
@@ -19,7 +19,7 @@ test('статическая privacy page точно описывает данн
   await expect(page.locator('a[href^="mailto:"]')).toHaveCount(0)
 
   const localData = page.getByRole('region', { name: 'Данные на устройстве' })
-  for (const detail of ['выбранное место', 'координаты', 'точность', 'время получения', 'часовой пояс', 'настройки', 'оформление', 'до сброса', 'Браузер может удалить']) {
+  for (const detail of ['выбранное место', 'координаты', 'точность', 'время получения', 'часовой пояс', 'настройки', 'недавних', 'до сброса', 'Браузер может удалить']) {
     await expect(localData).toContainText(detail)
   }
   await expect(page.locator('main')).toContainText('нет аккаунтов, собственного сервера, аналитики, рекламы и профилирования')
@@ -27,7 +27,7 @@ test('статическая privacy page точно описывает данн
   await expect(page.locator('main')).not.toContainText(/IndexedDB|Cache Storage|SHA-256|\bhash\b|JSON|Nominatim|параметры API/i)
 
   const deletion = page.getByRole('region', { name: 'Как удалить данные' })
-  await expect(deletion).toContainText('Настройки → Данные → Сбросить данные приложения')
+  await expect(deletion).toContainText('Настройки → Данные и конфиденциальность → Удалить данные')
   await expect(deletion).toContainText('подтвердите удаление')
   await expect(deletion).toContainText('во всех вкладках')
   await expect(deletion).toContainText('загруженные публичные справочники')
@@ -72,16 +72,17 @@ test('сохраняет атрибуцию и единое информацио
 
 test('переходит из приложения в privacy page и обратно без роутера', async ({ page }) => {
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
   await page.getByRole('link', { name: 'Конфиденциальность' }).click()
   await expect(page).toHaveURL(/\/salah-pwa\/privacy\/$/)
   await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
 
-  await page.getByRole('link', { name: 'Вернуться в Salah' }).first().click()
+  await page.getByRole('link', { name: 'Назад' }).first().click()
   await expect(page).toHaveURL(/\/salah-pwa\/$/)
-  await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
 })
 
 test('не обрезает заголовок и сохраняет touch-цели 44 px на мобильном экране', async ({ page }) => {
@@ -124,7 +125,7 @@ test('не обрезает заголовок и сохраняет touch-це�
 
 test('privacy page открывается офлайн после первого запуска только приложения', async ({ context, page }) => {
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
@@ -134,8 +135,8 @@ test('privacy page открывается офлайн после первого
     await page.goto('./privacy/', { waitUntil: 'domcontentloaded' })
     await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
     await expect(page.locator('script')).toHaveCount(0)
-    await page.getByRole('link', { name: 'Вернуться в Salah' }).first().click()
-    await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
+    await page.getByRole('link', { name: 'Назад' }).first().click()
+    await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
   } finally {
     await context.setOffline(false)
   }
@@ -150,8 +151,8 @@ test('репозиторий содержит MIT лицензию и уведо
   expect(license).toContain('MIT License')
   expect(license).toContain('Copyright (c) 2026 halsab')
   for (const expected of [
-    'Alegreya Sans',
-    'public/fonts/AlegreyaSans-OFL-1.1.txt',
+    'Old Timey Mono',
+    'public/old-timey-mono-license.txt',
     'GeoNames',
     'OpenStreetMap',
     'ДУМ РТ',
@@ -180,11 +181,9 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude, longitude, accuracy: 15 })
   await page.goto('./')
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await expect(page.getByRole('button', { name: 'Уточнить название онлайн' })).toHaveCount(0)
-  await page.getByRole('button', { name: 'Определить автоматически' }).click()
+  await page.getByRole('button', { name: 'По геопозиции' }).click()
   await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
+  await openSchedule(page)
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah')
     request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
@@ -208,9 +207,7 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   await page.reload()
   await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
   await expect.poll(() => starts).toBeGreaterThan(0)
-  await page.getByRole('button', { name: /Моё местоположение|Рядом:/ }).click()
-  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
-  await expect(page.getByText(/точность ±15 м/)).toBeVisible()
+  expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { accuracy: 15 } })
   expect(requests.filter(request => !request.url.startsWith('http://127.0.0.1:4175/'))).toEqual([])
   for (const request of requests) {
     expect(request.url).not.toMatch(/nominatim/i)
@@ -223,7 +220,7 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   expect(messages.join('\n')).not.toMatch(/55\.812345|49\.123456/)
 })
 
-test('production data flows use only public static requests through search, refresh, sharing and reset', async ({ page, context }, testInfo) => {
+test('публичные запросы при поиске, настройках, копировании и удалении не содержат пользовательских данных', async ({ page, context }, testInfo) => {
   let phase = 'first-launch'
   const requests: { phase: string; url: string; method: string; body: string | null }[] = []
   const errors: string[] = []
@@ -231,67 +228,51 @@ test('production data flows use only public static requests through search, refr
   page.on('pageerror', error => errors.push(error.message))
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto('./')
-  await expect(page.getByRole('listitem')).toHaveCount(8)
+  await expect(page.getByRole('button', { name: 'Найти город' })).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   const isPackage = (url: string) => /\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/.test(url)
-  expect(requests.some(request => request.url.endsWith('/data/prayer-times-current.json'))).toBe(true)
   expect(requests.filter(request => isPackage(request.url))).toEqual([])
-
+  await choosePlace(page)
+  expect(requests.some(request => request.url.endsWith('/data/prayer-times-current.json'))).toBe(true)
   phase = 'repeat-launch'
   await page.reload()
-  await expect(page.getByRole('listitem')).toHaveCount(8)
-  await page.getByRole('button', { name: /Официальное расписание · ДУМ РТ/ }).click()
-  await expect(page.getByRole('dialog')).toContainText(/Проверено/)
-  await page.keyboard.press('Escape')
+  await openSource(page)
+  await page.getByRole('button', { name: 'О расписании' }).click()
+  await page.getByText('Подробности', { exact: true }).click()
+  await expect(page.getByRole('region', { name: 'Сведения об источнике' })).toContainText(/Проверено/)
   expect(requests.filter(request => request.phase === phase && request.url.endsWith('/data/prayer-times-current.json'))).toEqual([])
-
+  await back(page); await back(page); await back(page)
   phase = 'search-and-select'
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true }).click()
-  await expect(page.getByRole('listitem')).toHaveCount(7)
+  await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
   expect(requests.some(request => request.phase === phase && isPackage(request.url))).toBe(true)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { cityId: 745044 } })
-
   phase = 'settings'
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByLabel('Оформление').selectOption('dark')
-  await expect.poll(() => readSavedSetting(page, 'appearance')).toBe('dark')
-  await page.getByRole('button', { name: 'Время намаза', exact: true }).click()
-  await page.getByLabel('Источник', { exact: true }).selectOption('calculated')
+  await openSource(page)
+  await setSource(page, 'Ручной расчёт')
   await expect.poll(() => readSavedSetting(page, 'sourcePreferences')).toMatchObject({ mode: 'manual' })
-  await page.getByRole('button', { name: '← Назад' }).click()
-
+  await back(page)
   phase = 'sharing'
-  await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
-  await expect(page.getByRole('img', { name: 'QR-код со ссылкой на Salah' })).toBeVisible()
-  await page.getByRole('button', { name: 'Скопировать ссылку', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText('Ссылка скопирована')
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(page.url())
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-
+  await page.getByRole('button', { name: 'Поделиться' }).click()
+  await expect(page.getByRole('img', { name: /QR-код/ })).toBeVisible()
+  await page.getByRole('button', { name: 'Скопировать ссылку' }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://halsab.github.io/salah-pwa/')
+  await back(page); await back(page)
   phase = 'table-check'
   const response = page.waitForResponse(response => response.url().endsWith('/data/prayer-times-manifest.json'))
   await page.evaluate(() => window.dispatchEvent(new Event('online')))
   expect((await response).status()).toBe(200)
-
   phase = 'reset'
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Данные', exact: true }).click()
-  await page.getByRole('button', { name: 'Сбросить данные приложения', exact: true }).click()
+  await openReset(page)
   await page.getByRole('button', { name: 'Удалить данные', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Выбрать место', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Найти город' })).toBeVisible()
   await page.reload()
-  await expect(page.getByRole('button', { name: 'Выбрать место', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Найти город' })).toBeVisible()
   expect(requests.filter(request => request.phase === 'reset' && /prayer-times-/.test(request.url))).toEqual([])
   expect(await context.cookies()).toEqual([])
-
   for (const request of requests) {
     const url = new URL(request.url)
     expect(url.origin).toBe('http://127.0.0.1:4175')
-    expect(url.pathname).toMatch(/^\/salah-pwa\/(?:$|index\.html$|privacy\/index\.html$|assets\/[^/]+$|[a-z0-9-]+\.(?:js|svg|png|webmanifest)$|data\/(?:prayer-times-(?:current|manifest)\.json|cities\/index\.json|cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json|tatarstan-boundary\.(?:json|NOTICE\.txt)|ODbL-1\.0\.txt)$)/)
+    expect(url.pathname).toMatch(/^\/salah-pwa\/(?:$|index\.html$|privacy\/index\.html$|assets\/[^/]+$|[a-z0-9-]+\.(?:js|svg|png|txt|webmanifest)$|data\/(?:prayer-times-(?:current|manifest)\.json|cities\/index\.json|cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json|tatarstan-boundary\.(?:json|NOTICE\.txt)|ODbL-1\.0\.txt)$)/)
     expect([...url.searchParams.keys()].filter(key => key !== '__WB_REVISION__')).toEqual([])
     expect(request.method).toBe('GET')
     expect(request.body).toBeNull()

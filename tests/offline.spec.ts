@@ -1,223 +1,129 @@
-import { expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, openSchedule, openSource, expect, readSavedSetting, test } from './fixtures'
 
-test('весь интерфейс использует локальный Alegreya Sans только в нужных начертаниях', async ({ page }) => {
-  await page.goto('./')
-  await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
-
-  await page.evaluate(() => document.fonts.ready)
-
-  const bodyFont = await page.locator('body').evaluate((element) =>
-    getComputedStyle(element).fontFamily,
-  )
-  const buttonFont = await page.getByRole('button', { name: /Казань/ }).evaluate((element) =>
-    getComputedStyle(element).fontFamily,
-  )
-  const decorationFont = await page.locator('.next-label').evaluate((element) =>
-    getComputedStyle(element, '::before').fontFamily,
-  )
-  const brandWeight = await page.getByRole('heading', { name: 'Salah' }).evaluate((element) =>
-    getComputedStyle(element).fontWeight,
-  )
-  const timeStyle = await page.locator('.prayer-time').first().evaluate((element) => {
-    const style = getComputedStyle(element)
-    return {
-      family: style.fontFamily,
-      numeric: style.fontVariantNumeric,
-      weight: style.fontWeight,
-    }
-  })
-
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  const inputFont = await page.getByRole('searchbox').evaluate((element) =>
-    getComputedStyle(element).fontFamily,
-  )
-
-  for (const fontFamily of [bodyFont, buttonFont, decorationFont, inputFont]) {
-    expect(fontFamily).toContain('Alegreya Sans')
-  }
-  expect(brandWeight).toBe('700')
-  expect(timeStyle).toEqual({
-    family: expect.stringContaining('Alegreya Sans'),
-    numeric: 'tabular-nums',
-    weight: '700',
-  })
-
-  const alegreyaFaces = await page.evaluate(() => Array.from(document.fonts)
-    .filter(({ family }) => family.includes('Alegreya Sans'))
-    .map(({ style, weight }) => ({ style, weight })))
-  expect(new Set(alegreyaFaces.map(({ style }) => style))).toEqual(new Set(['normal']))
-  expect(new Set(alegreyaFaces.map(({ weight }) => weight))).toEqual(new Set(['400', '500', '700']))
-})
-
-test('web manifest не ограничивает ориентацию экрана', async ({ page }) => {
-  await page.goto('./')
-  const manifestHref = await page.locator('link[rel="manifest"]').getAttribute('href')
-  expect(manifestHref).toBeTruthy()
-  if (!manifestHref) throw new Error('Не найден manifest href')
-
-  const manifest = await page.evaluate(async (href) => {
-    const response = await fetch(new URL(href, window.location.href))
-    return response.json() as Promise<Record<string, unknown>>
-  }, manifestHref)
-
-  expect(manifest).not.toHaveProperty('orientation')
-})
-
-test('после первого запуска расписание полностью открывается без сети', async ({
-  context,
-  page,
-}) => {
-  let prayerDatasetRequests = 0
-  page.on('request', (request) => {
-    if (new URL(request.url()).pathname.endsWith('/data/prayer-times-current.json')) {
-      prayerDatasetRequests += 1
-    }
-  })
-
-  await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
-  expect(prayerDatasetRequests).toBe(1)
-
-  await page.evaluate(async () => {
-    await navigator.serviceWorker.ready
-  })
-  prayerDatasetRequests = 0
+async function controlServiceWorker(page: import('@playwright/test').Page) {
+  await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
-  expect(prayerDatasetRequests).toBe(0)
+}
 
-  const cachedPrayerDatasetRequests = await page.evaluate(async () => {
-    const cacheNames = await caches.keys()
-    const requests = (await Promise.all(cacheNames.map(async (name) => {
-      const cache = await caches.open(name)
-      return cache.keys()
-    }))).flat()
-    return requests
-      .map(({ url }) => url)
-      .filter((url) => new URL(url).pathname.endsWith('/data/prayer-times-current.json'))
-  })
-  expect(cachedPrayerDatasetRequests).toEqual([])
+test('локальный Old Timey Mono загружен, без синтетических начертаний и прежних шрифтов', async ({ page }) => {
+  await page.goto('./')
+  await choosePlace(page)
+  await openSchedule(page)
+  await page.evaluate(() => document.fonts.ready)
+  for (const selector of ['body', 'button', '.event-row', '.event-row time']) {
+    await expect(page.locator(selector).first()).toHaveCSS('font-family', '"Old Timey Mono", monospace')
+    await expect(page.locator(selector).first()).toHaveCSS('font-weight', '400')
+  }
+  await expect(page.locator('.event-row time').first()).toHaveCSS('font-variant-numeric', 'tabular-nums')
+  const faces = await page.evaluate(() => Array.from(document.fonts).map(({ family, weight, status }) => ({ family, weight, status })))
+  expect(faces).toEqual([{ family: 'Old Timey Mono', weight: '400', status: 'loaded' }])
+  await back(page)
+  await page.locator('#home-location').click()
+  await page.getByRole('button', { name: 'Найти город' }).click()
+  await expect(page.getByRole('searchbox')).toHaveCSS('font-family', '"Old Timey Mono", monospace')
+})
 
+test('manifest использует чёрный фон и не ограничивает ориентацию', async ({ request }) => {
+  const manifest = await (await request.get('./manifest.webmanifest')).json() as Record<string, unknown>
+  expect(manifest).not.toHaveProperty('orientation')
+  expect(manifest).toMatchObject({ theme_color: '#000000', background_color: '#000000', scope: './', start_url: './' })
+})
+
+test('расписание, шрифт, источник и QR доступны офлайн без кеша таблиц в Cache Storage', async ({ page, context }) => {
+  let datasets = 0
+  page.on('request', request => { if (request.url().endsWith('/data/prayer-times-current.json')) datasets += 1 })
+  await page.goto('./')
+  await choosePlace(page)
+  expect(datasets).toBe(1)
+  await openSchedule(page)
+  const times = await page.locator('.event-row time').allTextContents()
+  await page.evaluate(async () => navigator.serviceWorker.ready)
+  datasets = 0
+  await controlServiceWorker(page)
+  await openSchedule(page)
+  expect(datasets).toBe(0)
+  const cacheUrls = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async name => (await (await caches.open(name)).keys()).map(request => request.url)))).flat())
+  expect(cacheUrls.some(url => url.includes('prayer-times-current.json'))).toBe(false)
+  expect(cacheUrls.some(url => /\.ttf/.test(url))).toBe(true)
+  expect(cacheUrls.some(url => /Alegreya|paper-texture/.test(url))).toBe(false)
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
-    await page.getByRole('button', { name: /Официальное расписание · ДУМ РТ/ }).click()
+    await openSchedule(page)
+    expect(await page.locator('.event-row time').allTextContents()).toEqual(times)
+    await page.evaluate(() => document.fonts.ready)
+    expect(await page.evaluate(() => Array.from(document.fonts).some(face => face.family === 'Old Timey Mono' && face.status === 'loaded'))).toBe(true)
+    await back(page)
+    await openSource(page)
+    await page.getByRole('button', { name: 'О расписании' }).click()
+    await page.getByText('Подробности', { exact: true }).click()
     await expect(page.getByRole('link', { name: 'Первичный источник · ДУМ РТ' })).toBeVisible()
-    await page.getByRole('button', { name: 'Закрыть' }).click()
-    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-    await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
-    const qr = page.getByRole('img', { name: 'QR-код со ссылкой на Salah' })
+    await back(page)
+    await back(page)
+    await page.getByRole('button', { name: 'Поделиться' }).click()
+    const qr = page.getByRole('img', { name: /QR-код/ })
     await expect(qr).toBeVisible()
-    await expect.poll(() => qr.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(512)
-  } finally {
-    await context.setOffline(false)
-  }
+    await expect.poll(() => qr.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+  } finally { await context.setOffline(false) }
 })
 
-test('GPS-расписание вне Татарстана рассчитывается без справочника городов', async ({
-  context,
-  page,
-}) => {
-  let cityCatalogRequests = 0
-  await page.route('**/data/cities/*/*.json', (route) => {
-    cityCatalogRequests += 1
-    return route.abort()
-  })
+test('GPS вне Татарстана рассчитывается без справочника городов, включая офлайн', async ({ context, page }) => {
+  let cities = 0
+  await page.route('**/data/cities/*/*.json', route => { cities += 1; return route.abort() })
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
   await page.goto('./')
-
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Определить автоматически' }).click()
-  await expect(page.getByRole('button', { name: /Моё местоположение/i })).toBeVisible()
-  expect(cityCatalogRequests).toBe(0)
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
-  await expect(
-    page
-      .getByRole('list', { name: 'Расписание дня' })
-      .getByText('Фаджр', { exact: true }),
-  ).toBeVisible()
-  await expect(page.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
+  await page.getByRole('button', { name: 'По геопозиции' }).click()
+  await expect(page.locator('#home-location')).toContainText(/Моё местоположение/i)
+  await openSchedule(page, 7)
+  expect(cities).toBe(0)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ mode: 'calculated', source: 'automatic', coordinates: { latitude: 55.7558, longitude: 37.6173 } })
-  await page.evaluate(async () => navigator.serviceWorker.ready)
-  await page.reload()
-  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
-
+  await controlServiceWorker(page)
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /Моё местоположение/i })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
-    await expect(
-      page
-        .getByRole('list', { name: 'Расписание дня' })
-        .getByText('Фаджр', { exact: true }),
-    ).toBeVisible()
-    await expect(page.getByRole('button', { name: /Расчётное время/ })).toBeVisible()
-    expect(cityCatalogRequests).toBe(0)
-  } finally {
-    await context.setOffline(false)
-  }
+    await openSchedule(page, 7)
+    await expect(page.getByRole('list').getByText('Фаджр', { exact: true })).toBeVisible()
+    expect(cities).toBe(0)
+  } finally { await context.setOffline(false) }
 })
 
-test('город из офлайн-справочника сохраняется и рассчитывается без сети', async ({
-  context,
-  page,
-}) => {
+test('выбранный город и базовый поиск сохраняются офлайн', async ({ context, page }) => {
   await page.goto('./')
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция' }).click()
-
-  await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
-  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({place:{cityId:745044}})
-  await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
-  await page.evaluate(async () => navigator.serviceWorker.ready)
-  await page.reload()
-  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
-
+  await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { cityId: 745044 } })
+  await controlServiceWorker(page)
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
-    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(7)
-    await page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ }).click()
-    await page.getByRole('button', { name: 'Найти город или район' }).click()
+    await openSchedule(page, 7)
+    await back(page)
+    await page.locator('#home-location').click()
+    await page.getByRole('button', { name: 'Найти город' }).click()
     await page.getByRole('searchbox').fill('Москва')
-    await expect(page.getByRole('button', { name: 'Москва, Москва, Россия' })).toBeVisible()
-  } finally {
-    await context.setOffline(false)
-  }
+    await expect(page.getByRole('button', { name: 'Москва, Москва, Россия', exact: true })).toBeVisible()
+  } finally { await context.setOffline(false) }
 })
 
-test('prepared local boundary resolves GPS in Tatarstan identically offline', async ({ context, page }) => {
+test('локальная граница Татарстана выбирает ту же официальную таблицу без сети', async ({ context, page }) => {
   await context.grantPermissions(['geolocation'])
   await context.setGeolocation({ latitude: 55.7961, longitude: 49.1064, accuracy: 20 })
   await page.goto('./')
-  await expect(page.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
-  await page.evaluate(async () => navigator.serviceWorker.ready)
-  await page.reload()
-  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
+  await choosePlace(page)
+  await controlServiceWorker(page)
   expect(await page.evaluate(async () => Boolean(await caches.match('/salah-pwa/data/tatarstan-boundary.json', { ignoreSearch: true })))).toBe(true)
   await context.setOffline(true)
   try {
-    await page.getByRole('button', { name: /Казань/ }).click()
-    await page.getByRole('button', { name: 'Определить автоматически' }).click()
-    await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
-    await page.getByRole('button', {name:/Официальное расписание · ДУМ РТ/}).click()
-    await expect(page.getByRole('dialog').getByText('Казань',{exact:true})).toBeVisible()
-    await page.getByRole('button', {name:'Закрыть',exact:true}).click()
-    await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(8)
-    await page.getByRole('button', { name: /Моё местоположение|Рядом:/ }).click()
-    await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
-    await expect(page.getByText('Регион: Татарстан', { exact: true })).toBeVisible()
-    await expect(page.getByText(/Часовой пояс: Europe\/Moscow · по локальной границе/)).toBeVisible()
+    await page.locator('#home-location').click()
+    await page.getByRole('button', { name: 'По геопозиции' }).click()
+    await expect(page.locator('#home-location')).toContainText(/Моё местоположение|Рядом:/)
+    await openSchedule(page)
+    await back(page)
+    await openSource(page)
+    await page.getByRole('button', { name: 'О расписании' }).click()
+    await page.getByText('Подробности', { exact: true }).click()
+    await expect(page.getByRole('region', { name: 'Сведения об источнике' }).getByText('Казань', { exact: true })).toBeVisible()
+    expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { region: { code: 'RU-TA' } } })
   } finally { await context.setOffline(false) }
 })

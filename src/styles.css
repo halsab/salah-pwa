@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 html { min-width: 320px; min-height: 100%; }
-body { margin: 0; min-width: 320px; font-size: 16px; line-height: 1.5; }
+body { margin: 0; min-width: 320px; font-size: 1rem; line-height: 1.5; }
 #root { min-height: 100dvh; width: 100%; }
 [hidden] { display: none !important; }
 button, input, select, textarea { font: inherit; }

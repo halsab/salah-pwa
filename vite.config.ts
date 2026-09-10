@@ -16,7 +16,7 @@ const CONTENT_SECURITY_POLICY = [
   "script-src 'self'",
   "style-src 'self'",
   "style-src-elem 'self'",
-  // inline style нужен dialogHooks для блокировки scroll и CSS-переменных visual viewport.
+  // AppShell обновляет CSS-переменные видимой области при открытии клавиатуры.
   "style-src-attr 'unsafe-inline'",
   "font-src 'self'",
   "img-src 'self'",

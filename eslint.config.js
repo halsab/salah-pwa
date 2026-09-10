@@ -10,6 +10,7 @@ export default tseslint.config(
   {
     ignores: [
       'coverage/**',
+      '.playwright-mcp/**',
       'dist/**',
       'node_modules/**',
       'playwright-report/**',
@@ -21,6 +22,7 @@ export default tseslint.config(
     ...eslint.configs.recommended,
     files: ['**/*.{js,mjs,cjs}']
   },
+  { files: ['docs/design/assets/*.js'], languageOptions: { globals: globals.browser } },
   ...tseslint.configs.strictTypeChecked.map((config) => ({
     ...config,
     files: typeScriptFiles

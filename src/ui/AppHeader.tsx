@@ -12,7 +12,7 @@ export function AppHeader({ locationButtonRef, locationLabel, selectedDate, onOp
   return <>
     <button ref={locationButtonRef} id="home-location" className="pill home-location" type="button" onClick={onOpenLocation}>{locationLabel}</button>
     <label className="pill native-date"><span>{formatCompactDateLabel(selectedDate)}</span>
-      <input aria-label="Выбрать дату" type="date" value={selectedDate} onClick={onShowDatePicker} onChange={onDateInput} />
+      <input id="home-date" aria-label="Выбрать дату" type="date" value={selectedDate} onClick={onShowDatePicker} onChange={onDateInput} />
     </label>
   </>
 }

@@ -49,6 +49,7 @@ import {
   type PositionAccuracy,
 } from './platform/browser'
 import type { LocationChoice } from './storage/database'
+import { AppShell } from './ui/AppShell'
 import { AppHeader } from './ui/AppHeader'
 import { SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
@@ -82,11 +83,11 @@ const defaultServices: AppServices = {
 
 function LoadingScreen() {
   return (
-    <main className="app-layout">
+    <AppShell>
       <Screen label="Загрузка" busy contentClassName="screen-center">
         <p className="note" role="status">Открываем расписание…</p>
       </Screen>
-    </main>
+    </AppShell>
   )
 }
 
@@ -237,14 +238,14 @@ export function App({
 
   if (error) {
     return (
-      <main className="app-layout">
+      <AppShell>
         <Screen label="Ошибка загрузки" contentClassName="screen-center">
           <p role="alert">{error}</p>
           <button className="pill" type="button" onClick={() => setRetryCount((count) => count + 1)}>
             Попробовать снова
           </button>
         </Screen>
-        </main>
+      </AppShell>
     )
   }
 
@@ -267,7 +268,7 @@ export function App({
       ) : null
 
   return (
-    <main className="app-layout">
+    <AppShell>
       {!dialogOpen ? <div
         className="app-background screen-background"
       >
@@ -313,6 +314,6 @@ export function App({
         sourceLabel={officialMode ? 'ДУМ РТ' : CALCULATION_PROFILES.find(profile => profile.id === calculationSettings.profile)?.label ?? 'Авто'} /> : null}
       <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />
       <ShareDialog open={shareDialogOpen} onClose={backScreen} />
-    </main>
+    </AppShell>
   )
 }

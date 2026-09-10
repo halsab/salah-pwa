@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import { expect, test } from './fixtures'
+import { back, choosePlace, openSchedule, openSource, readSavedSetting, writeSavedSetting, expect, test } from './fixtures'
 
 test.use({ timezoneId: 'America/Los_Angeles' })
 
@@ -114,6 +114,7 @@ async function waitForPostMountBoundary(page: Page): Promise<void> {
 test('дата расписания следует часовому поясу города, а не устройства', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-08-31T21:30:00.000Z'))
   await page.goto('./')
+  await choosePlace(page)
 
   const deviceDate = await page.evaluate(() => {
     const now = new Date()
@@ -123,7 +124,7 @@ test('дата расписания следует часовому поясу �
   })
   expect(deviceDate).toBe('2026-08-31')
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-09-01')
-  await expect(page.getByRole('button', { name: /Казань · UTC\+3/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Казань/ })).toBeVisible()
 })
 
 test('ручной город сохраняется при доступной геопозиции на следующем запуске', async ({
@@ -140,10 +141,9 @@ test('ручной город сохраняется при доступной �
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
 
   await page.goto('./')
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.locator('.official-country-group summary').click()
-  await page.getByRole('button', { name: 'Набережные Челны' }).click()
-  await expect(page.getByRole('button', { name: /Набережные Челны · UTC\+3/ })).toBeVisible()
+  await choosePlace(page)
+  await choosePlace(page, 'Набережные Челны', /Набережные Челны.*ДУМ РТ/)
+  await expect(page.getByRole('button', { name: /Набережные Челны/ })).toBeVisible()
 
   expect(await page.evaluate(async () => (
     await navigator.permissions.query({ name: 'geolocation' })
@@ -157,7 +157,7 @@ test('ручной город сохраняется при доступной �
 
   await page.reload()
 
-  await expect(page.getByRole('button', { name: /Набережные Челны · UTC\+3/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Набережные Челны/ })).toBeVisible()
   await waitForPostMountBoundary(page)
   expect(await getGeolocationObservation(page)).toEqual({
     permissionQueries: 0,
@@ -171,77 +171,69 @@ test('ручной город сохраняется при доступной �
 test('спорная строка Апастово сохраняет моменты, но не включает зенит в таймер намаза', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-02-07T08:59:00.000Z'))
   await page.goto('./')
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.locator('.official-country-group summary').click()
-  await page.getByRole('button', { name: 'Апастово', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Апастово · UTC\+3/ })).toBeVisible()
-  await expect(page.getByRole('timer')).toHaveAccessibleName('До зухра, осталось 00:01:00')
+  await choosePlace(page)
+  await choosePlace(page, 'Апастово', /Апастово.*ДУМ РТ/)
+  await expect(page.getByRole('button', { name: /Апастово/ })).toBeVisible()
+  await expect(page.getByRole('timer')).toHaveAccessibleName('До Зухра, осталось 1 мин')
 
   await page.clock.setFixedTime(new Date('2026-02-07T09:00:00.000Z'))
   await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
-  await expect(page.locator('.next-name')).toHaveText('Аср')
-  await expect(page.getByRole('timer')).toHaveAccessibleName(/До асра/)
+  await expect(page.locator('.home-current h1')).toHaveText('Зухр')
+  await expect(page.getByRole('timer')).toHaveAccessibleName(/До Асра/)
 
   await page.clock.setFixedTime(new Date('2026-02-07T09:01:00.000Z'))
   await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
-  await expect(page.locator('.next-name')).toHaveText('Аср')
-  await expect(page.locator('.prayer-row[data-active] .prayer-name')).toHaveText('Аср')
+  await expect(page.locator('.home-current h1')).toHaveText('Зухр')
+  await openSchedule(page)
+  await expect(page.locator('[aria-current="true"] .event-name')).toContainText('Зухр')
 })
 
 test('около полуночи показывает календарную дату сухура накануне дня поста и считает до джамаата', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-05-04T21:10:00.000Z'))
   await page.goto('./')
+  await choosePlace(page)
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-05-05')
+  await openSchedule(page)
   await expect(page.getByRole('list', { name: 'Расписание дня' }).getByText('23:54')).toBeVisible()
   await expect(page.getByText('23:54', { exact: true })).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
-  await page.getByRole('button', { name: /Официальное расписание · ДУМ РТ/ }).click()
-  await expect(page.getByText('Завершение сухура 23:54 — понедельник, 4 мая, накануне дня поста.')).toBeVisible()
-  await page.getByRole('button', { name: 'Закрыть' }).click()
-  await expect(page.locator('.next-name')).toHaveText('Утренний намаз в мечетях')
-  await expect(page.getByRole('timer')).toHaveAccessibleName('До утреннего в мечети, осталось 02:12:00')
+  await back(page)
+  await openSource(page)
+  await page.getByRole('button', { name: 'О расписании' }).click()
+  await expect(page.getByText('Сухур до 23:54 — понедельник, 4 мая, накануне дня поста.')).toBeVisible()
+  await back(page)
+  await back(page)
+  await back(page)
+  await expect(page.getByRole('timer')).toHaveAccessibleName('До Фаджра в мечети, осталось 2 ч 12 мин')
 })
 
-test('manual timezone, DST and automatic reset preserve place and calculation settings', async ({ page }) => {
+test('сохранённая ручная зона переживает редизайн; DST города не подменяется зоной устройства', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-03-29T01:30:00Z'))
   await page.goto('./')
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Берлин')
-  await page.getByRole('button', { name: 'Берлин, Берлин, Германия', exact: true }).click()
-  await expect(page.getByRole('button', { name: /Берлин.*UTC\+2/ })).toBeVisible()
-  await page.getByRole('button', { name: /Берлин/ }).click()
-  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
-  await expect(page.getByText(/Часовой пояс: Europe\/Berlin · из данных/)).toBeVisible()
-  await page.getByLabel('Часовой пояс IANA').fill('America/New_York')
-  await page.getByRole('button', { name: 'Применить часовой пояс', exact: true }).click()
-  await expect(page.getByText(/Часовой пояс: America\/New_York · выбрана вручную/)).toBeVisible()
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-03-28')
-  await expect.poll(() => readSavedLocationChoice(page)).toMatchObject({ place: { timeZoneOverride: { id: 'America/New_York', source: 'user' } } })
-  await page.reload()
-  await page.getByRole('button', { name: /Берлин/ }).click()
-  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
-  await expect(page.getByLabel('Часовой пояс IANA')).toHaveValue('America/New_York')
-  await page.getByRole('button', { name: 'Определять часовой пояс автоматически' }).click()
-  await expect(page.getByText(/Часовой пояс: Europe\/Berlin · из данных/)).toBeVisible()
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
+  await choosePlace(page, 'Берлин', 'Берлин, Берлин, Германия')
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-03-29')
+  const choice = await readSavedSetting(page, 'locationChoice') as { place: Record<string, unknown> }
+  await writeSavedSetting(page, 'locationChoice', { ...choice, place: { ...choice.place, timeZoneOverride: { id: 'America/New_York', source: 'user' } } })
+  await page.reload()
+  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-03-28')
+  await openSchedule(page, 7)
+  const times = await page.locator('.event-row time').allTextContents()
+  await page.reload()
+  await openSchedule(page, 7)
+  expect(await page.locator('.event-row time').allTextContents()).toEqual(times)
+  expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { timeZoneOverride: { id: 'America/New_York', source: 'user' } } })
 })
 
-test('official table retains provider instants with a manual place timezone', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-09-04T09:30:00Z'))
+test('официальная таблица сохраняет моменты при прежней ручной зоне места', async ({ page }) => {
   await page.goto('./')
+  await choosePlace(page)
   const timer = await page.getByRole('timer').getAttribute('aria-label')
-  if (!timer) throw new Error('Таймер не отображается')
-  const times = await page.locator('.prayer-time').allTextContents()
-  expect(times).toHaveLength(8)
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByText('Сведения о месте и часовой пояс', { exact: true }).click()
-  await page.getByLabel('Часовой пояс IANA').fill('America/New_York')
-  await page.getByRole('button', { name: 'Применить часовой пояс', exact: true }).click()
-  await expect(page.getByText(/Её часы и календарная дата показаны в Europe\/Moscow/)).toBeVisible()
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click()
-  await expect(page.getByRole('timer')).toHaveAttribute('aria-label', timer)
-  expect(await page.locator('.prayer-time').allTextContents()).toEqual(times)
+  await openSchedule(page)
+  const times = await page.locator('.event-row time').allTextContents()
+  const choice = await readSavedSetting(page, 'locationChoice') as Record<string, unknown>
+  await writeSavedSetting(page, 'locationChoice', { ...choice, timeZoneOverride: { id: 'America/New_York', source: 'user' } })
+  await page.reload()
+  await expect(page.getByRole('timer')).toHaveAttribute('aria-label', timer ?? '')
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-09-04')
+  await openSchedule(page)
+  expect(await page.locator('.event-row time').allTextContents()).toEqual(times)
 })

@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures'
+import { back, choosePlace, openSchedule, expect, test } from './fixtures'
 
 const CSP = [
   "default-src 'none'",
@@ -79,28 +79,21 @@ test('production CSP разрешает приложение и блокируе
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
 
   await page.goto('./')
-  await expect(page.getByRole('heading', { name: 'Salah' })).toBeVisible()
-  await expect(page.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
-  expect(await page.evaluate(() => document.fonts.check("16px 'Alegreya Sans'"))).toBe(true)
-
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await expect(page.getByRole('dialog', { name: 'Выбор местоположения' })).toBeVisible()
-  await page.getByRole('button', { name: 'Найти город или район' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  await expect(page.getByRole('button', { name: 'Стамбул, Стамбул, Турция' })).toBeVisible({
-    timeout: 15_000,
-  })
-  await page.getByRole('button', { name: 'Закрыть' }).click()
-
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Определить автоматически' }).click()
-  await expect(page.getByRole('button', { name: /Моё местоположение|Рядом: Москва/ })).toBeVisible()
+  await choosePlace(page)
+  await openSchedule(page)
+  await page.evaluate(() => document.fonts.ready)
+  expect(await page.evaluate(() => Array.from(document.fonts).some(face => face.family === 'Old Timey Mono' && face.status === 'loaded'))).toBe(true)
+  await back(page)
+  await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
+  await page.locator('#home-location').click()
+  await page.getByRole('button', { name: 'По геопозиции' }).click()
+  await expect(page.locator('#home-location')).toContainText(/Моё местоположение|Рядом: Москва/)
   expect(externalRequests).toEqual([])
 
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'QR-код Salah' })).toBeVisible()
-  await page.getByRole('button', { name: 'Закрыть' }).click()
+  await expect(page.getByRole('region', { name: 'Поделиться' })).toBeVisible()
+  await back(page)
   await page.evaluate(async () => navigator.serviceWorker.ready)
 
   const violationsBeforeProbe = await page.evaluate(() => (

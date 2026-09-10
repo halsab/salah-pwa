@@ -379,9 +379,9 @@
     let copied=false;
     // Копирование по нажатию работает и во встроенном окне без clipboard-write.
     input.focus({preventScroll:true});input.select();
-    try {copied=document.execCommand('copy');} catch {}
+    try {copied=document.execCommand('copy');} catch { /* Буфер обмена может быть недоступен в локальном макете. */ }
     if(!copied && navigator.clipboard){
-      try {await navigator.clipboard.writeText(input.value);copied=true;} catch {}
+      try {await navigator.clipboard.writeText(input.value);copied=true;} catch { /* Буфер обмена может быть недоступен в локальном макете. */ }
     }
     if(!button.isConnected)return;
     if(copied){
