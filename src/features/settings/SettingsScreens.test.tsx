@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
@@ -8,6 +8,18 @@ import type { AppScreen } from '../../ui/useAppNavigation'
 const defaults = { onBack: vi.fn(), onOpen: vi.fn(), sourceLabel: 'ДУМ РТ', getCapability: () => ({ supported: true as const }), onReset: vi.fn(), version: 'v26.4' }
 
 describe('новые настройки', () => {
+  it('блокирует повторное удаление во время операции и даёт повторить при ошибке', async () => {
+    let resolve!: (value: boolean) => void
+    const onReset = vi.fn().mockImplementationOnce(() => new Promise(r => { resolve = r })).mockResolvedValue(true)
+    render(<SettingsScreens {...defaults} screen="reset" preferences={automaticPreferences()} onChange={vi.fn()} onReset={onReset} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
+    expect(screen.getByRole('button', { name: 'Удаляем данные…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Назад' })).toBeDisabled()
+    await act(async () => { resolve(false); await Promise.resolve() })
+    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось удалить данные')
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    expect(onReset).toHaveBeenCalledTimes(2)
+  })
   it.each<[SourcePreferences, boolean, boolean]>([
     [automaticPreferences(), false, false],
     [{ mode: 'manual', source: { kind: 'official', provider: 'dumRt' } }, true, false],

@@ -105,3 +105,11 @@ SIL Open Font License 1.1. Текст лицензии находится в
 [закреплённом источнике geoBoundaries](scripts/geography/source-metadata.json)
 проверены 7 сентября 2026 года. Модель не включает мировой набор timezone-полигонов;
 зона устройства вне поддержанного локального покрытия не является такой базой.
+
+## Old Timey Mono
+
+- Автор: Darren Embry, © 2024.
+- Источник: https://github.com/dse/old-timey-mono-font
+- Версия: `58d9c1b35168cc2162b0dc5274332432a535aee8`, `dist/ttf/OldTimeyMono.ttf`.
+- Лицензия: SIL Open Font License 1.1; полный текст — `public/old-timey-mono-license.txt`.
+- Шрифт используется без изменений.

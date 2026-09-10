@@ -4,6 +4,7 @@ import { effectiveCalculationSettings } from '../../domain/calculationSettings'
 import { CALCULATION_PROFILES, type CalculationProfileCapability, type CalculationProfileId, type HighLatitudeMethod } from '../../domain/prayerCalculation'
 import { HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
+import { StaticContent } from '../../ui/StaticContent'
 import type { AppScreen } from '../../ui/useAppNavigation'
 
 interface SettingsScreensProps {
@@ -79,10 +80,10 @@ export function SettingsScreens({ screen, preferences, sourceLabel, onChange, on
     </div>
   </Screen>
   if (screen === 'privacy') return <Screen label="Данные и конфиденциальность" top={top} bottom={<button id="reset-trigger" className="pill pill-wide" type="button" onClick={() => onOpen('reset')}>Удалить данные</button>}>
-    <p className="screen-copy">Место, настройки и недавние города — на этом устройстве.</p><p className="note screen-space">Без аккаунта и аналитики.</p>
+    <p className="screen-copy">Место, координаты, настройки и три недавних города — на этом устройстве.</p><p className="note screen-space">Без аккаунта и аналитики.</p>
     <a className="pill screen-space" href={`${import.meta.env.BASE_URL}privacy/`}>Конфиденциальность</a>{notice}
   </Screen>
-  if (screen === 'about') return <Screen label="О приложении" top={top}><p className="screen-copy">Время намаза для выбранного места. По официальной таблице или расчёту.</p>{version ? <p className="note screen-space">Версия <span className="app-version">{version}</span></p> : null}</Screen>
+  if (screen === 'about') return <Screen label="О приложении" top={top}><p className="screen-copy">Время намаза для выбранного места. По официальной таблице или расчёту.</p>{version ? <p className="note screen-space">Версия <span className="app-version">{version}</span></p> : null}<details className="screen-space app-details"><summary>Источники и лицензии</summary><StaticContent id="app-credits" /></details></Screen>
   if (screen === 'reset') return <ResetScreen onBack={onBack} onReset={onReset} />
   return null
 }
@@ -98,7 +99,7 @@ function ResetScreen({ onBack, onReset }: { onBack: () => void; onReset: () => P
   }
   return <Screen label="Удаление данных" top={<button className="pill" data-screen-focus type="button" onClick={onBack} disabled={status === 'busy'}>Назад</button>}
     bottom={<button className="pill pill-wide" type="button" onClick={() => void reset()} disabled={status === 'busy'}>{status === 'busy' ? 'Удаляем данные…' : status === 'failed' ? 'Повторить' : 'Удалить данные'}</button>}>
-    <p className="screen-title">Удалить данные?</p><p className="screen-copy screen-space">Место, настройки и недавние города будут удалены с этого устройства.</p><p className="note screen-space">Приложение останется доступным.</p>
+    <p className="screen-title">Удалить данные?</p><p className="screen-copy screen-space">Место, координаты, настройки, недавние города и сохранённые расписания будут удалены во всех вкладках.</p><p className="note screen-space">Приложение и публичные справочники останутся. Отменить удаление нельзя.</p>
     {status === 'failed' ? <p className="note screen-space" role="alert">Не удалось удалить данные</p> : null}
   </Screen>
 }

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -34,19 +34,21 @@ function renderDialog(overrides: Partial<ComponentProps<typeof ShareDialog>> = {
 
 afterEach(() => {
   setClipboard(undefined)
+  window.history.replaceState(null, '', '/')
 })
 
 describe('ShareDialog', () => {
-  it('копирует текущую ссылку и сообщает об успехе без видимого лейбла', async () => {
+  it('копирует каноническую ссылку без параметров страницы и сообщает об успехе', async () => {
     const user = userEvent.setup()
     const writeText = vi.fn().mockResolvedValue(undefined)
     setClipboard(writeText)
+    window.history.replaceState(null, '', '/?preview=1#schedule')
     const { props } = renderDialog()
     const copyButton = screen.getByRole('button', { name: 'Скопировать ссылку' })
 
     await user.click(copyButton)
 
-    expect(writeText).toHaveBeenCalledWith(window.location.href)
+    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
     const status = await screen.findByRole('status')
     expect(status).toHaveTextContent('Ссылка скопирована')
     expect(status).toHaveClass('sr-only')
@@ -64,7 +66,8 @@ describe('ShareDialog', () => {
     const status = await screen.findByRole('status')
     expect(status).toHaveTextContent('Не удалось скопировать ссылку')
     expect(status).toHaveAttribute('aria-live', 'polite')
-    expect(status).toHaveClass('share-copy-status')
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveFocus()
+    expect(screen.getByRole('textbox')).toHaveValue('https://halsab.github.io/salah-pwa/')
     expect(props.onClose).not.toHaveBeenCalled()
   })
 
@@ -116,24 +119,13 @@ describe('ShareDialog', () => {
     },
   )
 
-  it('сохраняет QR, начальный фокус, закрытие кнопкой, фоном и Escape', async () => {
+  it('сохраняет QR и возвращается кнопкой Назад', async () => {
     const user = userEvent.setup()
     const { props } = renderDialog()
-    const dialog = screen.getByRole('dialog', { name: 'QR-код Salah' })
-    const copyButton = screen.getByRole('button', { name: 'Скопировать ссылку' })
-
-    expect(screen.getByRole('img', { name: 'QR-код со ссылкой на Salah' })).toHaveAttribute(
-      'src',
-      '/share-qr.svg',
-    )
-    await waitFor(() => expect(copyButton).toHaveFocus())
-
-    await user.click(screen.getByRole('button', { name: 'Закрыть' }))
-    const layer = dialog.parentElement
-    if (!layer) throw new Error('Не найден слой диалога')
-    fireEvent.pointerDown(layer, { pointerType: 'touch' })
-    fireEvent.keyDown(window, { key: 'Escape' })
-
-    expect(props.onClose).toHaveBeenCalledTimes(3)
+    expect(screen.getByRole('region', { name: 'Поделиться' })).toBeVisible()
+    expect(screen.getByRole('img', { name: 'QR-код ссылки на приложение' })).toHaveAttribute('src', '/share-qr.svg')
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://halsab.github.io/salah-pwa/')
+    await user.click(screen.getByRole('button', { name: 'Назад' }))
+    expect(props.onClose).toHaveBeenCalledOnce()
   })
 })

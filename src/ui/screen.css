@@ -134,3 +134,13 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .readout-facts dt { font-size: 14px; color: var(--text-secondary); }
 .readout-facts dd { font-size: 20px; color: var(--text-primary); overflow-wrap: anywhere; }
 .app-screen .app-version { font: inherit; color: inherit; margin: 0; }
+.share-screen { display: flex; flex-direction: column; gap: 16px; text-align: center; }
+.app-share-qr { width: 270px; height: auto; max-width: 100%; display: block; margin-inline: auto; flex-shrink: 0; }
+.share-label { display: block; margin-bottom: 8px; }
+.app-share-url { appearance: none; display: block; width: 100%; height: 2.9em; min-height: 2.9em; padding: 0; margin: 0; border: 0; border-radius: 0; resize: none; background: var(--background-secondary); color: var(--text-primary); font: 400 18px/1.45 'Old Timey Mono', monospace; letter-spacing: 0; overflow-wrap: anywhere; text-align: center; }
+.app-details > summary { display: flex; align-items: center; min-height: 44px; padding: 12px 16px; border-radius: 22px; background: var(--background-tertiary); cursor: pointer; list-style: none; font: 400 15px/1.4 'Old Timey Mono', monospace; }
+.app-details > summary::-webkit-details-marker { display: none; }
+.app-details[open] > summary { margin-bottom: 16px; }
+.app-credits { color: var(--text-secondary); font: 400 14px/1.5 'Old Timey Mono', monospace; }
+.app-credits p + p { margin-top: 16px; }
+.app-credits a { color: var(--text-primary); }
