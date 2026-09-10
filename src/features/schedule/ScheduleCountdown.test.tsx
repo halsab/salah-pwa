@@ -22,10 +22,10 @@ describe('ScheduleCountdown', () => {
       />,
     )
 
-    expect(screen.getByText('00:00:02')).toBeVisible()
+    expect(screen.getByText('< 1 мин')).toBeVisible()
     now = new Date(now.getTime() + 1_000)
     act(() => { vi.advanceTimersByTime(1_000) })
-    expect(screen.getByText('00:00:01')).toBeVisible()
+    expect(screen.getByText('< 1 мин')).toBeVisible()
     expect(onElapsed).not.toHaveBeenCalled()
 
     now = new Date(now.getTime() + 1_000)
@@ -52,18 +52,18 @@ describe('ScheduleCountdown', () => {
       />,
     )
 
-    expect(screen.getByText('00:01:00')).toBeVisible()
+    expect(screen.getByText('1 мин')).toBeVisible()
     expect(vi.getTimerCount()).toBe(1)
 
     now = new Date(now.getTime() + 30_000)
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
 
-    expect(screen.getByText('00:00:30')).toBeVisible()
+    expect(screen.getByText('< 1 мин')).toBeVisible()
     expect(vi.getTimerCount()).toBe(1)
 
     now = new Date(now.getTime() + 1_000)
     act(() => { vi.advanceTimersByTime(1_000) })
-    expect(screen.getByText('00:00:29')).toBeVisible()
+    expect(screen.getByText('< 1 мин')).toBeVisible()
   })
 
   it('по pageshow один раз сообщает о пропущенной границе и не оставляет stale timeout', () => {
@@ -83,7 +83,7 @@ describe('ScheduleCountdown', () => {
     now = new Date(now.getTime() + 20_000)
     act(() => { window.dispatchEvent(new PageTransitionEvent('pageshow')) })
 
-    expect(screen.getByText('00:00:00')).toBeVisible()
+    expect(screen.getByText('0 мин')).toBeVisible()
     expect(onElapsed).toHaveBeenCalledTimes(1)
     expect(vi.getTimerCount()).toBe(0)
 

@@ -26,10 +26,7 @@ import {
   type CalculationProfileCapability,
   type CalculationProfileId,
 } from './domain/prayerCalculation'
-import {
-  getDeviceTimeZone,
-  getUtcOffset,
-} from './domain/locationTime'
+import { getDeviceTimeZone } from './domain/locationTime'
 import type { Result } from './domain/result'
 import { LocationDialog } from './features/location/LocationDialog'
 import { useCityCatalog } from './features/location/useCityCatalog'
@@ -49,7 +46,7 @@ import {
 } from './platform/browser'
 import type { LocationChoice } from './storage/database'
 import { AppHeader } from './ui/AppHeader'
-import { SourceBadge, SourceInfo } from './features/source/SourceInfo'
+import { SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
 import type { Appearance } from './storage/database'
 import { Screen } from './ui/Screen'
@@ -78,10 +75,6 @@ const defaultServices: AppServices = {
   getDeviceTimeZone,
   getCalculationProfileCapability,
   now: () => new Date(),
-}
-
-function canonicalTimeZone(timeZone: string): string {
-  return new Intl.DateTimeFormat('en', { timeZone }).resolvedOptions().timeZone
 }
 
 function LoadingScreen() {
@@ -191,14 +184,14 @@ export function App({
     currentTime,
     today,
     changeDate,
-    onDateInput,
+    onDateInput: handleNativeDate,
     showDatePicker,
   } = useScheduleDate(services, calendarTimeZone)
-  const resolution = place ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities) : null
+  const displayDate = navigation.screen === 'schedule' ? selectedDate : today
+  const resolution = place ? resolvePrayerTimeSource(place, displayDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
   const locationId = resolution?.kind === 'official' ? resolution.locationId : null
   const officialLocation = officialMode ? locations.find(location => location.id === locationId) ?? null : null
-  const selectedTimeZone = resolution?.timeZone ?? calendarTimeZone
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
     : preferences.calculationDraft ? effectiveCalculationSettings(preferences.calculationDraft) : DEFAULT_CALCULATION_SETTINGS
   const scheduleServices = useMemo(() => ({
@@ -221,7 +214,7 @@ export function App({
     location: place,
     resolution,
     mode: preferences.mode,
-    selectedDate,
+    selectedDate: displayDate,
   })
 
   const openLocationDialog = useCallback(() => {
@@ -265,15 +258,11 @@ export function App({
     )
   }
 
-  const selectedLocation = officialLocation ?? undefined
   const updatePreferences = (next: SourcePreferences) => {
     setPreferences(next)
     persistence.save({ sourcePreferences: next })
   }
   const calculatedLocationLabel = place?.name ?? 'Выберите место'
-  const timeZoneOffset = canonicalTimeZone(selectedTimeZone) === canonicalTimeZone(deviceTimeZone)
-    ? null
-    : getUtcOffset(currentTime, selectedTimeZone)
   const dialogOpen = locationDialogOpen
     || settingsDialogOpen
     || methodologyDialogOpen
@@ -281,9 +270,9 @@ export function App({
     || navigation.screen === 'source-info'
 
   const persistenceNotice = persistence.status === 'failed' ? (
-        <div className="persistence-notice" role="status">
-          <span>Изменение действует сейчас, но сохранить его не удалось</span>
-          <button type="button" className="primary-button" onClick={persistence.retry}>Повторить</button>
+        <div className="screen-status" role="status">
+          <span>Не удалось сохранить изменения</span>
+          <button type="button" className="pill" onClick={persistence.retry}>Повторить</button>
         </div>
       ) : null
 
@@ -294,47 +283,33 @@ export function App({
         inert={dialogOpen || undefined}
         aria-hidden={dialogOpen || undefined}
       >
-        <Screen label="Главная">
-          <AppHeader
-            locationButtonRef={locationButtonRef}
-            settingsButtonRef={settingsButtonRef}
-            officialMode={officialMode}
-            selectedLocation={selectedLocation}
-            calculatedLocationLabel={calculatedLocationLabel}
-            timeZoneOffset={timeZoneOffset}
-            selectedDate={selectedDate}
-            today={today}
-            minDate={undefined}
-            maxDate={undefined}
-            onOpenLocation={openLocationDialog}
-            onOpenSettings={openSettingsDialog}
-            onChangeDate={changeDate}
-            onDateInput={onDateInput}
-            onShowDatePicker={showDatePicker}
-          />
-
-          {locationNotice ? <p role="status" className="location-schedule-note">{locationNotice}</p> : null}
-          {!place ? <div className="first-install"><h2>Время намаза для вашего места</h2><p>{staticText('app-copy-1')}</p><button className="primary-button" type="button" onClick={openLocationDialog}>Выбрать место</button></div> : <ScheduleContent
+          {!place ? <Screen label="Выбор места" contentClassName="screen-center" bottom={<button id="home-settings" className="pill screen-end" type="button" onClick={openSettingsDialog}>Настройки</button>}>
+            <h1 className="screen-title">Выберите место</h1><button className="pill" id="home-location" type="button" onClick={openLocationDialog}>Выбрать место</button>
+          </Screen> : <ScheduleContent
             schedule={schedule}
             key={contextKey}
             schedules={schedules}
             scheduleLoading={scheduleLoading}
             scheduleError={resolution?.kind === 'calculated' && resolution.status === 'unsupported'
               ? (() => { const capability = services.getCalculationProfileCapability(resolution.settings.profile); return capability.supported ? scheduleError : capability.reason })() : scheduleError}
-            selectedDate={selectedDate}
+            selectedDate={displayDate}
             today={today}
             currentTime={currentTime}
             now={services.now}
             officialMode={officialMode}
-            sourceBadge={schedule && context && !scheduleLoading && !scheduleError ? <SourceBadge context={context} onOpen={() => { setSourceOpen(contextKey); openScreen('source-info') }} /> : null}
+            view={navigation.screen === 'schedule' ? 'schedule' : 'home'}
+            placeLabel={calculatedLocationLabel}
+            onBack={backScreen}
+            top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={displayDate}
+              onOpenLocation={openLocationDialog} onDateInput={event => { handleNativeDate(event); if (event.target.value) openScreen('schedule') }} onShowDatePicker={showDatePicker} />}
+            homeActions={<><button className="pill" id="home-schedule" type="button" onClick={() => { changeDate(today); openScreen('schedule') }}>Расписание</button>
+              <button className="pill" id="home-settings" ref={settingsButtonRef} type="button" onClick={openSettingsDialog}>Настройки</button></>}
+            notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
           />}
-        </Screen>
 
       </div>
-
-      {!locationDialogOpen && !settingsDialogOpen ? persistenceNotice : null}
 
       <LocationDialog
         persistenceNotice={persistenceNotice}

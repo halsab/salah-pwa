@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 
 import { formatRemainingTime } from '../../domain/nextPrayer'
-import { ClockIcon } from '../../ui/Icons'
 
 interface ScheduleCountdownProps {
   countdownLabel: string
   targetInstant: number
   now: () => Date
   onElapsed: () => void
+  compact?: boolean
 }
 
 function remainingSeconds(targetInstant: number, now: Date): number {
@@ -19,6 +19,7 @@ export function ScheduleCountdown({
   targetInstant,
   now,
   onElapsed,
+  compact = false,
 }: ScheduleCountdownProps) {
   const [remaining, setRemaining] = useState(() =>
     remainingSeconds(targetInstant, now()))
@@ -71,16 +72,13 @@ export function ScheduleCountdown({
   const formattedRemaining = formatRemainingTime(remaining)
   return (
     <div
-      className="countdown"
+      className={compact ? 'event-countdown event-countdown-compact' : 'event-countdown'}
       role="timer"
       aria-live="off"
       aria-label={`${countdownLabel}, осталось ${formattedRemaining}`}
     >
-      <ClockIcon />
-      <span className="countdown-copy">
-        <span className="next-label">{countdownLabel}</span>
-        <span className="countdown-value">{formattedRemaining}</span>
-      </span>
+      <span className="countdown-label">{countdownLabel}</span>
+      <span className="countdown-value">{formattedRemaining}</span>
     </div>
   )
 }

@@ -202,9 +202,13 @@ describe('findCurrentPrayer', () => {
 })
 
 describe('formatRemainingTime', () => {
-  it('форматирует часы, минуты и секунды без скачков ширины', () => {
-    expect(formatRemainingTime(12_240)).toBe('03:24:00')
-    expect(formatRemainingTime(5)).toBe('00:00:05')
+  it('кратко показывает часы и минуты, сохраняя точность меньше минуты', () => {
+    expect(formatRemainingTime(12_240)).toBe('3 ч 24 мин')
+    expect(formatRemainingTime(3_600)).toBe('1 ч')
+    expect(formatRemainingTime(60)).toBe('1 мин')
+    expect(formatRemainingTime(5)).toBe('< 1 мин')
+    expect(formatRemainingTime(0)).toBe('0 мин')
+    expect(formatRemainingTime(-5)).toBe('0 мин')
   })
 })
 

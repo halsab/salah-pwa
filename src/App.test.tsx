@@ -140,6 +140,18 @@ function createServices(
 }
 
 describe('Salah', () => {
+  it('выбор даты открывает список этого дня, а возврат показывает сводку сегодня', async () => {
+    render(<App services={createServices()} />)
+    await screen.findByRole('region', { name: 'Текущее событие' })
+    fireEvent.change(screen.getByLabelText('Выбрать дату'), { target: { value: '2026-09-02' } })
+    expect(await screen.findByRole('list', { name: 'Расписание дня' })).toHaveTextContent('16:21')
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    expect(await screen.findByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Зухрс 12:00')
+    expect(screen.getByLabelText('Выбрать дату')).toHaveValue('2026-09-01')
+    expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
+  })
+
   it('показывает номер релизной сборки в настройках', async () => {
     render(<App services={createServices()} version="v26.4" />)
 

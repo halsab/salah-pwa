@@ -1,79 +1,40 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-
-import { formatDateLabel } from '../../domain/date'
-import { buildScheduleEvents, selectEventPair } from '../../domain/scheduleEvents'
-import type {
-  CalculatedPrayerKey,
-  SchedulePrayerKey,
-} from '../../domain/types'
-import {
-  ClockIcon,
-  MoonIcon,
-  SunIcon,
-  SunriseIcon,
-  SunsetIcon,
-} from '../../ui/Icons'
+import { formatCompactDateLabel } from '../../domain/date'
+import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
+import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
+import { BackButton, Screen } from '../../ui/Screen'
 import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
 
-type ScheduleIconKind = 'moon' | 'sunrise' | 'sun' | 'sunset'
-
-const EVENT_ICONS: Record<SchedulePrayerKey, ScheduleIconKind> = {
-  suhurEnd: 'moon', fajrJamaat: 'sunrise', fajr: 'moon', sunrise: 'sunrise',
-  zenith: 'sun', dhuhr: 'sun', asr: 'sunset', maghrib: 'sunset', isha: 'moon',
+const LABELS: Record<SchedulePrayerKey, string> = {
+  suhurEnd: 'Сухур до', fajrJamaat: 'Фаджр в мечети', fajr: 'Фаджр', sunrise: 'Восход',
+  zenith: 'Зенит', dhuhr: 'Зухр', asr: 'Аср', maghrib: 'Магриб', isha: 'Иша',
+}
+const COUNTDOWN: Record<SchedulePrayerKey, string> = {
+  suhurEnd: 'До конца сухура', fajrJamaat: 'До Фаджра в мечети', fajr: 'До Фаджра', sunrise: 'До восхода',
+  zenith: 'До зенита', dhuhr: 'До Зухра', asr: 'До Асра', maghrib: 'До Магриба', isha: 'До Иши',
 }
 
-function ScheduleIcon({ kind }: { kind: ScheduleIconKind }) {
-  const props = { className: 'schedule-icon' }
-  if (kind === 'moon') return <MoonIcon {...props} />
-  if (kind === 'sun') return <SunIcon {...props} />
-  if (kind === 'sunset') return <SunsetIcon {...props} />
-  return <SunriseIcon {...props} />
+function estimated(event: ResolvedScheduleEvent, schedules: DisplaySchedule[]): boolean {
+  return schedules.some(day => day.date === event.scheduleDate && 'entries' in day && day.estimatedPrayers.includes(event.key as CalculatedPrayerKey))
 }
 
-function PrayerSchedule({
-  schedule,
-  activePrayer,
-}: {
-  schedule: DisplaySchedule
-  activePrayer: SchedulePrayerKey | undefined
+function PrayerSchedule({ schedule, current, now, live }: {
+  schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean
 }) {
-  const calculated = 'entries' in schedule
-  const events = buildScheduleEvents(schedule)
-
-  return (
-    <ol className="prayer-list" aria-label="Расписание дня">
-      {events.map(event => {
-        const { key, label, time } = event
-        const entry = calculated
-          ? schedule.entries[key as CalculatedPrayerKey]
-          : null
-        const dateTime = new Date(event.instant).toISOString()
-        const estimated = entry?.estimated ?? false
-
-        return (
-          <li
-            className="prayer-row"
-            data-active={key === activePrayer || undefined}
-            data-estimated={estimated || undefined}
-            key={key}
-          >
-            <ScheduleIcon kind={EVENT_ICONS[key]} />
-            <span className="prayer-name">{label}{event.dayOffset ? <small> · {formatDateLabel(event.date)}</small> : null}</span>
-            <span className="prayer-dots" aria-hidden="true" />
-            <time className="prayer-time" dateTime={dateTime}>
-              {time}
-            </time>
-            {estimated ? (
-              <span className="estimated-mark" aria-label="Время определено по северному правилу">
-                ≈
-              </span>
-            ) : null}
-          </li>
-        )
-      })}
-    </ol>
-  )
+  const events = buildScheduleEvents(schedule).sort((left, right) => left.instant - right.instant)
+  return <ol className="event-list" aria-label="Расписание дня">
+    {events.map(event => {
+      const active = live && event.key === current?.key && event.scheduleDate === current.scheduleDate
+      const past = live && !active && event.instant <= now.getTime()
+      return <li key={event.key} className={`event-row${past ? ' event-past' : ''}`} aria-current={active || undefined}>
+        <div className="event-name"><span>{LABELS[event.key]}</span>{active ? <small className="event-current-label">сейчас</small> : null}
+          {event.dayOffset ? <small className="event-day">{formatCompactDateLabel(event.date)}</small> : null}
+        </div>
+        <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label="Приблизительное время">≈ </span> : null}{event.time}</time>
+      </li>
+    })}
+  </ol>
 }
 
 interface ScheduleContentProps {
@@ -86,106 +47,52 @@ interface ScheduleContentProps {
   currentTime: Date
   now: () => Date
   officialMode: boolean
-  sourceBadge?: ReactNode
   onChangeDate: (date: string) => void
   onRetrySchedule: () => void
+  view?: 'home' | 'schedule'
+  placeLabel?: string
+  top?: ReactNode
+  homeActions?: ReactNode
+  notice?: ReactNode
+  onBack?: () => void
 }
 
-export function ScheduleContent({
-  schedule,
-  schedules,
-  scheduleLoading,
-  scheduleError,
-  selectedDate,
-  today,
-  currentTime,
-  now,
-  officialMode,
-  sourceBadge,
-  onChangeDate,
-  onRetrySchedule,
+export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
+  currentTime, now, officialMode, onChangeDate, onRetrySchedule, view = 'home', placeLabel = '', top,
+  homeActions, notice, onBack,
 }: ScheduleContentProps) {
-  const [eventBoundaryTime, setEventBoundaryTime] = useState<Date | null>(null)
-  const effectiveCurrentTime = eventBoundaryTime
-    && eventBoundaryTime.getTime() > currentTime.getTime()
-    ? eventBoundaryTime
-    : currentTime
-  const handleEventBoundary = useCallback(() => {
-    const nextTime = now()
-    setEventBoundaryTime((current) =>
-      current?.getTime() === nextTime.getTime() ? current : nextTime)
-  }, [now])
-  const activeSchedule = scheduleLoading || scheduleError ? null : schedule
-  const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
-  const { next: nextPrayer } = selectedDate === today && activeSchedule
-    ? selectEventPair(effectiveCurrentTime, events.filter(event => event.kind !== 'marker'))
-    : { next: null }
-  const nextEstimated = nextPrayer && schedules.some(day => day.date === nextPrayer.scheduleDate && 'entries' in day && day.estimatedPrayers.includes(nextPrayer.key as CalculatedPrayerKey))
-  const calculatedSchedule = activeSchedule && 'entries' in activeSchedule ? activeSchedule : null
-
-  return (
-    <div className="content-grid" data-loading={scheduleLoading || undefined}>
-      <section className="next-prayer-panel" aria-label="Следующий намаз">
-        {scheduleError ? (
-          <div className="no-next-prayer"><ClockIcon /><p>Расписание временно недоступно</p></div>
-        ) : scheduleLoading ? (
-          <div className="no-next-prayer" aria-live="polite"><ClockIcon /><p>Загружаем расписание…</p></div>
-        ) : selectedDate === today ? (
-          nextPrayer ? (
-            <>
-              <div className="current-prayer">
-                <p className="current-label">
-                  {nextPrayer.kind === 'jamaat' ? 'Ближайший джамаат' : 'Следующий намаз'}
-                </p>
-                <p className="next-name">{nextPrayer.label}</p>
-                <time className="next-time" dateTime={new Date(nextPrayer.instant).toISOString()}>{nextEstimated ? <span aria-label="Приблизительное время">≈ </span> : null}{nextPrayer.time}</time>
-                {nextPrayer.date !== today ? <span>{formatDateLabel(nextPrayer.date)}</span> : null}
-              </div>
-              <ScheduleCountdown
-                key={`${nextPrayer.date}:${nextPrayer.key}:${nextPrayer.instant}`}
-                countdownLabel={nextPrayer.countdownLabel}
-                targetInstant={nextPrayer.instant}
-                now={now}
-                onElapsed={handleEventBoundary}
-              />
-            </>
-          ) : (
-            <div className="no-next-prayer">
-              <MoonIcon />
-              <p>{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующее событие не найдено'}</p>
-            </div>
-          )
-        ) : (
-          <div className="selected-date-summary">
-            <SunIcon /><p>Расписание на</p><strong>{formatDateLabel(selectedDate)}</strong>
-          </div>
-        )}
-      </section>
-
-      <section className="schedule-panel" aria-busy={scheduleLoading}>
-        {scheduleError ? (
-          <div className="missing-schedule schedule-error">
-            <p role="alert">{scheduleError}</p>
-            <button className="primary-button" type="button" onClick={onRetrySchedule}>Повторить</button>
-          </div>
-        ) : activeSchedule ? (
-          <PrayerSchedule schedule={activeSchedule} activePrayer={nextPrayer?.scheduleDate === activeSchedule.date ? nextPrayer.key : undefined} />
-        ) : scheduleLoading ? (
-          <div className="schedule-skeleton" aria-label="Загружаем расписание" />
-        ) : (
-          <div className="missing-schedule">
-            <p>Расписание на эту дату ещё не опубликовано.</p>
-            {selectedDate !== today ? (
-              <button className="primary-button" type="button" onClick={() => onChangeDate(today)}>Сегодня</button>
-            ) : null}
-          </div>
-        )}
-
-        <div>
-          {calculatedSchedule?.estimatedPrayers.length ? <p className="calculation-note">≈ Есть приблизительные значения</p> : null}
-          {sourceBadge}
-        </div>
-      </section>
-    </div>
-  )
+  const [boundary, setBoundary] = useState<Date | null>(null)
+  const effectiveNow = boundary && boundary > currentTime ? boundary : currentTime
+  const onElapsed = useCallback(() => { setBoundary(now()) }, [now])
+  const events = useMemo(() => schedules.flatMap(buildScheduleEvents).filter(event => event.kind !== 'marker'), [schedules])
+  const ready = !scheduleLoading && !scheduleError && schedule !== null
+  const live = selectedDate === today && ready
+  const { current, next } = live ? selectEventPair(effectiveNow, events) : { current: null, next: null }
+  const previous = current ? selectEventPair(new Date(current.instant - 1), events).current : null
+  const countdown = next ? <ScheduleCountdown key={`${next.scheduleDate}:${next.key}:${next.instant}`} countdownLabel={COUNTDOWN[next.key]}
+    targetInstant={next.instant} now={now} onElapsed={onElapsed} compact={view === 'schedule'} /> : null
+  const footer = view === 'home' ? homeActions : <>
+    {selectedDate !== today ? <button className="pill" type="button" onClick={() => onChangeDate(today)}>Сегодня</button> : countdown}
+    <p className="schedule-place"><span>{placeLabel}</span><span>{formatCompactDateLabel(selectedDate)}</span></p>
+  </>
+  return <Screen label={view === 'home' ? 'Главная' : 'Расписание'} top={view === 'home' ? top : onBack ? <BackButton onClick={onBack} /> : undefined}
+    bottom={footer} busy={scheduleLoading} contentClassName={ready && view === 'home' ? 'home-content' : !ready ? 'screen-center' : ''}>
+    {scheduleError ? <div className="screen-stack"><p className="screen-copy" role="alert">{scheduleError}</p><button type="button" className="pill" onClick={onRetrySchedule}>Повторить</button></div>
+      : scheduleLoading ? <p className="note" role="status">Загружаем расписание…</p>
+        : !schedule ? <p className="screen-copy">Нет расписания на эту дату</p>
+          : view === 'schedule' ? <>
+            <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} />
+            {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">≈ По северному правилу</p> : null}
+          </> : <>
+            {previous ? <p className="home-previous muted">{LABELS[previous.key]} {previous.time}</p> : null}
+            {current ? <section className="home-current" aria-label="Текущее событие"><p className="home-label">Сейчас</p><h1>{LABELS[current.key]}</h1><p className="home-time">с {current.time}{estimated(current, schedules) ? ' ≈' : ''}</p>
+              {current.date !== today ? <p className="note">{formatCompactDateLabel(current.date)}</p> : null}
+            </section> : null}
+            <section className="home-next" aria-label="Следующее событие">
+              {countdown ?? <p className="note">{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующее событие не найдено'}</p>}
+              {next ? <><p className="home-time">в {next.time}{estimated(next, schedules) ? ' ≈' : ''}</p>{next.date !== today ? <p className="note">{formatCompactDateLabel(next.date)}</p> : null}</> : null}
+            </section>
+          </>}
+    {notice}
+  </Screen>
 }
