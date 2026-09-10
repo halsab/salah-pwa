@@ -17,7 +17,7 @@ function sourceLabel(context: ScheduleContext) {
     : 'Расчётное время'
 }
 export function SourceBadge({ context, onOpen }: { context: ScheduleContext; onOpen: () => void }) {
-  return <div><button className="source-badge" type="button" onClick={onOpen}>{sourceLabel(context)} <span aria-hidden="true">ⓘ</span></button>{context.mode === 'manual' ? <small>Ручной выбор источника</small> : null}</div>
+  return <div><button id="open-source-info" className="source-badge" type="button" onClick={onOpen}>{sourceLabel(context)} <span aria-hidden="true">ⓘ</span></button>{context.mode === 'manual' ? <small>Ручной выбор источника</small> : null}</div>
 }
 
 export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel, checkedAt, updateFailed }: {

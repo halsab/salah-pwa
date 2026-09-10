@@ -1113,7 +1113,7 @@ describe('Salah', () => {
     const background = trigger.closest<HTMLElement>('.app-background')
     expect(background).not.toBeNull()
     if (!background) throw new Error('Не найден фон приложения')
-    expect(background).toContainElement(document.querySelector('.app-frame'))
+    expect(background).toContainElement(document.querySelector('.app-screen'))
     expect(background).toContainElement(screen.getByRole('button', { name: 'Настройки' }))
 
     const focusStates: boolean[] = []

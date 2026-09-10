@@ -52,6 +52,8 @@ import { AppHeader } from './ui/AppHeader'
 import { SourceBadge, SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
 import type { Appearance } from './storage/database'
+import { Screen } from './ui/Screen'
+import { useAppNavigation } from './ui/useAppNavigation'
 
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
   cities: CityCatalogService
@@ -84,12 +86,10 @@ function canonicalTimeZone(timeZone: string): string {
 
 function LoadingScreen() {
   return (
-    <main className="page-shell loading-page">
-      <section className="app-frame" aria-busy="true">
-        <h1 className="brand">Salah</h1>
-        <div className="loading-mark" aria-hidden="true" />
-        <p>Открываем расписание…</p>
-      </section>
+    <main className="app-layout">
+      <Screen label="Загрузка" busy contentClassName="screen-center">
+        <p className="note" role="status">Открываем расписание…</p>
+      </Screen>
     </main>
   )
 }
@@ -112,28 +112,25 @@ export function App({
   const [appearance, setAppearance] = useState<Appearance>('system')
   const [sourceOpen, setSourceOpen] = useState<string | null>(null)
   const [settingsReturnFocus, setSettingsReturnFocus] = useState<string | null>(null)
-  const nestedReturn = useRef<'location' | null>(null)
+  const navigation = useAppNavigation()
+  const { open: openScreen, back: backScreen, home: homeScreen } = navigation
   const sessionHasPlace = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [locationDialogOpen, setLocationDialogOpen] = useState(false)
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
+  const locationDialogOpen = navigation.screen === 'location'
+  const settingsDialogOpen = navigation.screen === 'settings'
   const [settingsFocusMethodology, setSettingsFocusMethodology] = useState(false)
-  const [methodologyDialogOpen, setMethodologyDialogOpen] = useState(false)
-  const [shareDialogOpen, setShareDialogOpen] = useState(false)
+  const methodologyDialogOpen = navigation.screen === 'methodology'
+  const shareDialogOpen = navigation.screen === 'share'
   const [retryCount, setRetryCount] = useState(0)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
   const settingsMethodologyButtonRef = useRef<HTMLButtonElement>(null)
 
   const closeLocationDialog = useCallback(() => {
-    setLocationDialogOpen(false)
-    if (nestedReturn.current === 'location') {
-      nestedReturn.current = null; setSettingsDialogOpen(true)
-      setSettingsReturnFocus('settings-location')
-    } else requestAnimationFrame(() => locationButtonRef.current?.focus())
-  }, [])
-  const onPlaceChosen = useCallback(() => { closeLocationDialog(); pulseHaptic() }, [closeLocationDialog])
+    backScreen()
+  }, [backScreen])
+  const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
   const { place, notice: locationNotice, restore, locate: locateAutomatically,
     selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, changeTimeZone, invalidate: invalidateLocation } = usePlaceSelection(services, locations, onPlaceChosen, persistPlace)
@@ -228,47 +225,42 @@ export function App({
   })
 
   const openLocationDialog = useCallback(() => {
-    setLocationDialogOpen(true)
-  }, [])
+    openScreen('location')
+  }, [openScreen])
 
   const closeSettingsDialog = useCallback(() => {
-    setSettingsDialogOpen(false)
+    backScreen()
     setSettingsFocusMethodology(false)
     requestAnimationFrame(() => settingsButtonRef.current?.focus())
-  }, [])
+  }, [backScreen])
   const openSettingsDialog = useCallback(() => {
     setSettingsReturnFocus(null)
     setSettingsFocusMethodology(false)
-    setSettingsDialogOpen(true)
-  }, [])
+    openScreen('settings')
+  }, [openScreen])
   const openMethodologyDialog = useCallback(() => {
-    setSettingsDialogOpen(false)
-    setMethodologyDialogOpen(true)
-  }, [])
+    openScreen('methodology')
+  }, [openScreen])
   const closeMethodologyDialog = useCallback(() => {
-    setMethodologyDialogOpen(false)
     setSettingsFocusMethodology(true)
-    setSettingsDialogOpen(true)
-  }, [])
+    backScreen()
+  }, [backScreen])
   const closeShareDialog = useCallback(() => {
-    setShareDialogOpen(false)
-    setSettingsDialogOpen(true)
+    backScreen()
     setSettingsReturnFocus('settings-share')
-  }, [])
+  }, [backScreen])
 
   if (loading) return <LoadingScreen />
 
   if (error) {
     return (
-      <main className="page-shell error-page">
-        <section className="app-frame error-frame">
-          <h1 className="brand">Salah</h1>
-          <div className="error-symbol" aria-hidden="true">!</div>
+      <main className="app-layout">
+        <Screen label="Ошибка загрузки" contentClassName="screen-center">
           <p role="alert">{error}</p>
-          <button className="primary-button" type="button" onClick={() => setRetryCount((count) => count + 1)}>
+          <button className="pill" type="button" onClick={() => setRetryCount((count) => count + 1)}>
             Попробовать снова
           </button>
-        </section>
+        </Screen>
         </main>
     )
   }
@@ -286,7 +278,7 @@ export function App({
     || settingsDialogOpen
     || methodologyDialogOpen
     || shareDialogOpen
-    || Boolean(sourceOpen && sourceOpen === contextKey && schedule)
+    || navigation.screen === 'source-info'
 
   const persistenceNotice = persistence.status === 'failed' ? (
         <div className="persistence-notice" role="status">
@@ -296,13 +288,13 @@ export function App({
       ) : null
 
   return (
-    <main className="page-shell">
+    <main className="app-layout">
       <div
-        className="app-background"
+        className="app-background screen-background"
         inert={dialogOpen || undefined}
         aria-hidden={dialogOpen || undefined}
       >
-        <section className="app-frame">
+        <Screen label="Главная">
           <AppHeader
             locationButtonRef={locationButtonRef}
             settingsButtonRef={settingsButtonRef}
@@ -334,11 +326,11 @@ export function App({
             currentTime={currentTime}
             now={services.now}
             officialMode={officialMode}
-            sourceBadge={schedule && context && !scheduleLoading && !scheduleError ? <SourceBadge context={context} onOpen={() => setSourceOpen(contextKey)} /> : null}
+            sourceBadge={schedule && context && !scheduleLoading && !scheduleError ? <SourceBadge context={context} onOpen={() => { setSourceOpen(contextKey); openScreen('source-info') }} /> : null}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
           />}
-        </section>
+        </Screen>
 
       </div>
 
@@ -362,7 +354,7 @@ export function App({
         onLoadCities={loadCities}
         onSearchCities={services.cities.search}
       />
-      {schedule && context ? <SourceInfo open={Boolean(sourceOpen && sourceOpen === contextKey)} onClose={() => { setSourceOpen(null); requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.source-badge')?.focus()) }} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel} checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} /> : null}
+      {schedule && context ? <SourceInfo open={navigation.screen === 'source-info' && sourceOpen === contextKey} onClose={() => { setSourceOpen(null); backScreen() }} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel} checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} /> : null}
       <SettingsDialog
         returnFocusId={settingsReturnFocus}
         appearance={appearance}
@@ -371,8 +363,8 @@ export function App({
         timeZone={place?.timeZone ?? ''}
         version={version}
         onReset={reset}
-        onOpenLocation={() => { nestedReturn.current = 'location'; setSettingsDialogOpen(false); setLocationDialogOpen(true) }}
-        onOpenShare={() => { setSettingsDialogOpen(false); setShareDialogOpen(true) }}
+        onOpenLocation={() => { openScreen('location') }}
+        onOpenShare={() => { openScreen('share') }}
         persistenceNotice={persistenceNotice}
         open={settingsDialogOpen}
         officialMode={officialMode}

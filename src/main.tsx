@@ -11,6 +11,7 @@ import { registerSW } from 'virtual:pwa-register'
 import { App } from './App'
 import { createServiceWorkerReloadGuard } from './platform/serviceWorkerUpdate'
 import './styles.css'
+import './ui/screen.css'
 
 registerSW({
   immediate: true,

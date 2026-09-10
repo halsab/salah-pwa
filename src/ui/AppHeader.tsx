@@ -66,6 +66,7 @@ export function AppHeader({
         <div className="location-tools">
           <button
             ref={locationButtonRef}
+            id="home-location"
             className="location-control"
             type="button"
             onClick={onOpenLocation}
@@ -79,6 +80,7 @@ export function AppHeader({
           </button>
           <button
             ref={settingsButtonRef}
+            id="home-settings"
             className="icon-button settings-button"
             type="button"
             aria-label="Настройки"
