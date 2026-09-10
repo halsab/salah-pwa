@@ -115,3 +115,9 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .event-current-label, .event-day { display: block; color: var(--text-secondary); font-size: 13px; line-height: 1.4; }
 .home-content > .screen-status, .home-content > .note { margin-top: 16px; }
 @media (max-width: 350px) { .schedule-place > span:first-child { max-width: 120px; } }
+.location-current { margin-bottom: 16px; }
+.search-open { justify-content: flex-start; font-size: 16px; color: var(--text-secondary); }
+.city-results { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 16px; }
+.city-result { width: 100%; height: auto; min-height: 64px; padding: 12px 16px; border-radius: 16px; align-items: flex-start; flex-direction: column; gap: 4px; font-size: 16px; line-height: 1.35; text-align: left; white-space: normal; }
+.city-result > span { max-width: 100%; overflow-wrap: anywhere; }
+.city-result .note { font-size: 12px; line-height: 1.4; }

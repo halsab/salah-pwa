@@ -1,4 +1,6 @@
 import { isLocationSelectionSource } from '../domain/locationSelection'
+import { restoreRecentPlaces } from '../domain/recentPlaces'
+import type { Place } from '../domain/place'
 import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
 import { isPrayerDataset } from '../domain/prayerDatasetValidation'
 import { getDatasetRevision } from '../domain/scheduleContext'
@@ -22,6 +24,7 @@ export interface PrayerRepositorySnapshot {
   checkedAt: number | null
 }
 export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
+  recentPlaces?: Place[]
   locationChoice: LocationChoice | null
   appearance?: Appearance
   preferences: SourcePreferences
@@ -51,16 +54,18 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
 export async function initializePrayerRepository(): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [snapshot, choice, preferences, legacy, appearance] = await Promise.all([
-    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'),
+  const [snapshot, choice, preferences, legacy, appearance, recentPlaces] = await Promise.all([
+    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('recentPlaces'),
   ])
   if (!snapshot.ok) return snapshot
   if (!choice.ok) return choice
   if (!preferences.ok) return preferences
   if (!legacy.ok) return legacy
   if (!appearance.ok) return appearance
-  return success({ ...snapshot.value, locationChoice: restoreLocationChoice(choice.value, snapshot.value.meta),
-    ...(await getDataGeneration() > 0 && !choice.value ? { locationChoice: null } : {}),
+  if (!recentPlaces.ok) return recentPlaces
+  const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta)
+  return success({ ...snapshot.value, locationChoice,
+    recentPlaces: restoreRecentPlaces(recentPlaces.value, locationChoice?.place?.id),
     appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',
     preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
@@ -151,6 +156,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.appearance && !['system', 'light', 'dark'].includes(patch.appearance)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       return saveSettings(patch, isCurrent, generation)
     },
   }

@@ -116,6 +116,12 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     apply(createCityPlace(city, services.now().getTime()), 'manual', ++epoch.current)
     onChosen()
   }, [apply, onChosen, services])
+  const selectRecent = useCallback((recent: Place) => {
+    if (recent.selection === 'gps') return
+    setNotice(null)
+    apply({ ...recent, timestamp: services.now().getTime() }, 'manual', ++epoch.current)
+    onChosen()
+  }, [apply, onChosen, services])
   const changeTimeZone = useCallback(async (zone: string | null): Promise<string> => {
     const selected = current.current
     if (!selected) return services.getDeviceTimeZone()
@@ -133,5 +139,5 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     return updated.timeZone
   }, [apply, services, source])
   const invalidate = useCallback(() => { epoch.current += 1; started.current = true }, [])
-  return { place, source, notice, restore, locate, selectOfficial, selectCity, changeTimeZone, invalidate }
+  return { place, source, notice, restore, locate, selectOfficial, selectCity, selectRecent, changeTimeZone, invalidate }
 }

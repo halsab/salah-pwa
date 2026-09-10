@@ -140,6 +140,22 @@ function createServices(
 }
 
 describe('Salah', () => {
+  it('завершает поиск одним тапом и сохраняет предыдущий город в недавних', async () => {
+    const services = createServices()
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
+    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
+    await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
+    expect(await screen.findByRole('button', { name: 'Расписание' })).toBeVisible()
+    await waitFor(() => expect(services.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ recentPlaces: [expect.objectContaining({ id: 'locality:kazan' })] }), expect.any(Function)))
+    await userEvent.click(screen.getByRole('button', { name: /Москва/ }))
+    const recent = screen.getByRole('region', { name: 'Недавние города' })
+    await userEvent.click(within(recent).getByRole('button', { name: 'Казань' }))
+    expect(await screen.findByRole('button', { name: 'Казань' })).toBeVisible()
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+  })
+
   it('выбор даты открывает список этого дня, а возврат показывает сводку сегодня', async () => {
     render(<App services={createServices()} />)
     await screen.findByRole('region', { name: 'Текущее событие' })

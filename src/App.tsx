@@ -28,7 +28,11 @@ import {
 } from './domain/prayerCalculation'
 import { getDeviceTimeZone } from './domain/locationTime'
 import type { Result } from './domain/result'
-import { LocationDialog } from './features/location/LocationDialog'
+import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
+import { flushSync } from 'react-dom'
+import { placeFromChoice } from './domain/placeMigration'
+import { rememberPlace, restoreRecentPlaces } from './domain/recentPlaces'
+import type { Place } from './domain/place'
 import { useCityCatalog } from './features/location/useCityCatalog'
 import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
@@ -101,7 +105,18 @@ export function App({
   const persistence = useSettingsPersistence(services.saveSettings)
   const saveSettings = persistence.save
   const invalidateSaves = persistence.invalidateAndDrain
-  const persistPlace = useCallback((choice: LocationChoice) => saveSettings({ locationChoice: choice }), [saveSettings])
+  const [recentPlaces, setRecentPlaces] = useState<Place[]>([])
+  const recentRef = useRef<Place[]>([])
+  const previousPlace = useRef<Place | null>(null)
+  const persistPlace = useCallback((choice: LocationChoice) => {
+    const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
+    if (!next) return
+    const recent = rememberPlace(recentRef.current, previousPlace.current, next)
+    previousPlace.current = next
+    recentRef.current = recent
+    setRecentPlaces(recent)
+    saveSettings({ locationChoice: choice, recentPlaces: recent })
+  }, [saveSettings])
   const [appearance, setAppearance] = useState<Appearance>('system')
   const [sourceOpen, setSourceOpen] = useState<string | null>(null)
   const [settingsReturnFocus, setSettingsReturnFocus] = useState<string | null>(null)
@@ -110,7 +125,7 @@ export function App({
   const sessionHasPlace = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const locationDialogOpen = navigation.screen === 'location'
+  const locationDialogOpen = navigation.screen === 'location' || navigation.screen === 'search'
   const settingsDialogOpen = navigation.screen === 'settings'
   const [settingsFocusMethodology, setSettingsFocusMethodology] = useState(false)
   const methodologyDialogOpen = navigation.screen === 'methodology'
@@ -126,7 +141,7 @@ export function App({
   const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
   const { place, notice: locationNotice, restore, locate: locateAutomatically,
-    selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, changeTimeZone, invalidate: invalidateLocation } = usePlaceSelection(services, locations, onPlaceChosen, persistPlace)
+    selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(services, locations, onPlaceChosen, persistPlace)
   const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
@@ -153,6 +168,10 @@ export function App({
       if (!active) return
       setRepositoryState(state)
       restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
+      previousPlace.current = state.locationChoice ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS) : null
+      const recent = restoreRecentPlaces(state.recentPlaces, previousPlace.current?.id)
+      recentRef.current = recent
+      setRecentPlaces(recent)
       setPreferences(state.preferences)
       setAppearance(state.appearance ?? 'system')
       sessionHasPlace.current = Boolean(state.locationChoice)
@@ -175,7 +194,7 @@ export function App({
     return () => { active = false; unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('pageshow', refresh); void services.invalidateAndDrain() }
   }, [retryCount, services, restore, resetting])
 
-  const { cityCatalog, cityCatalogStatus, loadCities } = useCityCatalog(services)
+  const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
   const todayResolution = place ? resolvePrayerTimeSource(place, services.now(), preferences, datasets, capabilities) : null
   const calendarTimeZone = todayResolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
@@ -190,8 +209,6 @@ export function App({
   const displayDate = navigation.screen === 'schedule' ? selectedDate : today
   const resolution = place ? resolvePrayerTimeSource(place, displayDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
-  const locationId = resolution?.kind === 'official' ? resolution.locationId : null
-  const officialLocation = officialMode ? locations.find(location => location.id === locationId) ?? null : null
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
     : preferences.calculationDraft ? effectiveCalculationSettings(preferences.calculationDraft) : DEFAULT_CALCULATION_SETTINGS
   const scheduleServices = useMemo(() => ({
@@ -278,14 +295,12 @@ export function App({
 
   return (
     <main className="app-layout">
-      <div
+      {!dialogOpen ? <div
         className="app-background screen-background"
-        inert={dialogOpen || undefined}
-        aria-hidden={dialogOpen || undefined}
       >
-          {!place ? <Screen label="Выбор места" contentClassName="screen-center" bottom={<button id="home-settings" className="pill screen-end" type="button" onClick={openSettingsDialog}>Настройки</button>}>
-            <h1 className="screen-title">Выберите место</h1><button className="pill" id="home-location" type="button" onClick={openLocationDialog}>Выбрать место</button>
-          </Screen> : <ScheduleContent
+          {!place ? <LocationScreen initial place={null} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
+            onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+            notice={persistenceNotice} bottom={<button id="home-settings" className="pill screen-end" type="button" onClick={openSettingsDialog}>Настройки</button>} /> : <ScheduleContent
             schedule={schedule}
             key={contextKey}
             schedules={schedules}
@@ -309,26 +324,12 @@ export function App({
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
           />}
 
-      </div>
+      </div> : null}
 
-      <LocationDialog
-        persistenceNotice={persistenceNotice}
-        locations={locations}
-        cityCatalog={cityCatalog}
-        cityCatalogStatus={cityCatalogStatus}
-        selectedOfficialId={officialMode ? locationId : null}
-        selectedCityId={officialMode ? null : place?.cityId ?? null}
-        place={place}
-        officialLocation={officialLocation}
-        onTimeZoneChange={changeTimeZone}
-        open={locationDialogOpen}
-        onClose={closeLocationDialog}
-        onSelectOfficial={selectOfficialLocation}
-        onSelectCity={selectPresetCity}
-        onLocate={locateAutomatically}
-        onLoadCities={loadCities}
-        onSearchCities={services.cities.search}
-      />
+      {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
+        onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically} notice={persistenceNotice} /> : null}
+      {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
+        onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
       {schedule && context ? <SourceInfo open={navigation.screen === 'source-info' && sourceOpen === contextKey} onClose={() => { setSourceOpen(null); backScreen() }} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel} checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} /> : null}
       <SettingsDialog
         returnFocusId={settingsReturnFocus}

@@ -17,7 +17,7 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 9
+const DATABASE_VERSION = 10
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -38,6 +38,7 @@ export type LocationChoice = { place?: Place } & (
 export type Appearance = 'system' | 'light' | 'dark'
 
 interface SettingValueMap {
+  recentPlaces: Place[]
   appearance: Appearance
   locationChoice: LocationChoice
   sourcePreferences: SourcePreferences
@@ -208,6 +209,10 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
         database.createObjectStore('control')
         void transaction.objectStore('control').put(0, 'generation')
         void transaction.objectStore('settings').put({ key: 'appearance', value: 'system' })
+      }
+      if (oldVersion < 10) {
+        // Истории координат раньше не было; миграция не создаёт её из сохранённой GPS-позиции.
+        void transaction.objectStore('settings').put({ key: 'recentPlaces', value: [] })
       }
     },
   })
@@ -398,7 +403,7 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'recentPlaces'>>
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
@@ -410,6 +415,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (!isCurrent()) { await transaction.done; return }
       if (patch.appearance) await transaction.objectStore('settings').put({ key: 'appearance', value: patch.appearance })
       if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
+      if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       await transaction.done
     } catch (error) {

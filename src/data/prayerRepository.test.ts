@@ -5,7 +5,7 @@ import { createCityPlace, createOfficialPlace } from '../domain/place'
 import { getDeviceTimeZone } from '../domain/locationTime'
 import { success } from '../domain/result'
 import { automaticPreferences, manualCalculation } from '../domain/sourcePreferences'
-import { deleteSalahDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, type LocationChoice } from '../storage/database'
+import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, type LocationChoice } from '../storage/database'
 import { createPrayerRepository, initializePrayerRepository } from './prayerRepository'
 
 const dataset = completeDataset()
@@ -13,14 +13,26 @@ const repo = createPrayerRepository()
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteSalahDatabase() })
 
 describe('local initialization and persistence', () => {
-  it('restores a default place and automatic source without data or network', async () => {
+  it('starts without a selected place or network access', async () => {
     const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)
     expect(await initializePrayerRepository()).toMatchObject({ ok: true, value: {
-      locationChoice: { mode: 'official', locationId: 'kazan', source: 'default', place: { name: 'Казань' } },
+      locationChoice: null, recentPlaces: [],
       preferences: { mode: 'automatic' }, meta: null, dataState: 'not-loaded',
     } })
     expect(fetcher).not.toHaveBeenCalled()
+  })
+  it('saves recents atomically with the selected place and clears them on reset', async () => {
+    const place = createOfficialPlace(required(dataset.locations[0]), 0)
+    const previous = createOfficialPlace({ ...required(dataset.locations[0]), id: 'other', name: 'Другой город' }, 0)
+    await repo.saveSettings({ locationChoice: { mode: 'official', locationId: 'kazan', place, source: 'manual' }, recentPlaces: [previous] })
+    expect(await initializePrayerRepository()).toMatchObject({ value: { locationChoice: { place }, recentPlaces: [previous] } })
+    await clearAppData()
+    expect(await initializePrayerRepository()).toMatchObject({ value: { locationChoice: null, recentPlaces: [] } })
+  })
+  it('rejects GPS history instead of persisting arbitrary coordinates as recent cities', async () => {
+    const place = { ...createOfficialPlace(required(dataset.locations[0]), 0), selection: 'gps' as const }
+    expect(await repo.saveSettings({ recentPlaces: [place] })).toMatchObject({ ok: false, error: { kind: 'data' } })
   })
   it('restores legacy coordinates with a missing timezone without loading meta', async () => {
     const coordinates = { latitude: 55.75, longitude: 37.62, accuracy: 18, timestamp: 100, name: 'Сохранённое место', source: 'gps' }

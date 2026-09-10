@@ -201,7 +201,7 @@ describe('database', () => {
     expect(unwrap(await getSetting('calculationSettings'))).toEqual(
       calculationSettings,
     )
-    expect(await getDatabaseVersion()).toBe(9)
+    expect(await getDatabaseVersion()).toBe(10)
   })
 
   it('читает legacy meta без идентичности артефакта для офлайн-fallback', async () => {
@@ -287,7 +287,7 @@ describe('database', () => {
       coordinates: legacyCoordinates,
       source: 'automatic',
     })
-    expect(await getDatabaseVersion()).toBe(9)
+    expect(await getDatabaseVersion()).toBe(10)
   })
 
   it('мигрирует preset-выбор v4 в ручной calculated-выбор', async () => {
@@ -328,7 +328,7 @@ describe('database', () => {
     await createLegacyVersion4Database([])
 
     expect(unwrap(await getLocationChoice())).toBeUndefined()
-    expect(await getDatabaseVersion()).toBe(9)
+    expect(await getDatabaseVersion()).toBe(10)
   })
 
   it('возвращает типизированную ошибку недоступного IndexedDB', async () => {
@@ -370,7 +370,7 @@ it('migrates real v6 Nominatim names without requesting the network or deleting 
   expect(choice?.place).toMatchObject({ name: legacy.name, latitude: legacy.latitude, longitude: legacy.longitude,
     selection: 'gps', automaticTimeZone: { id: 'Europe/Moscow', source: 'legacy' } })
   expect(choice?.place).not.toHaveProperty('nameSource')
-  expect(await getDatabaseVersion()).toBe(9)
+  expect(await getDatabaseVersion()).toBe(10)
 })
 
 it('checks operation epoch after opening IndexedDB so obsolete saves do not start', async () => {
@@ -379,7 +379,7 @@ it('checks operation epoch after opening IndexedDB so obsolete saves do not star
 })
 
 it('recovers after a browser rejects opening a newer incompatible database', async () => {
-  await createVersion5Database({}, 10)
+  await createVersion5Database({}, 11)
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
   await deleteSalahDatabase()
   expect(unwrap(await getLocationChoice())).toBeUndefined()
@@ -393,7 +393,7 @@ it.each(['official', 'calculated'] as const)('migrates real v7 %s preferences, r
   expect(unwrap(await getSetting('sourcePreferences'))).toMatchObject({ mode: 'manual', source: { kind: mode }, calculationDraft: { profile: 'dumRf', overrides: { asrMethod: 'standard', highLatitudeRule: 'nearestDay' } } })
   expect(unwrap(await getSetting('calculationSettings'))).toEqual(legacy)
   expect(unwrap(await getLocationChoice())).toEqual(choice)
-  expect(await getDatabaseVersion()).toBe(9)
+  expect(await getDatabaseVersion()).toBe(10)
 })
 it('migrates a manual legacy city without expert settings to automatic source', async () => {
   await createVersion5Database({ settings: [{ key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'manual' } }] }, 7)
@@ -403,8 +403,26 @@ it('migrates a manual legacy city without expert settings to automatic source', 
 
 it('closes an active connection when another tab upgrades instead of blocking it', async () => {
   unwrap(await getSetting('appearance'))
-  const upgraded = await openDB('salah', 10)
-  expect(upgraded.version).toBe(10)
+  const upgraded = await openDB('salah', 11)
+  expect(upgraded.version).toBe(11)
   upgraded.close()
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
+})
+
+it('migrates v9 with empty recents while preserving the selected place and settings', async () => {
+  const database = await openDB('salah', 9, { upgrade(db) {
+    db.createObjectStore('days', { keyPath: 'key' })
+    db.createObjectStore('meta')
+    db.createObjectStore('settings', { keyPath: 'key' })
+    db.createObjectStore('control')
+  } })
+  const choice = { mode: 'official', locationId: 'kazan', source: 'manual' }
+  await database.put('settings', { key: 'locationChoice', value: choice })
+  await database.put('settings', { key: 'sourcePreferences', value: { mode: 'automatic' } })
+  await database.put('control', 4, 'generation')
+  database.close()
+  expect(unwrap(await getSetting('recentPlaces'))).toEqual([])
+  expect(unwrap(await getLocationChoice())).toEqual(choice)
+  expect(unwrap(await getSetting('sourcePreferences'))).toEqual({ mode: 'automatic' })
+  expect(await getDatabaseVersion()).toBe(10)
 })

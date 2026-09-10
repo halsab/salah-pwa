@@ -21,7 +21,7 @@ export function restoreSavedCoordinates(value: unknown): SavedCoordinates | null
   }
 }
 
-function isPlace(value: unknown): value is Place {
+export function isPlace(value: unknown): value is Place {
   if (!value || typeof value !== 'object') return false
   const place = value as Partial<Place>
   return Boolean(restoreSavedCoordinates(value) && typeof place.id === 'string' && place.id

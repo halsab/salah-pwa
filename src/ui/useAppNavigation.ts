@@ -39,7 +39,7 @@ export function useAppNavigation() {
   useEffect(() => {
     const target = returnFocus.current
     const frame = requestAnimationFrame(() => {
-      const element = target ? document.getElementById(target) : document.querySelector<HTMLElement>('[data-screen-focus]')
+      const element = target ? document.getElementById(target) : document.querySelector<HTMLElement>('input[data-screen-focus]') ?? document.querySelector<HTMLElement>('[data-screen-focus]')
       element?.focus({ preventScroll: true })
       returnFocus.current = null
     })
