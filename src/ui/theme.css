@@ -1,0 +1,22 @@
+@font-face {
+  font-family: 'Old Timey Mono';
+  src: url('../assets/OldTimeyMono.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: dark;
+  font-family: 'Old Timey Mono', monospace;
+  --background-primary: #000000;
+  --background-secondary: #282828;
+  --background-tertiary: #383838;
+  --text-primary: #ffffff;
+  --text-secondary: #767676;
+  --content-inset: 16px;
+  --button-height: 44px;
+  --button-radius: 22px;
+  --container-radius: 38px;
+}
+

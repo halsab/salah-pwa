@@ -324,10 +324,10 @@ describe('database', () => {
     })
   })
 
-  it('не создаёт сохранённый выбор, если legacy-выбора не было', async () => {
+  it('фиксирует прежнюю Казань по умолчанию при обновлении без legacy-выбора', async () => {
     await createLegacyVersion4Database([])
 
-    expect(unwrap(await getLocationChoice())).toBeUndefined()
+    expect(unwrap(await getLocationChoice())).toEqual({ mode: 'official', locationId: 'kazan', source: 'default' })
     expect(await getDatabaseVersion()).toBe(10)
   })
 
@@ -425,4 +425,17 @@ it('migrates v9 with empty recents while preserving the selected place and setti
   expect(unwrap(await getLocationChoice())).toEqual(choice)
   expect(unwrap(await getSetting('sourcePreferences'))).toEqual({ mode: 'automatic' })
   expect(await getDatabaseVersion()).toBe(10)
+})
+
+it.each([0, 2])('preserves the implicit old default only before any reset (generation %i)', async generation => {
+  const database = await openDB('salah', 9, { upgrade(db) {
+    db.createObjectStore('days', { keyPath: 'key' })
+    db.createObjectStore('meta')
+    db.createObjectStore('settings', { keyPath: 'key' })
+    db.createObjectStore('control')
+  } })
+  await database.put('control', generation, 'generation')
+  database.close()
+  expect(unwrap(await getLocationChoice())).toEqual(generation === 0
+    ? { mode: 'official', locationId: 'kazan', source: 'default' } : undefined)
 })

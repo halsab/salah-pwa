@@ -198,11 +198,13 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       }
       if (oldVersion < 8) {
         const store = transaction.objectStore('settings')
-        void previousMigration.then(async () => {
+        const migration = previousMigration.then(async () => {
           const [preferences, settings, choice] = await Promise.all([store.get('sourcePreferences'), store.get('calculationSettings'), store.get('locationChoice')])
           if (preferences) return
           await store.put({ key: 'sourcePreferences', value: restoreSourcePreferences(undefined, storedValue(settings), choice?.key === 'locationChoice' ? choice.value : undefined) })
-        }).catch(() => transaction.abort())
+        })
+        previousMigration = migration
+        void migration.catch(() => transaction.abort())
       }
       if (oldVersion < 9) {
         // Поколение не содержит пользовательских данных; оно запрещает запись из старых сессий.
@@ -213,6 +215,14 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       if (oldVersion < 10) {
         // Истории координат раньше не было; миграция не создаёт её из сохранённой GPS-позиции.
         void transaction.objectStore('settings').put({ key: 'recentPlaces', value: [] })
+        if (oldVersion > 0) {
+          void previousMigration.then(async () => {
+            const store = transaction.objectStore('settings')
+            const [choice, generation] = await Promise.all([store.get('locationChoice'), transaction.objectStore('control').get('generation')])
+            // Прежняя версия показывала Казань без записи выбора. После сброса это правило не действует.
+            if (!choice && generation === 0) await store.put({ key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'default' } })
+          }).catch(() => transaction.abort())
+        }
       }
     },
   })

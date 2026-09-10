@@ -65,15 +65,15 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['app-icon.svg', 'apple-touch-icon.png', 'paper-texture.svg', 'data/ODbL-1.0.txt', 'data/tatarstan-boundary.NOTICE.txt'],
+      includeAssets: ['app-icon.svg', 'apple-touch-icon.png', 'old-timey-mono-license.txt', 'data/ODbL-1.0.txt', 'data/tatarstan-boundary.NOTICE.txt'],
       manifest: {
         name: 'Salah — времена намаза',
         short_name: 'Salah',
         description: 'Время намаза для выбранного места: официальные таблицы и расчёт на устройстве. Сохранённые данные доступны офлайн.',
         lang: 'ru',
         display: 'standalone',
-        background_color: '#f6eedf',
-        theme_color: '#184c3b',
+        background_color: '#000000',
+        theme_color: '#000000',
         start_url: './',
         scope: './',
         icons: [
@@ -86,7 +86,7 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         importScripts: ['city-cache-cleanup.js'],
         navigateFallback: 'index.html',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf,json}'],
         globIgnores: [
           '**/data/cities-current.json',
           '**/data/cities/*/*.json',

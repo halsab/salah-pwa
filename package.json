@@ -28,7 +28,6 @@
     "data:check:geography": "tsx scripts/buildLocalGeography.ts --check"
   },
   "dependencies": {
-    "@fontsource/alegreya-sans": "5.3.0",
     "adhan": "4.4.6",
     "idb": "^8.0.3",
     "react": "^19.2.8",
