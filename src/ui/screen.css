@@ -121,3 +121,16 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .city-result { width: 100%; height: auto; min-height: 64px; padding: 12px 16px; border-radius: 16px; align-items: flex-start; flex-direction: column; gap: 4px; font-size: 16px; line-height: 1.35; text-align: left; white-space: normal; }
 .city-result > span { max-width: 100%; overflow-wrap: anywhere; }
 .city-result .note { font-size: 12px; line-height: 1.4; }
+.settings-menu { display: flex; align-items: center; }
+.settings-menu > .screen-stack { width: 100%; }
+.pill-row .note { font-size: 12px; line-height: 1.4; }
+.screen-field > span { display: block; font-size: 15px; line-height: 1.4; color: var(--text-secondary); margin-bottom: 8px; }
+.source-readout { font: 400 16px/1.5 'Old Timey Mono', monospace; }
+.source-readout > * + * { margin-top: 16px; }
+.source-readout h2, .source-readout h3 { font-size: 20px; line-height: 1.4; color: var(--text-primary); }
+.source-readout p { color: var(--text-secondary); font-size: 14px; line-height: 1.5; }
+.source-readout a { color: var(--text-primary); }
+.readout-facts { display: grid; gap: 16px; }
+.readout-facts dt { font-size: 14px; color: var(--text-secondary); }
+.readout-facts dd { font-size: 20px; color: var(--text-primary); overflow-wrap: anywhere; }
+.app-screen .app-version { font: inherit; color: inherit; margin: 0; }

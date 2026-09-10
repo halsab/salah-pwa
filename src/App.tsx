@@ -38,7 +38,7 @@ import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
-import { SettingsDialog } from './features/settings/SettingsDialog'
+import { SettingsScreens } from './features/settings/SettingsScreens'
 import { ShareDialog } from './features/share/ShareDialog'
 import {
   getCurrentPosition,
@@ -52,8 +52,7 @@ import type { LocationChoice } from './storage/database'
 import { AppHeader } from './ui/AppHeader'
 import { SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
-import type { Appearance } from './storage/database'
-import { Screen } from './ui/Screen'
+import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation } from './ui/useAppNavigation'
 
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
@@ -117,23 +116,18 @@ export function App({
     setRecentPlaces(recent)
     saveSettings({ locationChoice: choice, recentPlaces: recent })
   }, [saveSettings])
-  const [appearance, setAppearance] = useState<Appearance>('system')
-  const [sourceOpen, setSourceOpen] = useState<string | null>(null)
-  const [settingsReturnFocus, setSettingsReturnFocus] = useState<string | null>(null)
   const navigation = useAppNavigation()
   const { open: openScreen, back: backScreen, home: homeScreen } = navigation
   const sessionHasPlace = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const locationDialogOpen = navigation.screen === 'location' || navigation.screen === 'search'
-  const settingsDialogOpen = navigation.screen === 'settings'
-  const [settingsFocusMethodology, setSettingsFocusMethodology] = useState(false)
+  const settingsDialogOpen = ['settings', 'source', 'source-choice', 'profiles', 'parameters', 'privacy', 'reset', 'about'].includes(navigation.screen)
   const methodologyDialogOpen = navigation.screen === 'methodology'
   const shareDialogOpen = navigation.screen === 'share'
   const [retryCount, setRetryCount] = useState(0)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
-  const settingsMethodologyButtonRef = useRef<HTMLButtonElement>(null)
 
   const closeLocationDialog = useCallback(() => {
     backScreen()
@@ -146,9 +140,9 @@ export function App({
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
   useEffect(() => {
-    document.documentElement.dataset.theme = appearance
+    document.documentElement.dataset.theme = 'dark'
     return () => { delete document.documentElement.dataset.theme }
-  }, [appearance])
+  }, [])
   useEffect(() => () => { void invalidateSaves() }, [invalidateSaves])
   useEffect(() => {
     if (place && !sessionHasPlace.current && !resetting.current) void services.refresh()
@@ -173,7 +167,6 @@ export function App({
       recentRef.current = recent
       setRecentPlaces(recent)
       setPreferences(state.preferences)
-      setAppearance(state.appearance ?? 'system')
       sessionHasPlace.current = Boolean(state.locationChoice)
       setLoading(false)
     }
@@ -238,27 +231,7 @@ export function App({
     openScreen('location')
   }, [openScreen])
 
-  const closeSettingsDialog = useCallback(() => {
-    backScreen()
-    setSettingsFocusMethodology(false)
-    requestAnimationFrame(() => settingsButtonRef.current?.focus())
-  }, [backScreen])
-  const openSettingsDialog = useCallback(() => {
-    setSettingsReturnFocus(null)
-    setSettingsFocusMethodology(false)
-    openScreen('settings')
-  }, [openScreen])
-  const openMethodologyDialog = useCallback(() => {
-    openScreen('methodology')
-  }, [openScreen])
-  const closeMethodologyDialog = useCallback(() => {
-    setSettingsFocusMethodology(true)
-    backScreen()
-  }, [backScreen])
-  const closeShareDialog = useCallback(() => {
-    backScreen()
-    setSettingsReturnFocus('settings-share')
-  }, [backScreen])
+  const openSettingsDialog = useCallback(() => { openScreen('settings') }, [openScreen])
 
   if (loading) return <LoadingScreen />
 
@@ -330,35 +303,16 @@ export function App({
         onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically} notice={persistenceNotice} /> : null}
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
         onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
-      {schedule && context ? <SourceInfo open={navigation.screen === 'source-info' && sourceOpen === contextKey} onClose={() => { setSourceOpen(null); backScreen() }} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel} checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} /> : null}
-      <SettingsDialog
-        returnFocusId={settingsReturnFocus}
-        appearance={appearance}
-        onAppearanceChange={value => { setAppearance(value); persistence.save({ appearance: value }) }}
-        placeLabel={calculatedLocationLabel}
-        timeZone={place?.timeZone ?? ''}
-        version={version}
-        onReset={reset}
-        onOpenLocation={() => { openScreen('location') }}
-        onOpenShare={() => { openScreen('share') }}
-        persistenceNotice={persistenceNotice}
-        open={settingsDialogOpen}
-        officialMode={officialMode}
-        settings={calculationSettings}
-        preferences={preferences}
-        onSourceChange={updatePreferences}
-        focusMethodologyOnOpen={settingsFocusMethodology}
-        methodologyTriggerRef={settingsMethodologyButtonRef}
-        getCalculationProfileCapability={services.getCalculationProfileCapability}
-        onClose={closeSettingsDialog}
-        onOpenMethodology={openMethodologyDialog}
-      />
-      <MethodologyDialog
-        open={methodologyDialogOpen}
-        officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''}
-        onClose={closeMethodologyDialog}
-      />
-      <ShareDialog open={shareDialogOpen} onClose={closeShareDialog} />
+      {navigation.screen === 'source-info' ? schedule && context
+        ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel}
+            checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} />
+        : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
+        : null}
+      {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
+        onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}
+        sourceLabel={officialMode ? 'ДУМ РТ' : CALCULATION_PROFILES.find(profile => profile.id === calculationSettings.profile)?.label ?? 'Авто'} /> : null}
+      <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />
+      <ShareDialog open={shareDialogOpen} onClose={backScreen} />
     </main>
   )
 }

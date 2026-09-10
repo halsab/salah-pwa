@@ -140,6 +140,25 @@ function createServices(
 }
 
 describe('Salah', () => {
+  it('автоматически сохраняет параметры, повторяет неудачную запись и сохраняет старые поправки', async () => {
+    const initial = manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19 } })
+    const saveSettings = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(success(undefined))
+    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: initial })), saveSettings })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await userEvent.click(screen.getByRole('button', { name: /Расписание/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Параметры' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Аср' }), 'standard')
+    expect(await screen.findByText('Не удалось сохранить изменения')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(screen.queryByText('Не удалось сохранить изменения')).not.toBeInTheDocument())
+    expect(saveSettings).toHaveBeenLastCalledWith({ sourcePreferences: manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19, asrMethod: 'standard' } }) }, expect.any(Function))
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Параметры' }))
+    expect(screen.getByRole('combobox', { name: 'Аср' })).toHaveValue('standard')
+    expect(screen.getByText('Сохранены прежние поправки')).toBeVisible()
+  })
+
   it('завершает поиск одним тапом и сохраняет предыдущий город в недавних', async () => {
     const services = createServices()
     render(<App services={services} />)
