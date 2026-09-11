@@ -14,6 +14,10 @@ async function geometry(page: Page) {
   const bounds = await panel.boundingBox()
   const viewport = page.viewportSize()
   if (!bounds || !viewport) throw new Error('Нет размеров экрана')
+  expect(bounds.x).toBeCloseTo(0, 0)
+  expect(bounds.width).toBeCloseTo(viewport.width, 0)
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-left', '0px')
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-right', '0px')
   expect(bounds.y).toBeGreaterThanOrEqual(0)
   expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1)
   for (const part of ['.screen-top', '.screen-bottom']) {
@@ -154,6 +158,26 @@ test('выбор даты возвращает на главную, Сегодн
   await page.getByRole('button', { name: 'Сегодня' }).click()
   await expect(page.getByRole('timer')).toBeVisible()
   await expect(page.locator('#home-date time')).toHaveAttribute('datetime', '2026-09-04')
+})
+
+test('боковая safe area защищает содержимое, не сужая контейнер', async ({ page }) => {
+  await page.setViewportSize({ width: 844, height: 390 })
+  await page.goto('./')
+  await choosePlace(page)
+  await page.evaluate(() => {
+    const rule = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules))
+      .find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-screen')
+    if (!rule) throw new Error('Нет правила контейнера')
+    rule.style.padding = rule.style.padding.replace('env(safe-area-inset-left)', '47px').replace('env(safe-area-inset-right)', '47px')
+  })
+  const bounds = await page.locator('.app-screen').boundingBox()
+  expect(bounds?.x).toBe(0)
+  expect(bounds?.width).toBe(844)
+  await expect(page.locator('.app-screen')).toHaveCSS('padding-left', '47px')
+  await expect(page.locator('.app-screen')).toHaveCSS('padding-right', '47px')
+  const top = await page.locator('.screen-top').boundingBox()
+  expect(top?.x).toBe(47)
+  expect(top?.width).toBe(750)
 })
 
 test('клавиатура и браузерный возврат восстанавливают фокус без скрытых экранов', async ({ page }) => {

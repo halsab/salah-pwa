@@ -38,9 +38,12 @@ export function useAppNavigation() {
 
   useEffect(() => {
     const target = returnFocus.current
+    const initialFocus = document.activeElement
     const frame = requestAnimationFrame(() => {
       const element = target ? document.getElementById(target) : document.querySelector<HTMLElement>('input[data-screen-focus]') ?? document.querySelector<HTMLElement>('[data-screen-focus]')
-      element?.focus({ preventScroll: true })
+      const active = document.activeElement
+      // Старая кнопка может остаться в DOM; фокус, изменённый после перехода, сохраняем.
+      if (active === initialFocus || !active || active === document.body || active === document.documentElement) element?.focus({ preventScroll: true })
       returnFocus.current = null
     })
     return () => { cancelAnimationFrame(frame) }

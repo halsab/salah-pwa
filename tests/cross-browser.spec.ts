@@ -44,6 +44,9 @@ test('профиль сохраняет заданную ориентацию б
   }
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
     .toBeLessThanOrEqual(1)
+  const panel = await page.locator('.app-screen').boundingBox()
+  expect(panel?.x).toBe(0)
+  expect(panel?.width).toBe(viewport.width)
 })
 
 test('поиск города в Worker показывает регион и сохраняет выбор', async ({ page }) => {
