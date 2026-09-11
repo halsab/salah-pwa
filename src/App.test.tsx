@@ -166,7 +166,7 @@ describe('Salah', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
     await userEvent.type(screen.getByRole('searchbox'), 'Москва')
     await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
-    expect(await screen.findByRole('button', { name: 'Расписание' })).toBeVisible()
+    expect(await screen.findByRole('region', { name: 'Главная' })).toBeVisible()
     await waitFor(() => expect(services.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ recentPlaces: [expect.objectContaining({ id: 'locality:kazan' })] }), expect.any(Function)))
     await userEvent.click(screen.getByRole('button', { name: /Москва/ }))
     const recent = screen.getByRole('region', { name: 'Недавние города' })
@@ -175,16 +175,31 @@ describe('Salah', () => {
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
   })
 
-  it('выбор даты открывает список этого дня, а возврат показывает сводку сегодня', async () => {
+  it('выбор даты меняет расписание главной без перехода и сохраняет фокус календаря', async () => {
     render(<App services={createServices()} />)
-    await screen.findByRole('region', { name: 'Текущее событие' })
-    fireEvent.change(screen.getByLabelText('Выбрать дату'), { target: { value: '2026-09-02' } })
+    await screen.findByRole('timer')
+    const dateInput = screen.getByLabelText('Выбрать дату')
+    dateInput.focus()
+    const pushState = vi.spyOn(window.history, 'pushState')
+    fireEvent.change(dateInput, { target: { value: '2026-09-02' } })
     expect(await screen.findByRole('list', { name: 'Расписание дня' })).toHaveTextContent('16:21')
+    expect(screen.getByRole('region', { name: 'Главная' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Назад' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Выбрать дату')).toBe(dateInput)
+    expect(dateInput).toHaveFocus()
+    expect(dateInput).toHaveValue('2026-09-02')
+    expect(pushState).not.toHaveBeenCalled()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(screen.queryByText('сейчас')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    expect(await screen.findByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Зухрс 12:00')
+    expect(await screen.findByRole('list')).toHaveTextContent('16:21')
+    expect(screen.getByLabelText('Выбрать дату')).toHaveValue('2026-09-02')
+    await userEvent.click(screen.getByRole('button', { name: 'Сегодня' }))
+    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
     expect(screen.getByLabelText('Выбрать дату')).toHaveValue('2026-09-01')
-    expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
+    expect(screen.getByRole('list')).toHaveTextContent('16:24')
+    pushState.mockRestore()
   })
 
   it.each(['manual', 'default'] as const)(
@@ -239,12 +254,12 @@ describe('Salah', () => {
     expect(services.cities.findNearest).toHaveBeenCalled()
   })
 
-  it('показывает только текущую сводку на главной и текущую строку в полном списке', async () => {
+  it('показывает весь день и выделяет текущее событие сразу на главной', async () => {
     render(<App services={createServices()} />)
-    expect(await screen.findByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Зухрс 12:00')
+    expect((await screen.findByText('Зухр', { exact: true })).closest('li')).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
-    expect(screen.queryByRole('list')).not.toBeInTheDocument()
-    await openSchedule()
+    expect(screen.queryByRole('button', { name: 'Расписание' })).not.toBeInTheDocument()
+    await expectSchedule()
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getAllByRole('listitem')).toHaveLength(8)
     expect(within(list).getByText('Фаджр в мечети')).toBeVisible()
@@ -255,7 +270,7 @@ describe('Salah', () => {
   it.each([
     ['2026-09-01T08:50:00Z', 'До Зухра, осталось 10 мин'],
     ['2026-09-01T00:00:00Z', 'До Фаджра в мечети, осталось 17 мин'],
-  ])('сохраняет семантику молитвенных событий в %s', async (time, label) => {
+  ])('сохраняет подписи намазов и джамаата в %s', async (time, label) => {
     render(<App services={createServices({ now: () => new Date(time) })} />)
     expect(await screen.findByRole('timer')).toHaveAccessibleName(label)
   })
@@ -265,7 +280,7 @@ describe('Salah', () => {
     render(<App services={createServices({ now: () => now })} />)
     expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось < 1 мин')
     act(() => { now = new Date('2026-09-01T13:24:00Z'); window.dispatchEvent(new Event('pageshow')) })
-    expect(await screen.findByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Асрс 16:24')
+    expect((await screen.findByText('Аср', { exact: true })).closest('li')).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('timer')).toHaveAccessibleName('До Магриба, осталось 2 ч 15 мин')
   })
 
@@ -283,8 +298,8 @@ describe('Salah', () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: {
       mode: 'calculated', source: 'manual', coordinates: { latitude: 41.0138, longitude: 28.9497, timeZone: 'Europe/Istanbul', accuracy: null, timestamp: 1, name: 'Стамбул', cityId: 745044, source: 'preset' },
     } })), getDeviceTimeZone: () => 'America/Los_Angeles' })} />)
-    await screen.findByRole('region', { name: 'Текущее событие' })
-    await openSchedule()
+    await screen.findByRole('list', { name: 'Расписание дня' })
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('04:53')).toBeVisible()
     expect(screen.getByText('1 сентября')).toBeVisible()
   })
@@ -366,11 +381,10 @@ describe('Salah', () => {
     render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
     await chooseCity('Стамбул', /Стамбул, Стамбул, Турция/)
-    await openSchedule()
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
-    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await chooseCity('Казань', 'Казань, Татарстан, Россия', /Стамбул/)
-    await openSchedule()
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(8)
     expect(services.cities.load).toHaveBeenCalledTimes(1)
     expect(services.saveOfficialLocation).toHaveBeenLastCalledWith('kazan', 'manual', expect.objectContaining({ cityId: 551487, coverage: 'inside' }), expect.any(Function))
@@ -393,7 +407,7 @@ describe('Salah', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
     await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
     await screen.findByRole('button', { name: 'Моё местоположение' })
-    await openSchedule()
+    await expectSchedule()
     expect(within(await screen.findByRole('list')).getByText('16:37')).toBeVisible()
     expect(services.getPosition).toHaveBeenCalledTimes(2)
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'automatic', expect.objectContaining({ selection: 'gps' }), expect.any(Function))
@@ -407,7 +421,7 @@ describe('Salah', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
     await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
     await screen.findByRole('button', { name: 'Моё местоположение' })
-    await openSchedule()
+    await expectSchedule()
     expect(within(await screen.findByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining(position), 'automatic', expect.any(Function))
   })
@@ -487,8 +501,8 @@ describe('Salah', () => {
     expect(screen.getByText('Загружаем расписание…')).toBeVisible()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     await act(async () => { apastovo.resolve(success([undefined, { ...kazanToday, locationId: 'apastovo', asr: '16:45' }, undefined])); await apastovo.promise })
-    expect(await screen.findByText('в 16:45')).toBeVisible()
-    await openSchedule()
+    expect(await screen.findByText('16:45')).toBeVisible()
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('16:45')).toBeVisible()
     expect(screen.queryByText('16:37')).not.toBeInTheDocument()
   })
@@ -498,15 +512,14 @@ describe('Salah', () => {
     render(<App services={services} />)
     await screen.findByRole('timer')
     await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
-    await openSchedule()
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
-    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await openSource()
     expect(screen.getByRole('button', { name: 'Способ Ручной' })).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Способ Ручной' }))
     await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
     await backHomeFromSource()
-    await openSchedule()
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(8)
   })
 
@@ -516,7 +529,7 @@ describe('Salah', () => {
     await screen.findByRole('button', { name: 'Казань' })
     await chooseCity('Стамбул', /Стамбул, Стамбул, Турция/)
     expect(await screen.findByRole('timer')).toBeVisible()
-    await openSchedule()
+    await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     expect(services.getDays).not.toHaveBeenCalled()
   })
@@ -541,9 +554,8 @@ describe('Salah', () => {
   })
 })
 
-async function openSchedule() {
-  await userEvent.click(await screen.findByRole('button', { name: 'Расписание' }))
-  await screen.findByRole('list', { name: 'Расписание дня' })
+async function expectSchedule() {
+  expect(await screen.findByRole('list', { name: 'Расписание дня' })).toBeVisible()
 }
 async function openSource() {
   await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
@@ -553,12 +565,12 @@ async function backHomeFromSource() {
   await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
   await waitFor(() => expect(screen.getByRole('button', { name: /^Расписание/ })).toHaveFocus())
   await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-  await screen.findByRole('button', { name: 'Расписание' })
+  await screen.findByRole('region', { name: 'Главная' })
 }
 async function chooseCity(query: string, result: string | RegExp, current: string | RegExp = 'Казань') {
   await userEvent.click(screen.getByRole('button', { name: current }))
   await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
   await userEvent.type(screen.getByRole('searchbox'), query)
   await userEvent.click(await screen.findByRole('button', { name: result }))
-  await screen.findByRole('button', { name: 'Расписание' })
+  await screen.findByRole('region', { name: 'Главная' })
 }

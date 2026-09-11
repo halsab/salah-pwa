@@ -69,13 +69,9 @@ body { padding:16px 0; background:#ffffff; font-family:system-ui,sans-serif; }
   #salah-approved .s-share-url { appearance:none; display:block; width:100%; height:54px; min-height:54px; border:0; padding:0; margin:0; resize:none; background:var(--s-panel); color:var(--s-text); font:400 18px/1.45 var(--s-font); letter-spacing:0; overflow-wrap:anywhere; text-align:center; }
   #salah-approved .s-share .s-label,#salah-approved .s-share [data-copy-error] { text-align:center; }
   #salah-approved .s-share-qr { display:block; width:270px; max-width:100%; height:auto; flex-shrink:0; margin:0 auto; }
-  #salah-approved .s-home { display:flex; justify-content:center; flex-direction:column; }
-  #salah-approved .s-home .s-previous { margin-bottom:28px; font:400 20px/1.4 var(--s-font); color:var(--s-muted); }
-  #salah-approved .s-home .s-home-label { font:400 21px/1.4 var(--s-font); color:var(--s-muted); }
-  #salah-approved .s-home .s-home-current { margin-top:5px; font:400 52px/1.15 var(--s-font); }
-  #salah-approved .s-home .s-home-start { margin-top:8px; font:400 20px/1.4 var(--s-font); color:var(--s-muted); }
-  #salah-approved .s-home .s-next { margin-top:38px; }
-  #salah-approved .s-timer { margin-top:6px !important; font:400 clamp(38px,12.7cqi,50px)/1.18 var(--s-font); white-space:nowrap; }
+  #salah-approved .s-home .s-list { padding-top:12px; }
+  #salah-approved .s-home .s-list > div { min-height:52px; gap:8px; }
+  #salah-approved .s-end { margin-left:auto; }
   #salah-approved .s-date { position:relative; overflow:hidden; }
   #salah-approved .s-date input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; font:400 16px/1 var(--s-font); }
   #salah-approved .s-date input::-webkit-calendar-picker-indicator { position:absolute; inset:0; width:100%; height:100%; margin:0; padding:0; opacity:0; cursor:pointer; }

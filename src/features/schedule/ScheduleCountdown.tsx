@@ -7,7 +7,6 @@ interface ScheduleCountdownProps {
   targetInstant: number
   now: () => Date
   onElapsed: () => void
-  compact?: boolean
 }
 
 function remainingSeconds(targetInstant: number, now: Date): number {
@@ -19,7 +18,6 @@ export function ScheduleCountdown({
   targetInstant,
   now,
   onElapsed,
-  compact = false,
 }: ScheduleCountdownProps) {
   const [remaining, setRemaining] = useState(() =>
     remainingSeconds(targetInstant, now()))
@@ -72,7 +70,7 @@ export function ScheduleCountdown({
   const formattedRemaining = formatRemainingTime(remaining)
   return (
     <div
-      className={compact ? 'event-countdown event-countdown-compact' : 'event-countdown'}
+      className="event-countdown"
       role="timer"
       aria-live="off"
       aria-label={`${countdownLabel}, осталось ${formattedRemaining}`}

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-import { back, choosePlace, openSchedule, openSource, openReset, setSource, expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, expectSchedule, openSource, openReset, setSource, expect, readSavedSetting, test } from './fixtures'
 
 test('статическая privacy page точно описывает данные и внешние запросы', async ({ page }) => {
   await page.goto('./privacy/')
@@ -183,7 +183,7 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   await page.goto('./')
   await page.getByRole('button', { name: 'По геопозиции' }).click()
   await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
-  await openSchedule(page)
+  await expectSchedule(page)
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah')
     request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))

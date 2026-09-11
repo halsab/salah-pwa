@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test'
-import { back, choosePlace, openSchedule, openSource, openReset, setSource, expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, expectSchedule, openSource, openReset, setSource, expect, readSavedSetting, test } from './fixtures'
 
 async function counts(page: Page) {
   return page.evaluate(() => new Promise<number[]>((resolve, reject) => {
@@ -79,7 +79,7 @@ test('reset: cancel, transactional failure, retry, two tabs, offline and restart
   await page.getByRole('button', { name: 'Найти город', exact: true }).click()
   await page.getByRole('searchbox').fill('Стамбул')
   await page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true }).click()
-  await openSchedule(page, 7)
+  await expectSchedule(page, 7)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { cityId: 745044 } })
 })
 

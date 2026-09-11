@@ -36,8 +36,8 @@ export async function choosePlace(page: import('@playwright/test').Page, query =
   await expect(page.getByRole('timer')).toBeVisible()
 }
 
-export async function openSchedule(page: import('@playwright/test').Page, count = 8) {
-  await page.getByRole('button', { name: 'Расписание', exact: true }).click()
+export async function expectSchedule(page: import('@playwright/test').Page, count = 8) {
+  await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(count)
 }
 

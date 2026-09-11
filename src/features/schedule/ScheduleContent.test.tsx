@@ -10,10 +10,51 @@ const base = {
   schedule: day, schedules: [day], scheduleLoading: false, scheduleError: null,
   selectedDate: day.date, today: day.date, currentTime: new Date('2026-05-05T17:10:00+03:00'),
   now: () => new Date('2026-05-05T17:10:00+03:00'), officialMode: true,
-  onChangeDate: () => {}, onRetrySchedule: () => {}, placeLabel: 'Казань',
+  onChangeDate: () => {}, onRetrySchedule: () => {},
 }
 
 describe('новое расписание', () => {
+  it.each([
+    ['00:10', 'Сухур до', 'До Фаджра в мечети, осталось 2 ч 12 мин'],
+    ['04:00', 'Восход', 'До зенита, осталось 7 ч 41 мин'],
+    ['11:45', 'Зенит', 'До Зухра, осталось 15 мин'],
+  ])('учитывает все события на главной в %s', (time, current, countdown) => {
+    const now = () => new Date(`2026-05-05T${time}:00+03:00`)
+    render(<ScheduleContent {...base} currentTime={now()} now={now} />)
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getAllByRole('listitem')).toHaveLength(8)
+    expect(within(list).getByText(current).closest('li')).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('timer')).toHaveAccessibleName(countdown)
+  })
+
+  it('на границе восхода выделяет восход и начинает отсчёт до зенита', () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-05-05T03:52:59+03:00'))
+      const now = () => new Date()
+      render(<ScheduleContent {...base} currentTime={now()} now={now} />)
+      expect(screen.getByRole('timer')).toHaveAccessibleName('До восхода, осталось < 1 мин')
+      act(() => { vi.advanceTimersByTime(1000) })
+      expect(screen.getByText('Восход').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('timer')).toHaveAccessibleName('До зенита, осталось 7 ч 48 мин')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('после Иши считает до позднего сухура следующей строки', () => {
+    const tomorrow: typeof day = { ...day, date: '2026-05-06', suhurEnd: '23:50' }
+    const now = () => new Date('2026-05-05T21:10:00+03:00')
+    render(<ScheduleContent {...base} schedules={[day, tomorrow]} currentTime={now()} now={now} />)
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До конца сухура, осталось 2 ч 40 мин')
+  })
+
+  it('учитывает восход и зенит в расчётном расписании', () => {
+    const calculated = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, day.date, 'Europe/Moscow')
+    const now = () => new Date(calculated.entries.sunrise.instant + 60_000)
+    render(<ScheduleContent {...base} schedule={calculated} schedules={[calculated]} currentTime={now()} now={now} officialMode={false} />)
+    expect(screen.getByText('Восход').closest('li')).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('timer')).toHaveAccessibleName(/^До зенита/)
+  })
+
   it('при переводе часов назад принимает новое текущее время после границы события', () => {
     vi.useFakeTimers()
     try {
@@ -21,10 +62,10 @@ describe('новое расписание', () => {
       const now = () => new Date()
       const { rerender } = render(<ScheduleContent {...base} currentTime={now()} now={now} />)
       act(() => { vi.advanceTimersByTime(1000) })
-      expect(screen.getByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Магриб')
+      expect(screen.getByText('Магриб').closest('li')).toHaveAttribute('aria-current', 'true')
       vi.setSystemTime(new Date('2026-05-05T19:20:00+03:00'))
       rerender(<ScheduleContent {...base} currentTime={now()} now={now} />)
-      expect(screen.getByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Аср')
+      expect(screen.getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
     } finally { vi.useRealTimers() }
   })
   it('на границе события обновляет текущее время и следующий отсчёт', () => {
@@ -35,21 +76,21 @@ describe('новое расписание', () => {
       render(<ScheduleContent {...base} currentTime={now()} now={now} />)
       expect(screen.getByRole('timer')).toHaveTextContent('< 1 мин')
       act(() => { vi.advanceTimersByTime(1000) })
-      expect(screen.getByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Магрибс 19:30')
+      expect(screen.getByText('Магриб').closest('li')).toHaveAttribute('aria-current', 'true')
       expect(screen.getByRole('timer')).toHaveAccessibleName(/До Иши, осталось 1 ч 30 мин/)
     } finally { vi.useRealTimers() }
   })
   it('показывает текущий Аср, его начало и отсчёт до Магриба на главной', () => {
     render(<ScheduleContent {...base} />)
-    expect(screen.getByRole('region', { name: 'Текущее событие' })).toHaveTextContent('Асрс 16:58')
-    expect(screen.getByText('Зухр 12:00')).toHaveClass('muted')
+    expect(screen.getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByText('Зухр').closest('li')).toHaveClass('event-past')
     expect(screen.getByRole('timer')).toHaveAccessibleName(/До Магриба, осталось 2 ч 20 мин/)
-    expect(screen.getByText('в 19:30')).toBeVisible()
-    expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
+    expect(screen.getByText('19:30')).toBeVisible()
+    expect(screen.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
   })
 
   it('сохраняет дату позднего сухура, выделяя текущее событие в полном списке', () => {
-    const { container } = render(<ScheduleContent {...base} view="schedule" />)
+    const { container } = render(<ScheduleContent {...base} />)
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getByText('23:54')).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
     expect(within(list).getByText('Сухур до').parentElement).toHaveTextContent('4 мая')
@@ -60,8 +101,8 @@ describe('новое расписание', () => {
   })
 
   it('скрывает устаревшие времена и отсчёт при загрузке и ошибке', () => {
-    const { rerender } = render(<ScheduleContent {...base} view="schedule" />)
-    rerender(<ScheduleContent {...base} view="schedule" scheduleLoading />)
+    const { rerender } = render(<ScheduleContent {...base} />)
+    rerender(<ScheduleContent {...base} scheduleLoading />)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
     expect(screen.getByText('Загружаем расписание…')).toBeVisible()
@@ -72,7 +113,7 @@ describe('новое расписание', () => {
   })
 
   it('для другого дня не показывает текущую метку и живой отсчёт', () => {
-    render(<ScheduleContent {...base} view="schedule" today="2026-05-06" />)
+    render(<ScheduleContent {...base} today="2026-05-06" />)
     expect(screen.queryByText('сейчас')).not.toBeInTheDocument()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Сегодня' })).toBeVisible()
@@ -83,7 +124,7 @@ describe('новое расписание', () => {
     const tomorrow = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2027-01-01', 'Europe/Moscow')
     tomorrow.entries.fajr = { instant: Date.parse('2026-12-31T23:55:00+03:00'), time: '23:55', estimated: false }
     const now = () => new Date('2026-12-31T23:56:00+03:00')
-    const { container } = render(<ScheduleContent {...base} view="schedule" schedule={today} schedules={[tomorrow, today]} selectedDate={today.date} today={today.date} currentTime={now()} now={now} officialMode={false} />)
+    const { container } = render(<ScheduleContent {...base} schedule={today} schedules={[tomorrow, today]} selectedDate={today.date} today={today.date} currentTime={now()} now={now} officialMode={false} />)
     expect(container.querySelector('[aria-current="true"]')).toBeNull()
   })
 })

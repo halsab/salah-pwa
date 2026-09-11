@@ -1,4 +1,4 @@
-import { back, choosePlace, openSchedule, expect, test } from './fixtures'
+import { back, choosePlace, expectSchedule, expect, test } from './fixtures'
 
 const CSP = [
   "default-src 'none'",
@@ -80,10 +80,9 @@ test('production CSP разрешает приложение и блокируе
 
   await page.goto('./')
   await choosePlace(page)
-  await openSchedule(page)
+  await expectSchedule(page)
   await page.evaluate(() => document.fonts.ready)
   expect(await page.evaluate(() => Array.from(document.fonts).some(face => face.family === 'Old Timey Mono' && face.status === 'loaded'))).toBe(true)
-  await back(page)
   await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'По геопозиции' }).click()

@@ -197,11 +197,10 @@ export function App({
     currentTime,
     today,
     changeDate,
-    onDateInput: handleNativeDate,
+    onDateInput,
     showDatePicker,
   } = useScheduleDate(services, calendarTimeZone)
-  const displayDate = navigation.screen === 'schedule' ? selectedDate : today
-  const resolution = place ? resolvePrayerTimeSource(place, displayDate, preferences, datasets, capabilities) : null
+  const resolution = place ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
     : preferences.calculationDraft ? effectiveCalculationSettings(preferences.calculationDraft) : DEFAULT_CALCULATION_SETTINGS
@@ -216,7 +215,6 @@ export function App({
     schedule,
     context,
     schedules,
-    contextKey,
     scheduleLoading,
     scheduleError,
     retrySchedule,
@@ -225,7 +223,7 @@ export function App({
     location: place,
     resolution,
     mode: preferences.mode,
-    selectedDate: displayDate,
+    selectedDate,
   })
 
   const openLocationDialog = useCallback(() => {
@@ -276,23 +274,18 @@ export function App({
             onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
             notice={persistenceNotice} bottom={<button id="home-settings" className="pill screen-end" type="button" onClick={openSettingsDialog}>Настройки</button>} /> : <ScheduleContent
             schedule={schedule}
-            key={contextKey}
             schedules={schedules}
             scheduleLoading={scheduleLoading}
             scheduleError={resolution?.kind === 'calculated' && resolution.status === 'unsupported'
               ? (() => { const capability = services.getCalculationProfileCapability(resolution.settings.profile); return capability.supported ? scheduleError : capability.reason })() : scheduleError}
-            selectedDate={displayDate}
+            selectedDate={selectedDate}
             today={today}
             currentTime={currentTime}
             now={services.now}
             officialMode={officialMode}
-            view={navigation.screen === 'schedule' ? 'schedule' : 'home'}
-            placeLabel={calculatedLocationLabel}
-            onBack={backScreen}
-            top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={displayDate}
-              onOpenLocation={openLocationDialog} onDateInput={event => { handleNativeDate(event); if (event.target.value) openScreen('schedule') }} onShowDatePicker={showDatePicker} />}
-            homeActions={<><button className="pill" id="home-schedule" type="button" onClick={() => { changeDate(today); openScreen('schedule') }}>Расписание</button>
-              <button className="pill" id="home-settings" ref={settingsButtonRef} type="button" onClick={openSettingsDialog}>Настройки</button></>}
+            top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={selectedDate}
+              onOpenLocation={openLocationDialog} onDateInput={onDateInput} onShowDatePicker={showDatePicker} />}
+            actions={<button className="pill screen-end" id="home-settings" ref={settingsButtonRef} type="button" onClick={openSettingsDialog}>Настройки</button>}
             notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}

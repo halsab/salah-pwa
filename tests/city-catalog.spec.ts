@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { back, choosePlace, openSchedule, expect, readSavedSetting, test } from './fixtures'
+import { choosePlace, expectSchedule, expect, readSavedSetting, test } from './fixtures'
 
 const index = JSON.parse(await readFile('public/data/cities/index.json', 'utf8')) as {
   version: string
@@ -38,15 +38,13 @@ test('старт и обзор не загружают пакеты; Киров 
   console.log(JSON.stringify({ query: 'Киров', shards: fetched.map(url => url.split('/').pop()), bytes: fetched.reduce((n, url) => n + (index.shards.find(s => url.endsWith(`/${s.id}.json`))?.bytes ?? 0), 0) }))
   await large.click()
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({place:{name:'Киров, Кировская Область, Россия'}})
-  await openSchedule(page, 7)
-    await back(page)
+  await expectSchedule(page, 7)
   await page.reload()
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
   await context.setOffline(true)
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
-    await openSchedule(page, 7)
-    await back(page)
+    await expectSchedule(page, 7)
     await page.getByRole('button', { name: /Киров, Кировская/ }).click()
     await page.getByRole('button', { name: 'Найти город' }).click()
     await page.getByRole('searchbox').fill('Киров')

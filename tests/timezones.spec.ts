@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import { back, choosePlace, openSchedule, openSource, readSavedSetting, writeSavedSetting, expect, test } from './fixtures'
+import { back, choosePlace, expectSchedule, openSource, readSavedSetting, writeSavedSetting, expect, test } from './fixtures'
 
 test.use({ timezoneId: 'America/Los_Angeles' })
 
@@ -168,7 +168,7 @@ test('ручной город сохраняется при доступной �
   expect(reverseRequests).toBe(0)
 })
 
-test('спорная строка Апастово сохраняет моменты, но не включает зенит в таймер намаза', async ({ page }) => {
+test('спорная строка Апастово сохраняет моменты и учитывает зенит после Зухра', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-02-07T08:59:00.000Z'))
   await page.goto('./')
   await choosePlace(page)
@@ -178,14 +178,14 @@ test('спорная строка Апастово сохраняет момен
 
   await page.clock.setFixedTime(new Date('2026-02-07T09:00:00.000Z'))
   await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
-  await expect(page.locator('.home-current h1')).toHaveText('Зухр')
-  await expect(page.getByRole('timer')).toHaveAccessibleName(/До Асра/)
+  await expect(page.locator('[aria-current="true"] .event-name')).toContainText('Зухр')
+  await expect(page.getByRole('timer')).toHaveAccessibleName('До зенита, осталось 1 мин')
 
   await page.clock.setFixedTime(new Date('2026-02-07T09:01:00.000Z'))
   await page.evaluate(() => window.dispatchEvent(new Event('pageshow')))
-  await expect(page.locator('.home-current h1')).toHaveText('Зухр')
-  await openSchedule(page)
-  await expect(page.locator('[aria-current="true"] .event-name')).toContainText('Зухр')
+  await expectSchedule(page)
+  await expect(page.locator('[aria-current="true"] .event-name')).toContainText('Зенит')
+  await expect(page.getByRole('timer')).toHaveAccessibleName(/До Асра/)
 })
 
 test('около полуночи показывает календарную дату сухура накануне дня поста и считает до джамаата', async ({ page }) => {
@@ -193,10 +193,9 @@ test('около полуночи показывает календарную д
   await page.goto('./')
   await choosePlace(page)
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-05-05')
-  await openSchedule(page)
+  await expectSchedule(page)
   await expect(page.getByRole('list', { name: 'Расписание дня' }).getByText('23:54')).toBeVisible()
   await expect(page.getByText('23:54', { exact: true })).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
-  await back(page)
   await openSource(page)
   await page.getByRole('button', { name: 'О расписании' }).click()
   await expect(page.getByText('Сухур до 23:54 — понедельник, 4 мая, накануне дня поста.')).toBeVisible()
@@ -215,10 +214,10 @@ test('сохранённая ручная зона переживает реди
   await writeSavedSetting(page, 'locationChoice', { ...choice, place: { ...choice.place, timeZoneOverride: { id: 'America/New_York', source: 'user' } } })
   await page.reload()
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-03-28')
-  await openSchedule(page, 7)
+  await expectSchedule(page, 7)
   const times = await page.locator('.event-row time').allTextContents()
   await page.reload()
-  await openSchedule(page, 7)
+  await expectSchedule(page, 7)
   expect(await page.locator('.event-row time').allTextContents()).toEqual(times)
   expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { timeZoneOverride: { id: 'America/New_York', source: 'user' } } })
 })
@@ -227,13 +226,13 @@ test('официальная таблица сохраняет моменты п
   await page.goto('./')
   await choosePlace(page)
   const timer = await page.getByRole('timer').getAttribute('aria-label')
-  await openSchedule(page)
+  await expectSchedule(page)
   const times = await page.locator('.event-row time').allTextContents()
   const choice = await readSavedSetting(page, 'locationChoice') as Record<string, unknown>
   await writeSavedSetting(page, 'locationChoice', { ...choice, timeZoneOverride: { id: 'America/New_York', source: 'user' } })
   await page.reload()
   await expect(page.getByRole('timer')).toHaveAttribute('aria-label', timer ?? '')
   await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-09-04')
-  await openSchedule(page)
+  await expectSchedule(page)
   expect(await page.locator('.event-row time').allTextContents()).toEqual(times)
 })

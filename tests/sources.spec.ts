@@ -1,14 +1,13 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { back, choosePlace, openSchedule, openSource, setSource, expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, expectSchedule, openSource, setSource, expect, readSavedSetting, test } from './fixtures'
 import type { PrayerDataset } from '../src/domain/types'
 
 test('расчётный холодный старт работает при зависшем официальном запросе', async ({ page }) => {
   await page.route('**/data/prayer-times-manifest.json', () => new Promise(() => {}))
   await page.goto('./')
   await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
-  await openSchedule(page, 7)
-  await back(page)
+  await expectSchedule(page, 7)
   await openSource(page)
   await expect(page.getByRole('button', { name: 'Способ Авто' })).toBeVisible()
   await expect(page.getByRole('button', { name: /Таблица|Параметры|Профиль/ })).toHaveCount(0)
@@ -17,7 +16,7 @@ test('расчётный холодный старт работает при з�
 test('сначала показывает кеш, затем проверенную фоновую версию таблицы', async ({ page, context }) => {
   await page.goto('./')
   await choosePlace(page)
-  await openSchedule(page)
+  await expectSchedule(page)
   const asr = page.locator('.event-row').filter({ hasText: 'Аср' }).locator('time')
   const before = await asr.textContent()
   let release!: () => void
@@ -37,7 +36,7 @@ test('сначала показывает кеш, затем проверенн�
     await route.fulfill({ contentType: 'application/json', body: bytes })
   })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  await openSchedule(page)
+  await expectSchedule(page)
   await expect(asr).toHaveText(before ?? '')
   await expect.poll(() => receivedManifest).toBe(true)
   release()
@@ -60,8 +59,7 @@ test('источник и параметры сохраняются сразу; 
   await page.getByRole('combobox', { name: 'Аср', exact: true }).selectOption('standard')
   await expect.poll(() => readSavedSetting(page, 'sourcePreferences')).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'karachi', overrides: { asrMethod: 'standard' } } } })
   await page.reload()
-  await openSchedule(page, 7)
-  await back(page)
+  await expectSchedule(page, 7)
   await openSource(page)
   await expect(page.getByRole('button', { name: 'Профиль Карачи' })).toBeVisible()
   await setSource(page, 'Автоматически')
@@ -69,7 +67,6 @@ test('источник и параметры сохраняются сразу; 
   await back(page)
   await page.getByLabel('Выбрать дату').fill('2027-01-01')
   await expect(page.getByRole('listitem')).toHaveCount(7)
-  await back(page)
   await openSource(page)
   await setSource(page, 'Таблица ДУМ РТ')
   await expect(page.getByRole('button', { name: 'Таблица', exact: true })).toBeVisible()
@@ -108,6 +105,6 @@ test('ошибка сохранения видна на экранах; повт
   await expect.poll(() => readSavedSetting(page, 'sourcePreferences')).toMatchObject({ mode: 'manual' })
   await page.reload()
   await expect(page.locator('#home-location')).toContainText('Стамбул')
-  await openSchedule(page, 7)
+  await expectSchedule(page, 7)
   expect(errors).toEqual([])
 })

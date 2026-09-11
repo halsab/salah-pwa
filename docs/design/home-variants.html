@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Салях — три варианта главной</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/home-variants.css">
+  <script src="assets/home-variants.js" defer></script>
+</head>
+<body class="comparison">
+  <main class="board">
+    <header class="board-header">
+      <p class="board-kicker">Салях · исследование главного экрана</p>
+      <h1>Расписание — на главной</h1>
+      <p class="board-intro">Весь день сразу, без отдельной кнопки. Три способа расставить акценты в привычном интерфейсе.</p>
+      <div class="board-controls">
+        <div class="moment-picker" role="group" aria-label="Время в макетах">
+          <button type="button" data-moment="morning" aria-pressed="false">Утро · 08:30</button>
+          <button type="button" data-moment="day" aria-pressed="true">День · 17:05</button>
+          <button type="button" data-moment="evening" aria-pressed="false">Вечер · 18:30</button>
+        </div>
+        <p>Казань · 10 сентября 2026</p>
+      </div>
+    </header>
+    <div class="variant-grid">
+      <section class="variant-preview">
+        <div class="variant-heading"><h2>01 · Весь день</h2><span class="recommendation">Рекомендую</span></div>
+        <iframe src="home-variant-1.html?embed=1" title="Вариант 1 — весь день" data-frame="1"></iframe>
+        <div class="variant-description"><h3>Расписание первым</h3><p>Равномерный список, небольшая метка «сейчас». Отсчёт всегда под рукой, рядом с настройками.</p><a class="preview-link" href="home-variant-1.html">Открыть первый макет</a></div>
+      </section>
+      <section class="variant-preview">
+        <div class="variant-heading"><h2>02 · До следующего</h2></div>
+        <iframe src="home-variant-2.html?embed=1" title="Вариант 2 — до следующего" data-frame="2"></iframe>
+        <div class="variant-description"><h3>Отсчёт первым</h3><p>Крупное время до следующего события сверху. Ниже — полное расписание с более плотным ритмом.</p><a class="preview-link" href="home-variant-2.html">Открыть второй макет</a></div>
+      </section>
+      <section class="variant-preview">
+        <div class="variant-heading"><h2>03 · Сейчас</h2></div>
+        <iframe src="home-variant-3.html?embed=1" title="Вариант 3 — сейчас" data-frame="3"></iframe>
+        <div class="variant-description"><h3>Акцент на текущем событии</h3><p>Текущее событие увеличено прямо в хронологии. Прошедшее выше, следующее и отсчёт ниже.</p><a class="preview-link" href="home-variant-3.html">Открыть третий макет</a></div>
+      </section>
+    </div>
+    <footer class="board-footer"><p>Концепции для обсуждения. Демонстрационные времена взяты из утверждённых HTML-эталонов; часы зафиксированы. Другая дата показывает состояние без расписания. Город и настройки открывают существующие эталоны в новой вкладке.</p><a href="home.html">Утверждённая главная</a><a href="schedule.html">Утверждённое расписание</a></footer>
+  </main>
+</body>
+</html>

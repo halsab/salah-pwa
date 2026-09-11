@@ -1,4 +1,4 @@
-import { back, choosePlace, openSchedule, expect, test } from './fixtures'
+import { choosePlace, expectSchedule, expect, test } from './fixtures'
 
 test('основной путь работает без ошибок во всех браузерных профилях', async ({ page }) => {
   const pageErrors: string[] = []
@@ -6,12 +6,11 @@ test('основной путь работает без ошибок во все
 
   await page.goto('./')
   await choosePlace(page)
-  await openSchedule(page)
+  await expectSchedule(page)
   await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem'))
     .toHaveCount(8)
   await expect(page.getByRole('timer')).toBeVisible()
 
-  await back(page)
   const locationButton = page.getByRole('button', { name: /Казань/ })
   const locationBounds = await locationButton.boundingBox()
   expect(locationBounds?.width).toBeGreaterThanOrEqual(44)
@@ -57,19 +56,19 @@ test('поиск города в Worker показывает регион и с�
   await expect(city).toBeVisible()
   await expect(city).toHaveText(/Стамбул, Турция/)
   await city.click()
-  await openSchedule(page, 7)
-  await back(page)
+  await expectSchedule(page, 7)
   await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
 })
 
 test('поиск остаётся доступен в уменьшенной видимой области, календарь возвращает фокус', async ({ page }, testInfo) => {
   await page.goto('./')
   await choosePlace(page)
+  await page.getByLabel('Выбрать дату').focus()
   await page.getByLabel('Выбрать дату').fill('2026-09-01')
   await expect(page.getByRole('listitem')).toHaveCount(8)
   await expect(page.getByRole('timer')).toHaveCount(0)
-  await back(page)
   await expect(page.getByLabel('Выбрать дату')).toBeFocused()
+  await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'Найти город' }).click()
   await expect(page.getByRole('searchbox')).toBeFocused()

@@ -4,7 +4,6 @@
     <button class="s-preview-button" type="button" data-preview="home" aria-pressed="false">Главная</button>
     <button class="s-preview-button" type="button" data-preview="location" aria-pressed="false">Локация</button>
     <button class="s-preview-button" type="button" data-preview="search" aria-pressed="false">Поиск</button>
-    <button class="s-preview-button" type="button" data-preview="schedule" aria-pressed="false">Расписание</button>
     <button class="s-preview-button" type="button" data-preview="settings" aria-pressed="false">Настройки</button>
     <button class="s-preview-button" type="button" data-preview="source" aria-pressed="false">Источник</button>
     <button class="s-preview-button" type="button" data-preview="share" aria-pressed="true">Поделиться</button>
@@ -31,12 +30,6 @@
       <input class="s-input" type="search" placeholder="Найти город" aria-label="Найти город" autocomplete="off" data-search>
       <div class="s-cities s-space" data-results aria-live="polite"></div>
     </div>
-  </template>
-
-  <template data-template="schedule">
-    <div class="s-top"><button class="s-pill" type="button" data-go="home">Назад</button></div>
-    <div class="s-body"><dl class="s-list" data-events></dl><p class="s-copy" data-no-schedule hidden>Нет расписания<br>на эту дату</p></div>
-    <div class="s-bottom"><p class="s-footer-time" data-countdown><span class="s-note">До Магриба</span><span data-countdown-value>1 ч 10 мин</span></p><p class="s-footer-place"><span class="s-note" data-city-name>Казань</span><span data-date-text>10 сентября</span></p></div>
   </template>
 
   <template data-template="settings">
@@ -176,8 +169,8 @@
 
   <template data-template="home">
     <div class="s-top"><button class="s-pill" type="button" data-go="location" data-city-name>Казань</button><label class="s-pill s-date"><span data-date-text>10 сентября</span><input type="date" aria-label="Выбрать дату" value="2026-09-10" data-date></label></div>
-    <div class="s-body s-home"><p class="s-previous" data-previous>Зухр 12:00</p><div><p class="s-home-label">Сейчас</p><h1 class="s-home-current" data-current>Аср</h1><p class="s-home-start" data-current-start>с 16:06</p></div><div class="s-next"><p class="s-home-label" data-next-label>До Магриба</p><p class="s-timer" data-countdown-value>1 ч 10 мин</p><p class="s-home-start" data-next-time>в 18:15</p></div></div>
-    <div class="s-bottom"><button class="s-pill" type="button" data-go="schedule">Расписание</button><button class="s-pill" type="button" data-go="settings">Настройки</button></div>
+    <div class="s-body s-home"><dl class="s-list" data-events></dl><p class="s-copy" data-no-schedule hidden>Нет расписания<br>на эту дату</p></div>
+    <div class="s-bottom"><p class="s-footer-time" data-countdown><span class="s-note">До Магриба</span><span data-countdown-value>1 ч 10 мин</span></p><button class="s-pill" type="button" data-today hidden>Сегодня</button><button class="s-pill s-end" type="button" data-go="settings">Настройки</button></div>
   </template>`;
   const panel = root.querySelector('.s-panel');
   const cities = [
@@ -246,6 +239,7 @@
   }
 
   function show(name) {
+    if (name === 'schedule') name = 'home';
     if (name === 'home' && !selected) name = 'location';
     view = name;
     panel.replaceChildren(template(name));
@@ -260,6 +254,14 @@
     if (['source','source-choice','source-info'].includes(view)) renderSource();
     if (view === 'profiles') renderProfiles();
     if (view === 'manual') renderParameters();
+    alignLabels();
+  }
+
+  function changeDate(value) {
+    date=value;
+    setText('[data-date-text]',new Intl.DateTimeFormat('ru',{day:'numeric',month:'long'}).format(new Date(`${date}T12:00:00`)));
+    panel.querySelector('[data-date]').value=date;
+    renderTime();
     alignLabels();
   }
 
@@ -310,11 +312,12 @@
 
   function renderTime() {
     const rows=timeFixtures[selected?.name] || [];
-    const current=rows.filter(row=>row.minutes<=0 && ['fajr','fajrJamaat','dhuhr','asr','maghrib','isha'].includes(row.key)).at(-1);
+    const current=rows.filter(row=>row.minutes<=0).at(-1);
     const next=rows.find(row=>row.minutes>0);
-    const previous=rows.filter(row=>row.minutes<current?.minutes).at(-1);
     const ready=hasData && date==='2026-09-10' && current && next;
     const list=panel.querySelector('[data-events]');
+    list?.replaceChildren();
+    const today=panel.querySelector('[data-today]');if(today)today.hidden=date==='2026-09-10';
     if (list && ready) rows.forEach(row=>{
       const line=document.createElement('div'); if(row.minutes<current.minutes)line.className='s-past';
       if(row===current)line.setAttribute('aria-current','true');
@@ -327,11 +330,10 @@
     if (!ready) return;
     const minutes=Math.max(0,next.minutes),hours=Math.floor(minutes/60),rest=minutes%60;
     const remaining=hours?`${hours} ч${rest?` ${rest} мин`:''}`:`${rest} мин`;
-    const genitive={maghrib:'Магриба',isha:'Иши',asr:'Асра',dhuhr:'Зухра',sunrise:'восхода',fajr:'Фаджра'};
+    const genitive={maghrib:'Магриба',isha:'Иши',asr:'Асра',dhuhr:'Зухра',sunrise:'восхода',zenith:'зенита',suhur:'конца сухура',fajrJamaat:'Фаджра в мечети',fajr:'Фаджра'};
     const nextLabel=`До ${genitive[next.key] || next.label}`;
     setText('[data-countdown-value]',remaining);setText('[data-next-label]',nextLabel);
     if(footer)footer.querySelector('.s-note').textContent=nextLabel;
-    setText('[data-previous]',previous?`${previous.label} ${previous.time}`:'');setText('[data-current]',current.label);setText('[data-current-start]',`с ${current.time}`);setText('[data-next-time]',`в ${next.time}`);
     const dateInput=panel.querySelector('[data-date]');if(dateInput)dateInput.value=date;
   }
 
@@ -396,6 +398,7 @@
   root.addEventListener('click',event=>{
     const button=event.target.closest('button');if(!button || !root.contains(button))return;
     if(button.dataset.preview){if(button.dataset.preview==='search')searchText='Каз';show(button.dataset.preview);}
+    else if(button.hasAttribute('data-today')){changeDate('2026-09-10');panel.querySelector('[data-date]').focus();}
     else if(button.dataset.go){if(button.dataset.go==='search')searchText='';show(button.dataset.go);const focusTarget=view==='search'?panel.querySelector('[data-search]'):panel.querySelector('.s-top button');focusTarget?.focus({preventScroll:true});}
     else if(button.dataset.city)chooseCity(cities.find(city=>city.name===button.dataset.city));
     else if(button.hasAttribute('data-gps'))chooseCity(cities[0]);
@@ -413,7 +416,7 @@
   root.addEventListener('change',event=>{
     const input=event.target;
     if(input.matches('select[data-draft]'))saveParameter(input);
-    if(input.matches('[data-date]')&&input.value){date=input.value;show('schedule');}
+    if(input.matches('[data-date]')){if(input.value)changeDate(input.value);else input.value=date;}
   });
   show(view);
   document.fonts.ready.then(alignLabels);
