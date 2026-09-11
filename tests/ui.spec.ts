@@ -90,9 +90,18 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
   })
 }
 
-test('поиск использует видимую высоту при клавиатуре и восстанавливается после закрытия', async ({ page }) => {
+test('поиск оставляет 8 px над клавиатурой и восстанавливает safe area после закрытия', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./')
+  await page.evaluate(() => {
+    // Браузерная эмуляция iPhone не задаёт env(safe-area-inset-bottom).
+    const rule = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules))
+      .find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-layout'
+        && rule.style.padding.includes('env(safe-area-inset-bottom)'))
+    if (!rule) throw new Error('Нет правила нижней безопасной области')
+    rule.style.padding = rule.style.padding.replace('env(safe-area-inset-bottom)', '34px')
+  })
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '34px')
   await choosePlace(page)
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'Найти город' }).click()
@@ -106,6 +115,10 @@ test('поиск использует видимую высоту при кла�
   })
   await expect(page.locator('.app-layout')).toHaveCSS('height', '360px')
   await expect(page.locator('.app-layout')).toHaveCSS('top', '40px')
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '8px')
+  const panel = await page.locator('.app-screen').boundingBox()
+  if (!panel) throw new Error('Нет контейнера поиска')
+  expect(400 - panel.y - panel.height).toBeCloseTo(8, 0)
   const result = await page.getByRole('button', { name: 'Москва, Москва, Россия' }).boundingBox()
   if (!result) throw new Error('Результат скрыт')
   expect(result.y + result.height).toBeLessThanOrEqual(400)
@@ -117,6 +130,9 @@ test('поиск использует видимую высоту при кла�
     viewport.dispatchEvent(new Event('resize'))
   })
   await expect(page.locator('.app-layout')).toHaveCSS('height', '844px')
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '34px')
+  await page.getByRole('button', { name: 'Отмена' }).click()
+  await expect(page.getByRole('button', { name: 'Найти город' })).toBeFocused()
 })
 
 test('календарь обновляет главную без перехода, Сегодня возвращает живое расписание', async ({ page, context }) => {

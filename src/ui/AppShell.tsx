@@ -15,10 +15,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         if (viewport.scale !== 1) {
           element.style.removeProperty('--app-viewport-height')
           element.style.removeProperty('--app-viewport-top')
+          element.style.removeProperty('--app-viewport-bottom-padding')
           return
         }
         element.style.setProperty('--app-viewport-height', `${viewport.height}px`)
         element.style.setProperty('--app-viewport-top', `${viewport.offsetTop}px`)
+        // Safari сохраняет safe-area-inset-bottom над клавиатурой; там нужен только небольшой зазор.
+        if (viewport.height + viewport.offsetTop < document.documentElement.clientHeight - 1) {
+          element.style.setProperty('--app-viewport-bottom-padding', '8px')
+        } else {
+          element.style.removeProperty('--app-viewport-bottom-padding')
+        }
       })
     }
     update()

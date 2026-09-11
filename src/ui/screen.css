@@ -9,7 +9,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   left: 0;
   right: 0;
   height: var(--app-viewport-height, 100dvh);
-  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) var(--app-viewport-bottom-padding, max(10px, env(safe-area-inset-bottom))) max(10px, env(safe-area-inset-left));
   display: flex;
   justify-content: center;
   background: var(--background-primary);
