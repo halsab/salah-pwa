@@ -4,5 +4,6 @@ coverage
 playwright-report
 test-results
 .playwright-cli
+.playwright-mcp/
 .DS_Store
 *.local
