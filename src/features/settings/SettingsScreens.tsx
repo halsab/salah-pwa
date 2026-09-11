@@ -83,7 +83,7 @@ export function SettingsScreens({ screen, preferences, sourceLabel, onChange, on
     <p className="screen-copy">Место, координаты, настройки и три недавних города — на этом устройстве.</p><p className="note screen-space">Без аккаунта и аналитики.</p>
     <a className="pill screen-space" href={`${import.meta.env.BASE_URL}privacy/`}>Конфиденциальность</a>{notice}
   </Screen>
-  if (screen === 'about') return <Screen label="О приложении" top={top}><p className="screen-copy">Время намаза для выбранного места. По официальной таблице или расчёту.</p>{version ? <p className="note screen-space">Версия <span className="app-version">{version}</span></p> : null}<details className="screen-space app-details"><summary>Источники и лицензии</summary><StaticContent id="app-credits" /></details></Screen>
+  if (screen === 'about') return <Screen label="О приложении" top={top}><p className="screen-copy">Время намаза для выбранного места. По официальной таблице или расчёту.</p><p className="note screen-space">Дата хиджры рассчитывается по календарю Умм аль-Кура.</p>{version ? <p className="note screen-space">Версия <span className="app-version">{version}</span></p> : null}<details className="screen-space app-details"><summary>Источники и лицензии</summary><StaticContent id="app-credits" /></details></Screen>
   if (screen === 'reset') return <ResetScreen onBack={onBack} onReset={onReset} />
   return null
 }

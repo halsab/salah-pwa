@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { formatCompactDateLabel } from '../../domain/date'
+import { DEFAULT_CALENDAR_PREFERENCES, formatCalendarDate, type CalendarPreferences } from '../../domain/calendar'
 import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
 import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
 import { Screen } from '../../ui/Screen'
@@ -19,8 +19,8 @@ function estimated(event: ResolvedScheduleEvent, schedules: DisplaySchedule[]): 
   return schedules.some(day => day.date === event.scheduleDate && 'entries' in day && day.estimatedPrayers.includes(event.key as CalculatedPrayerKey))
 }
 
-function PrayerSchedule({ schedule, current, now, live }: {
-  schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean
+function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
+  schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean; calendarPreferences: CalendarPreferences
 }) {
   const events = buildScheduleEvents(schedule).sort((left, right) => left.instant - right.instant)
   return <ol className="event-list" aria-label="Расписание дня">
@@ -29,7 +29,7 @@ function PrayerSchedule({ schedule, current, now, live }: {
       const past = live && !active && event.instant <= now.getTime()
       return <li key={event.key} className={`event-row${past ? ' event-past' : ''}`} aria-current={active || undefined}>
         <div className="event-name"><span>{LABELS[event.key]}</span>{active ? <small className="event-current-label">сейчас</small> : null}
-          {event.dayOffset ? <small className="event-day">{formatCompactDateLabel(event.date)}</small> : null}
+          {event.dayOffset ? <small className="event-day">{formatCalendarDate(event.date, calendarPreferences)}</small> : null}
         </div>
         <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label="Приблизительное время">≈ </span> : null}{event.time}</time>
       </li>
@@ -43,6 +43,7 @@ interface ScheduleContentProps {
   scheduleLoading: boolean
   scheduleError: string | null
   selectedDate: string
+  calendarPreferences?: CalendarPreferences
   today: string
   currentTime: Date
   now: () => Date
@@ -55,10 +56,10 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
-  currentTime, now, officialMode, onChangeDate, onRetrySchedule, top, actions, notice,
+  currentTime, now, officialMode, onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
 }: ScheduleContentProps) {
   const [boundary, setBoundary] = useState<{ time: Date; parentTime: number; schedules: DisplaySchedule[] } | null>(null)
-  // Граница относится к загруженному набору: смена даты не должна перемонтировать календарь и терять фокус.
+  // Граница относится к загруженному набору, а не к предыдущему расписанию.
   const effectiveNow = boundary?.schedules === schedules && boundary.parentTime === currentTime.getTime() ? boundary.time : currentTime
   const onElapsed = useCallback(() => { setBoundary({ time: now(), parentTime: currentTime.getTime(), schedules }) }, [now, currentTime, schedules])
   const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
@@ -76,7 +77,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
       : scheduleLoading ? <p className="note" role="status">Загружаем расписание…</p>
         : !schedule ? <p className="screen-copy">Нет расписания на эту дату</p>
           : <>
-            <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} />
+            <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} calendarPreferences={calendarPreferences} />
             {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">≈ По северному правилу</p> : null}
             {live && !next ? <p className="note screen-space">{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующее событие не найдено'}</p> : null}
           </>}

@@ -1,9 +1,13 @@
 import type { Locator, Page } from '@playwright/test'
-import { back, choosePlace, expectSchedule, openSource, setSource, expect, test } from './fixtures'
+import { back, chooseDate, choosePlace, expectSchedule, openSource, setSource, expect, test } from './fixtures'
 
 async function geometry(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
   const panel = page.locator('.app-screen')
+  const textSizes = await panel.evaluate(node => [...node.querySelectorAll<HTMLElement>('*')]
+    .filter(element => element.getClientRects().length && [...element.childNodes].some(child => child.nodeType === Node.TEXT_NODE && child.textContent?.trim()))
+    .map(element => getComputedStyle(element).fontSize))
+  expect([...new Set(textSizes)].every(size => ['14px', '16px', '18px', '20px'].includes(size))).toBe(true)
   await expect(panel).toHaveCSS('padding', '16px')
   await expect(panel).toHaveCSS('border-radius', '38px')
   await expect(panel).toHaveCSS('background-color', 'rgb(40, 40, 40)')
@@ -51,7 +55,10 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
     await page.screenshot({ path: `/tmp/salah-final-home-${viewport.width}.png` })
     await expectSchedule(page)
     await geometry(page)
-    for (const row of await page.locator('.event-row').all()) await expect(row).toHaveCSS('font-size', '20px')
+    for (const row of await page.locator('.event-row').all()) await expect(row).toHaveCSS('font-size', '18px')
+    await expect(page.locator('.countdown-label')).toHaveCSS('font-size', '14px')
+    await expect(page.locator('.countdown-value')).toHaveCSS('font-size', '18px')
+    await expect(page.locator('#home-settings')).toHaveCSS('font-size', '16px')
     await expect(page.locator('.event-row[aria-current=true]')).toContainText('Зухр')
     const fajr = page.getByText('Фаджр в мечети', { exact: true })
     expect(await fajr.evaluate(node => node.getClientRects().length)).toBe(1)
@@ -73,6 +80,7 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
     await back(page)
     await openSource(page)
     await geometry(page)
+    await expect(page.locator('.screen-title')).toHaveCSS('font-size', '20px')
     await setSource(page, 'Ручной расчёт')
     await page.getByRole('button', { name: 'Параметры' }).click()
     await geometry(page)
@@ -135,24 +143,17 @@ test('поиск оставляет 8 px над клавиатурой и вос
   await expect(page.getByRole('button', { name: 'Найти город' })).toBeFocused()
 })
 
-test('календарь обновляет главную без перехода, Сегодня возвращает живое расписание', async ({ page, context }) => {
+test('выбор даты возвращает на главную, Сегодня возвращает живое расписание', async ({ page, context }) => {
   await page.goto('./')
   await choosePlace(page)
-  const historyLength = await page.evaluate(() => history.length)
-  await page.getByLabel('Выбрать дату').focus()
-  await page.getByLabel('Выбрать дату').fill('2026-09-01')
-  await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Назад', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Расписание', exact: true })).toHaveCount(0)
-  await expect(page.getByLabel('Выбрать дату')).toBeFocused()
-  expect(await page.evaluate(() => history.length)).toBe(historyLength)
+  await chooseDate(page, '2026-09-01')
   expect(context.pages()).toHaveLength(1)
   await expect(page.getByRole('listitem')).toHaveCount(8)
   await expect(page.getByRole('timer')).toHaveCount(0)
   await expect(page.locator('[aria-current=true]')).toHaveCount(0)
   await page.getByRole('button', { name: 'Сегодня' }).click()
   await expect(page.getByRole('timer')).toBeVisible()
-  await expect(page.getByLabel('Выбрать дату')).toHaveValue('2026-09-04')
+  await expect(page.locator('#home-date time')).toHaveAttribute('datetime', '2026-09-04')
 })
 
 test('клавиатура и браузерный возврат восстанавливают фокус без скрытых экранов', async ({ page }) => {
@@ -215,7 +216,7 @@ test('увеличение текста вдвое сохраняет читае
   await choosePlace(page)
   await page.evaluate(() => { document.documentElement.style.fontSize = '32px' })
   await expectSchedule(page)
-  await expect(page.locator('.event-row').first()).toHaveCSS('font-size', '40px')
+  await expect(page.locator('.event-row').first()).toHaveCSS('font-size', '36px')
   expect(await page.locator('.screen-content').evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(1)
   await page.getByText('Иша', { exact: true }).scrollIntoViewIfNeeded()
   await expect(page.getByText('Иша', { exact: true })).toBeInViewport()

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import { back, choosePlace, expectSchedule, openSource, setSource, expect, readSavedSetting, test } from './fixtures'
+import { back, chooseDate, choosePlace, expectSchedule, openSource, setSource, expect, readSavedSetting, test } from './fixtures'
 import type { PrayerDataset } from '../src/domain/types'
 
 test('расчётный холодный старт работает при зависшем официальном запросе', async ({ page }) => {
@@ -65,7 +65,7 @@ test('источник и параметры сохраняются сразу; 
   await setSource(page, 'Автоматически')
   await back(page)
   await back(page)
-  await page.getByLabel('Выбрать дату').fill('2027-01-01')
+  await chooseDate(page, '2027-01-01')
   await expect(page.getByRole('listitem')).toHaveCount(7)
   await openSource(page)
   await setSource(page, 'Таблица ДУМ РТ')
@@ -73,7 +73,7 @@ test('источник и параметры сохраняются сразу; 
   await expect(page.getByRole('button', { name: 'Таблица ДУМ РТ', exact: true })).toHaveCount(0)
   await back(page)
   await back(page)
-  await page.getByLabel('Выбрать дату').fill('2027-01-01')
+  await chooseDate(page, '2027-01-01')
   await expect(page.getByRole('alert')).toContainText('не покрывает это место или дату')
   await expect(page.getByRole('listitem')).toHaveCount(0)
   expect(errors).toEqual([])

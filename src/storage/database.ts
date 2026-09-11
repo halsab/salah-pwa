@@ -1,4 +1,5 @@
 import { restoreSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
+import { DEFAULT_CALENDAR_PREFERENCES, type CalendarPreferences } from '../domain/calendar'
 import type { Place } from '../domain/place'
 import { migratePlaceChoice } from '../domain/placeMigration'
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
@@ -17,7 +18,7 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 10
+const DATABASE_VERSION = 11
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -38,6 +39,7 @@ export type LocationChoice = { place?: Place } & (
 export type Appearance = 'system' | 'light' | 'dark'
 
 interface SettingValueMap {
+  calendarPreferences: CalendarPreferences
   recentPlaces: Place[]
   appearance: Appearance
   locationChoice: LocationChoice
@@ -223,6 +225,9 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
             if (!choice && generation === 0) await store.put({ key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'default' } })
           }).catch(() => transaction.abort())
         }
+      }
+      if (oldVersion < 11) {
+        void transaction.objectStore('settings').put({ key: 'calendarPreferences', value: DEFAULT_CALENDAR_PREFERENCES })
       }
     },
   })
@@ -413,7 +418,7 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'recentPlaces'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'recentPlaces' | 'calendarPreferences'>>
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
@@ -427,6 +432,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
       if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
+      if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
       await transaction.done
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }

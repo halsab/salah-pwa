@@ -1,4 +1,4 @@
-import { choosePlace, expectSchedule, expect, test } from './fixtures'
+import { chooseDate, choosePlace, expectSchedule, expect, test } from './fixtures'
 
 test('основной путь работает без ошибок во всех браузерных профилях', async ({ page }) => {
   const pageErrors: string[] = []
@@ -63,8 +63,7 @@ test('поиск города в Worker показывает регион и с�
 test('поиск остаётся доступен в уменьшенной видимой области, календарь возвращает фокус', async ({ page }, testInfo) => {
   await page.goto('./')
   await choosePlace(page)
-  await page.getByLabel('Выбрать дату').focus()
-  await page.getByLabel('Выбрать дату').fill('2026-09-01')
+  await chooseDate(page, '2026-09-01')
   await expect(page.getByRole('listitem')).toHaveCount(8)
   await expect(page.getByRole('timer')).toHaveCount(0)
   await expect(page.getByLabel('Выбрать дату')).toBeFocused()

@@ -29,6 +29,27 @@ test('manifest использует чёрный фон и не ограничи
   expect(manifest).toMatchObject({ theme_color: '#000000', background_color: '#000000', scope: './', start_url: './' })
 })
 
+test('календарь и поправка сохраняются и переключаются после перезапуска без сети', async ({ page, context }) => {
+  await page.goto('./')
+  await choosePlace(page)
+  await controlServiceWorker(page)
+  await context.setOffline(true)
+  try {
+    await page.getByRole('button', { name: 'Выбрать дату' }).click()
+    await page.getByRole('combobox', { name: 'Календарь' }).selectOption('hijri')
+    await page.getByRole('combobox', { name: 'Поправка даты' }).selectOption('-1')
+    await expect.poll(() => readSavedSetting(page, 'calendarPreferences')).toEqual({ calendar: 'hijri', correction: -1 })
+    await page.reload()
+    await expect(page.locator('#home-date')).toHaveText('21 раби I')
+    await expectSchedule(page)
+    await page.getByRole('button', { name: 'Выбрать дату' }).click()
+    await page.getByRole('combobox', { name: 'День' }).selectOption('22')
+    await back(page)
+    await expect(page.locator('#home-date time')).toHaveAttribute('datetime', '2026-09-05')
+    await expectSchedule(page)
+  } finally { await context.setOffline(false) }
+})
+
 test('расписание, шрифт, источник и QR доступны офлайн без кеша таблиц в Cache Storage', async ({ page, context }) => {
   let datasets = 0
   page.on('request', request => { if (request.url().endsWith('/data/prayer-times-current.json')) datasets += 1 })

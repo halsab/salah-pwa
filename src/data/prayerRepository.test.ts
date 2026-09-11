@@ -5,7 +5,7 @@ import { createCityPlace, createOfficialPlace } from '../domain/place'
 import { getDeviceTimeZone } from '../domain/locationTime'
 import { success } from '../domain/result'
 import { automaticPreferences, manualCalculation } from '../domain/sourcePreferences'
-import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, type LocationChoice } from '../storage/database'
+import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, setSetting, type LocationChoice } from '../storage/database'
 import { createPrayerRepository, initializePrayerRepository } from './prayerRepository'
 
 const dataset = completeDataset()
@@ -13,6 +13,19 @@ const repo = createPrayerRepository()
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteSalahDatabase() })
 
 describe('local initialization and persistence', () => {
+  it('сохраняет календарь с поправкой и возвращает исходный выбор после сброса', async () => {
+    const calendarPreferences = { calendar: 'hijri', correction: 1 } as const
+    expect(await repo.saveSettings({ calendarPreferences })).toEqual(success(undefined))
+    expect(await initializePrayerRepository()).toMatchObject({ value: { calendarPreferences } })
+    await clearAppData()
+    expect(await initializePrayerRepository()).toMatchObject({ value: { calendarPreferences: { calendar: 'gregorian', correction: 0 } } })
+  })
+  it('не сохраняет неверную поправку, а повреждённую запись восстанавливает', async () => {
+    const invalid = { calendar: 'hijri', correction: 2 } as unknown as import('../domain/calendar').CalendarPreferences
+    expect(await repo.saveSettings({ calendarPreferences: invalid })).toMatchObject({ ok: false, error: { kind: 'data' } })
+    await setSetting('calendarPreferences', invalid)
+    expect(await initializePrayerRepository()).toMatchObject({ value: { calendarPreferences: { calendar: 'gregorian', correction: 0 } } })
+  })
   it('starts without a selected place or network access', async () => {
     const fetcher = vi.fn()
     vi.stubGlobal('fetch', fetcher)

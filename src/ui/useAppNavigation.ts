@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const SCREENS = ['home', 'location', 'search', 'settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about', 'share'] as const
+const SCREENS = ['home', 'date', 'location', 'search', 'settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about', 'share'] as const
 export type AppScreen = typeof SCREENS[number]
 interface Entry { screen: AppScreen; returnFocus: string | null }
 const HOME: Entry[] = [{ screen: 'home', returnFocus: null }]

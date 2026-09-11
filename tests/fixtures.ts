@@ -47,6 +47,17 @@ export async function back(page: import('@playwright/test').Page) {
   await expect.poll(() => page.evaluate(() => document.activeElement?.matches('button, input, select, a'))).toBe(true)
 }
 
+export async function chooseDate(page: import('@playwright/test').Page, date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  await page.getByRole('button', { name: 'Выбрать дату' }).click()
+  await page.getByRole('combobox', { name: 'Календарь' }).selectOption('gregorian')
+  await page.getByRole('combobox', { name: 'Год' }).selectOption(String(year))
+  await page.getByRole('combobox', { name: 'Месяц' }).selectOption(String(month))
+  await page.getByRole('combobox', { name: 'День' }).selectOption(String(day))
+  await back(page)
+  await expect(page.getByRole('button', { name: 'Выбрать дату' })).toBeFocused()
+}
+
 export async function openSource(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('button', { name: /^Расписание/ }).click()

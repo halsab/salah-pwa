@@ -1,0 +1,45 @@
+@import url('home-variants.css');
+
+.hijri-board { max-width: 1266px; }
+.hijri-board .variant-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.hijri-board.show-settings { max-width: 852px; }
+.hijri-board.show-settings .variant-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.hijri-board .board-intro { max-width: 790px; }
+.hijri-board .variant-description p { min-height: 0; max-width: 42ch; }
+.hijri-board .phone { overflow: hidden; }
+.hijri-board .panel { position: relative; min-width: 0; }
+.hijri-board .content { min-width: 0; }
+.hijri-board .countdown-value { color: #ff8a3d; }
+.hijri-board .top-actions { align-items: center; }
+.hijri-board .location { flex: 0 0 auto; }
+.hijri-board .date-button { min-width: 0; max-width: calc(100% - 98px); padding: 6px 16px; height: auto; }
+.hijri-board .date-text { white-space: normal; text-align: center; line-height: 1.4; }
+.hijri-board .hint { color: var(--muted); font: 400 14px/1.5 'Salah Old Timey Mono', monospace; }
+.hijri-board .stack { display: grid; gap: 16px; }
+.hijri-board .row { width: 100%; justify-content: space-between; gap: 12px; text-align: left; }
+.hijri-board .row .hint { font-size: 12px; }
+.hijri-board .menu-content { display: flex; align-items: center; }
+.hijri-board .menu-content .stack { width: 100%; }
+.hijri-board .row.wrap { white-space: normal; line-height: 1.5; height: auto; padding-top: 12px; padding-bottom: 12px; }
+.hijri-board .empty { font-size: 18px; }
+.hijri-board .empty .hint { font-size: 14px; }
+.hijri-board .phone ::selection { background: var(--text); color: var(--black); }
+.hijri-board .date-fields { display: grid; gap: 16px; }
+.hijri-board .date-field { position: relative; min-width: 0; height: 44px; }
+.hijri-board .field-title { flex-shrink: 0; }
+.hijri-board .field-value { min-width: 0; color: var(--muted); text-align: right; font: 400 12px/1.5 'Salah Old Timey Mono', monospace; }
+.hijri-board .select-field { position: absolute; inset: 0; appearance: none; width: 100%; height: 100%; min-height: 44px; margin: 0; padding: 0; border: 0; border-radius: inherit; background: var(--action); color: var(--text); font: 400 16px/1.4 'Salah Old Timey Mono', monospace; opacity: 0; cursor: pointer; }
+.hijri-board .date-field:has(select:focus-visible), .hijri-board .phone .pill:focus-visible { outline: 2px solid var(--text); outline-offset: -3px; }
+.hijri-board .about-content { display: flex; flex-direction: column; gap: 16px; }
+.hijri-board .about-title { font-size: 35px; line-height: 1.2; letter-spacing: 0; }
+.hijri-board .about-copy { font-size: 18px; line-height: 1.55; }
+.hijri-board .picker-actions > .pill:first-child { margin-left: 0; }
+
+@container (max-width: 350px) {
+  .hijri-board .top-actions { gap: 8px; }
+  .hijri-board .date-button { max-width: calc(100% - 94px); }
+}
+
+@media (max-width: 1050px) {
+  .hijri-board .variant-grid, .hijri-board.show-settings .variant-grid { grid-template-columns: minmax(0, 390px); }
+}

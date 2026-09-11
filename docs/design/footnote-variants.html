@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Салях — три размера подписей</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/hijri-variants.css?v=footnote-1">
+  <link rel="stylesheet" href="assets/footnote-variants.css?v=1">
+  <script src="assets/hijri-variants.js?v=footnote-1" defer></script>
+</head>
+<body>
+  <main class="board hijri-board footnote-board">
+    <h1>Один стиль мелкого текста</h1>
+    <p class="board-intro">Три размера footnote: для «До Магриба», метки «сейчас», значений справа и пояснений. Переключайте экран, чтобы сравнить один размер в разных местах.</p>
+    <div class="board-controls">
+      <div class="moment-picker" aria-label="Экран для сравнения">
+        <button type="button" data-screen-choice="home" aria-pressed="true">Главная</button>
+        <button type="button" data-screen-choice="date" aria-pressed="false">Выбор даты</button>
+        <button type="button" data-screen-choice="settings" aria-pressed="false">Настройки</button>
+        <button type="button" data-screen-choice="source" aria-pressed="false">Расписание</button>
+        <button type="button" data-screen-choice="about" aria-pressed="false">О приложении</button>
+      </div>
+      <p>Old Timey Mono · Regular · цвет #767676</p>
+    </div>
+    <div class="variant-grid" id="footnote-variants">
+      <article class="variant-preview" data-preview="footnote-14" data-footnote="14" data-screen="home" data-calendar="hijri">
+        <header class="variant-heading"><h2>01 · 14 px</h2><span class="recommendation">Рекомендую</span></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>На 2 px крупнее «До Магриба» сейчас. Подписи заметнее и сохраняют разницу с основным текстом.</p></div>
+      </article>
+      <article class="variant-preview" data-preview="footnote-15" data-footnote="15" data-screen="home" data-calendar="hijri">
+        <header class="variant-heading"><h2>02 · 15 px</h2></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>На 3 px крупнее. Размер совпадает с названиями полей; второстепенность передаётся цветом.</p></div>
+      </article>
+      <article class="variant-preview" data-preview="footnote-16" data-footnote="16" data-screen="home" data-calendar="hijri">
+        <header class="variant-heading"><h2>03 · 16 px</h2></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>На 4 px крупнее. Самые заметные подписи; длинные значения на узком экране могут занимать две строки.</p></div>
+      </article>
+    </div>
+    <footer class="board-footer">
+      <p>Во всех вариантах одинаковые шрифт, цвет и межстрочный интервал 1,5. Меняется только размер мелкого текста. Серые события расписания остаются 20 px.</p>
+      <p>На экране даты названия метода нет. Сведения об Умм аль-Кура доступны только в «О приложении». Варианты предварительные: общий размер ещё не выбран.</p>
+      <a href="hijri-variants.html">Макеты календаря</a>
+      <a href="footnote-variants.md">Что входит в footnote</a>
+    </footer>
+  </main>
+  <noscript>Для просмотра интерактивных макетов включите JavaScript.</noscript>
+</body>
+</html>

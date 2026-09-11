@@ -1,5 +1,7 @@
 html, body { margin:0; padding:0; }
 body { padding:16px 0; background:#ffffff; font-family:system-ui,sans-serif; }
+body.footnote-embedded { padding:0; }
+.footnote-embedded #salah-approved .s-picker, .footnote-embedded #salah-approved .s-caption { display:none; }
 #salah-approved .s-preview-button { appearance:none; border:1px solid #767676; border-radius:8px; min-height:44px; padding:8px 12px; background:#ffffff; color:#282828; font:400 14px/1.4 system-ui,sans-serif; cursor:pointer; }
 #salah-approved .s-preview-button[aria-pressed="true"] { background:#282828; color:#ffffff; }
   @font-face { font-family: 'Salah Old Timey Mono'; src: url('OldTimeyMono.ttf') format('truetype'); font-style: normal; font-weight: 400; font-display: swap; }
@@ -80,3 +82,7 @@ body { padding:16px 0; background:#ffffff; font-family:system-ui,sans-serif; }
   @media(max-width:350px) {
     #salah-approved .s-settings-menu .s-privacy-link { height:auto; min-height:44px; padding-top:10px; padding-bottom:10px; border-radius:30px; white-space:normal; line-height:1.4; }
   }
+
+#salah-approved[data-footnote] :is(.s-note, .s-sub, .s-label, .s-compact-readout dt) { font-size:var(--s-footnote-size); line-height:1.5; }
+#salah-approved[data-footnote] .s-row { height:auto; min-height:44px; padding-top:10px; padding-bottom:10px; }
+#salah-approved[data-footnote] .s-row .s-note { min-width:0; white-space:normal; overflow-wrap:anywhere; text-align:right; }

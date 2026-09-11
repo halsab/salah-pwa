@@ -1,5 +1,12 @@
 (() => {
   const root = document.getElementById('salah-approved');
+  const previewParams = new URLSearchParams(location.search);
+  const footnoteSize = previewParams.get('footnote');
+  if (['14', '15', '16'].includes(footnoteSize)) {
+    root.dataset.footnote = footnoteSize;
+    root.style.setProperty('--s-footnote-size', `${footnoteSize}px`);
+    if (previewParams.get('embedded') === '1') document.body.classList.add('footnote-embedded');
+  }
   root.innerHTML = `  <div class="s-picker" role="group" aria-label="Экран макета">
     <button class="s-preview-button" type="button" data-preview="home" aria-pressed="false">Главная</button>
     <button class="s-preview-button" type="button" data-preview="location" aria-pressed="false">Локация</button>

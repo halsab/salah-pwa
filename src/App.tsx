@@ -1,4 +1,6 @@
 import { staticText } from './ui/staticText'
+import { DEFAULT_CALENDAR_PREFERENCES, restoreCalendarPreferences, supportsHijriCalendar, type CalendarPreferences } from './domain/calendar'
+import { DateScreen } from './features/calendar/DateScreen'
 import {
   useCallback,
   useEffect,
@@ -103,6 +105,9 @@ export function App({
   const [repositoryState, setRepositoryState] = useState<PrayerRepositorySnapshot>({ meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null })
   const meta = repositoryState.meta
   const [preferences, setPreferences] = useState<SourcePreferences>(automaticPreferences)
+  const [storedCalendarPreferences, setCalendarPreferences] = useState(DEFAULT_CALENDAR_PREFERENCES)
+  const [hijriSupported] = useState(supportsHijriCalendar)
+  const calendarPreferences: CalendarPreferences = hijriSupported ? storedCalendarPreferences : { ...storedCalendarPreferences, calendar: 'gregorian' }
   const persistence = useSettingsPersistence(services.saveSettings)
   const saveSettings = persistence.save
   const invalidateSaves = persistence.invalidateAndDrain
@@ -169,6 +174,7 @@ export function App({
       recentRef.current = recent
       setRecentPlaces(recent)
       setPreferences(state.preferences)
+      setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
       sessionHasPlace.current = Boolean(state.locationChoice)
       setLoading(false)
     }
@@ -198,8 +204,6 @@ export function App({
     currentTime,
     today,
     changeDate,
-    onDateInput,
-    showDatePicker,
   } = useScheduleDate(services, calendarTimeZone)
   const resolution = place ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
@@ -252,12 +256,17 @@ export function App({
     setPreferences(next)
     persistence.save({ sourcePreferences: next })
   }
+  const updateCalendarPreferences = (next: CalendarPreferences) => {
+    setCalendarPreferences(next)
+    persistence.save({ calendarPreferences: next })
+  }
   const calculatedLocationLabel = compactPlaceLabel(place?.name ?? 'Выберите место')
   const dialogOpen = locationDialogOpen
     || settingsDialogOpen
     || methodologyDialogOpen
     || shareDialogOpen
     || navigation.screen === 'source-info'
+    || navigation.screen === 'date'
 
   const persistenceNotice = persistence.status === 'failed' ? (
         <div className="screen-status" role="status">
@@ -280,12 +289,13 @@ export function App({
             scheduleError={resolution?.kind === 'calculated' && resolution.status === 'unsupported'
               ? (() => { const capability = services.getCalculationProfileCapability(resolution.settings.profile); return capability.supported ? scheduleError : capability.reason })() : scheduleError}
             selectedDate={selectedDate}
+            calendarPreferences={calendarPreferences}
             today={today}
             currentTime={currentTime}
             now={services.now}
             officialMode={officialMode}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={selectedDate}
-              onOpenLocation={openLocationDialog} onDateInput={onDateInput} onShowDatePicker={showDatePicker} />}
+              calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
             actions={<button className="pill screen-end" id="home-settings" ref={settingsButtonRef} type="button" onClick={openSettingsDialog}>Настройки</button>}
             notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}
@@ -293,6 +303,9 @@ export function App({
           />}
 
       </div> : null}
+
+      {navigation.screen === 'date' ? <DateScreen selectedDate={selectedDate} today={today} preferences={calendarPreferences} hijriSupported={hijriSupported}
+        onDateChange={changeDate} onPreferencesChange={updateCalendarPreferences} onBack={backScreen} notice={persistenceNotice} /> : null}
 
       {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
         onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically} notice={persistenceNotice} /> : null}

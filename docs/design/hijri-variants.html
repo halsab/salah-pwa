@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Салях — выбор даты</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/hijri-variants.css?v=footnote-1">
+  <script src="assets/hijri-variants.js?v=footnote-1" defer></script>
+</head>
+<body>
+  <main class="board hijri-board">
+    <h1>Дата и календарь</h1>
+    <p class="board-intro">Название слева, значение справа — как в расписании. Календарь и поправка даты на одном экране.</p>
+    <div class="board-controls">
+      <div class="moment-picker" aria-label="Экраны макета">
+        <button type="button" data-view="date" aria-pressed="true">Выбор даты</button>
+        <button type="button" data-view="settings" aria-pressed="false">Настройки</button>
+        <button type="button" data-reset>Сбросить</button>
+      </div>
+      <p>Казань · 10 сентября 2026 · 17:05</p>
+    </div>
+    <div class="variant-grid" id="hijri-variants">
+      <article class="variant-preview" data-preview="cyrillic" data-screen="home" data-calendar="hijri">
+        <header class="variant-heading"><h2>Главная · кириллица</h2></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>Нажмите «28 раби I», чтобы выбрать дату. Название месяца остаётся сокращённым.</p></div>
+      </article>
+      <article class="variant-preview" data-preview="hijri-picker" data-screen="date" data-calendar="hijri">
+        <header class="variant-heading"><h2>Выбор даты · хиджра</h2></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>Календарь, дата и поправка — здесь. Каждая капсула открывает нативный список.</p></div>
+      </article>
+      <article class="variant-preview" data-preview="gregorian-picker" data-screen="date" data-calendar="gregorian">
+        <header class="variant-heading"><h2>Выбор даты · григорианский</h2></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>«Сегодня» появляется только для другого дня. Изменения даты применяются сразу.</p></div>
+      </article>
+      <article class="variant-preview" data-preview="settings" data-screen="settings" data-calendar="hijri" hidden>
+        <header class="variant-heading"><h2>Настройки</h2></header>
+        <div class="mockup"></div>
+        <div class="variant-description"><p>Сведения о методе хиджры — в «О приложении». Отдельного раздела календаря нет.</p></div>
+      </article>
+    </div>
+    <footer class="board-footer">
+      <p>Каждое поле открывает системный список браузера. Вид открытого списка зависит от iPhone или Android; рамки телефонов показывают только интерфейс приложения.</p>
+      <p>Примеры выбора даты независимы. Настройки связаны с первым экраном. В макете доступны даты 2020–2035; расписание показано для 10 сентября 2026. Перезагрузка сбрасывает изменения.</p>
+      <a href="hijri-variants.md">Описание поведения</a>
+      <a href="footnote-variants.html">Сравнить размеры подписей</a>
+      <a href="home.html">Утверждённая главная</a>
+    </footer>
+  </main>
+  <noscript>Для просмотра интерактивных макетов включите JavaScript.</noscript>
+</body>
+</html>

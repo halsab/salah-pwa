@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { getSystemDate } from '../../domain/date'
 import { pulseHaptic } from '../../platform/browser'
@@ -61,23 +61,11 @@ export function useScheduleDate(services: ScheduleDateServices, timeZone: string
     setSelectedDate(date)
     pulseHaptic()
   }
-  const onDateInput = (event: ChangeEvent<HTMLInputElement>) => {
-    if (event.target.value) changeDate(event.target.value)
-  }
-  const showDatePicker = (event: MouseEvent<HTMLInputElement>) => {
-    try {
-      event.currentTarget.showPicker()
-    } catch {
-      // Нативный клик остаётся резервным вариантом в браузерах без showPicker.
-    }
-  }
 
   return {
     selectedDate,
     currentTime,
     today,
     changeDate,
-    onDateInput,
-    showDatePicker,
   }
 }

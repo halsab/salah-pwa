@@ -1,18 +1,18 @@
-import type { ChangeEventHandler, MouseEventHandler, RefObject } from 'react'
-import { formatCompactDateLabel } from '../domain/date'
+import type { RefObject } from 'react'
+import { formatCalendarDate, type CalendarPreferences } from '../domain/calendar'
 
-export function AppHeader({ locationButtonRef, locationLabel, selectedDate, onOpenLocation, onDateInput, onShowDatePicker }: {
+export function AppHeader({ locationButtonRef, locationLabel, selectedDate, calendarPreferences, onOpenLocation, onOpenDate }: {
   locationButtonRef: RefObject<HTMLButtonElement | null>
   locationLabel: string
   selectedDate: string
+  calendarPreferences: CalendarPreferences
   onOpenLocation: () => void
-  onDateInput: ChangeEventHandler<HTMLInputElement>
-  onShowDatePicker: MouseEventHandler<HTMLInputElement>
+  onOpenDate: () => void
 }) {
   return <>
     <button ref={locationButtonRef} id="home-location" className="pill home-location" type="button" onClick={onOpenLocation}>{locationLabel}</button>
-    <label className="pill native-date"><span>{formatCompactDateLabel(selectedDate)}</span>
-      <input id="home-date" aria-label="Выбрать дату" type="date" value={selectedDate} onClick={onShowDatePicker} onChange={onDateInput} />
-    </label>
+    <button id="home-date" className="pill" type="button" aria-label="Выбрать дату" aria-describedby="home-date-value" onClick={onOpenDate}>
+      <time id="home-date-value" dateTime={selectedDate}>{formatCalendarDate(selectedDate, calendarPreferences)}</time>
+    </button>
   </>
 }

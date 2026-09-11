@@ -1,0 +1,10 @@
+.footnote-board [data-footnote='14'] { --footnote-size:14px; }
+.footnote-board [data-footnote='15'] { --footnote-size:15px; }
+.footnote-board [data-footnote='16'] { --footnote-size:16px; }
+
+.footnote-board .phone :is(.countdown-label, .current-label, .hint, .field-value) { font-size:var(--footnote-size); line-height:1.5; }
+.footnote-board .date-field { height:auto; min-height:44px; padding-top:10px; padding-bottom:10px; white-space:normal; }
+.footnote-board .field-value { overflow-wrap:anywhere; }
+.footnote-board .variant-heading { align-items:baseline; }
+.footnote-board .variant-heading h2 { font-size:22px; }
+.footnote-board .variant-description { min-height:96px; }

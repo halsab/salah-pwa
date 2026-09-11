@@ -25,26 +25,31 @@ export default defineConfig({
     {
       name: 'firefox',
       testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
       testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
       use: { ...devices['Desktop Safari'] },
     },
     {
       name: 'mobile-safari-portrait',
       testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
       use: { ...devices['iPhone 13'] },
     },
     {
       name: 'mobile-safari-landscape',
       testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts'],
+      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
       use: { ...devices['iPhone 13 landscape'] },
+    },
+    {
+      name: 'mobile-chrome',
+      testMatch: '**/calendar.spec.ts',
+      use: { ...devices['Pixel 7'] },
     },
     {
       name: 'chromium-sw',

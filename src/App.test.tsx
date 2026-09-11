@@ -3,7 +3,7 @@ import { automaticPreferences, manualCalculation } from './domain/sourcePreferen
 import { selectionFromSettings } from './domain/calculationSettings'
 import geometry from '../public/data/tatarstan-boundary.json'
 import { parseCoverageGeometry } from './domain/localGeography'
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -175,31 +175,48 @@ describe('Salah', () => {
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
   })
 
-  it('выбор даты меняет расписание главной без перехода и сохраняет фокус календаря', async () => {
-    render(<App services={createServices()} />)
+  it('переключает календарь без смены дня, применяет поправку и выбирает дату сразу', async () => {
+    const services = createServices()
+    render(<App services={services} />)
     await screen.findByRole('timer')
-    const dateInput = screen.getByLabelText('Выбрать дату')
-    dateInput.focus()
-    const pushState = vi.spyOn(window.history, 'pushState')
-    fireEvent.change(dateInput, { target: { value: '2026-09-02' } })
-    expect(await screen.findByRole('list', { name: 'Расписание дня' })).toHaveTextContent('16:21')
-    expect(screen.getByRole('region', { name: 'Главная' })).toBeVisible()
-    expect(screen.queryByRole('button', { name: 'Назад' })).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Выбрать дату')).toBe(dateInput)
-    expect(dateInput).toHaveFocus()
-    expect(dateInput).toHaveValue('2026-09-02')
-    expect(pushState).not.toHaveBeenCalled()
-    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    expect(screen.queryByText('сейчас')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Календарь' }), 'hijri')
+    expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('19')
+    expect(screen.getByRole('combobox', { name: 'Месяц' })).toHaveValue('3')
+    expect(screen.getByRole('combobox', { name: 'Год' })).toHaveValue('1448')
+    expect(screen.queryByText(/Умм|Метод/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Готово' })).not.toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Поправка даты' }), '1')
+    expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('20')
+    expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
+    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('20 раби I')
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveFocus())
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'День' }), '21')
+    expect(screen.getByRole('button', { name: 'Сегодня' })).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     expect(await screen.findByRole('list')).toHaveTextContent('16:21')
-    expect(screen.getByLabelText('Выбрать дату')).toHaveValue('2026-09-02')
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.click(screen.getByRole('button', { name: 'Сегодня' }))
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
-    expect(screen.getByLabelText('Выбрать дату')).toHaveValue('2026-09-01')
-    expect(screen.getByRole('list')).toHaveTextContent('16:24')
-    pushState.mockRestore()
+    expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'День' })).toHaveFocus()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Календарь' }), 'gregorian')
+    expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('1')
+    expect(screen.queryByRole('combobox', { name: 'Поправка даты' })).not.toBeInTheDocument()
+    await waitFor(() => expect(services.saveSettings).toHaveBeenLastCalledWith({ calendarPreferences: { calendar: 'gregorian', correction: 1 } }, expect.any(Function)))
+  })
+
+  it('восстанавливает календарь и поправку при запуске; метод доступен только в сведениях', async () => {
+    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ calendarPreferences: { calendar: 'hijri', correction: -1 } })) })} />)
+    expect(await screen.findByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('18 раби I')
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    expect(screen.queryByText('Календарь')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))
+    expect(screen.getByText('Дата хиджры рассчитывается по календарю Умм аль-Кура.')).toBeVisible()
   })
 
   it.each(['manual', 'default'] as const)(
@@ -309,8 +326,11 @@ describe('Salah', () => {
     const services = createServices({ now: () => now, getDeviceTimeZone: () => 'America/Los_Angeles' })
     render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
-    expect(screen.getByLabelText('Выбрать дату')).toHaveValue('2026-08-31')
-    fireEvent.change(screen.getByLabelText('Выбрать дату'), { target: { value: '2026-09-02' } })
+    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('31 августа')
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '9')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'День' }), '2')
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await screen.findByRole('list')
     act(() => { now = new Date('2026-08-31T21:00:00Z'); window.dispatchEvent(new Event('pageshow')) })
     expect(screen.getByText('2 сентября')).toBeVisible()
@@ -537,7 +557,10 @@ describe('Salah', () => {
   it.each([automaticPreferences(), { mode: 'manual', source: { kind: 'official', provider: 'dumRt' } } as const])('различает отсутствие таблицы в автоматическом и ручном режиме', async preferences => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences })) })} />)
     await screen.findByRole('button', { name: 'Казань' })
-    fireEvent.change(screen.getByLabelText('Выбрать дату'), { target: { value: '2027-01-01' } })
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Год' }), '2027')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '1')
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     if (preferences.mode === 'automatic') expect(within(await screen.findByRole('list')).getByText('Фаджр')).toBeVisible()
     else {
       expect(await screen.findByRole('alert')).toHaveTextContent('не покрывает это место или дату')
