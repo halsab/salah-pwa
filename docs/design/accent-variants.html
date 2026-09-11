@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Салях — три цветовых акцента</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="assets/accent-variants.css">
+  <script src="assets/accent-variants.js" defer></script>
+</head>
+<body class="comparison accent-comparison">
+  <main class="board">
+    <header class="board-header">
+      <h1>Немного цвета. Больше внимания.</h1>
+      <p class="board-intro">Три акцента для Саляха. То же расписание, шрифт и расположение элементов — разная температура и сила выделения.</p>
+      <div class="board-controls">
+        <div class="moment-picker" role="group" aria-label="Время в макетах">
+          <button type="button" data-moment="morning" aria-pressed="false">Утро · 08:30</button>
+          <button type="button" data-moment="day" aria-pressed="true">День · 17:05</button>
+          <button type="button" data-moment="evening" aria-pressed="false">Вечер · 18:30</button>
+        </div>
+        <label class="neutral-toggle"><input type="checkbox" id="neutral-preview">Сравнить без акцента</label>
+      </div>
+    </header>
+    <div class="variant-grid">
+      <section class="variant-preview" data-palette="orange">
+        <div class="variant-heading"><h2>1. Оранжевый</h2><span class="recommendation">Мой выбор</span></div>
+        <iframe src="accent-orange.html?embed=1" title="Оранжевый — акцент только на отсчёте" data-accent-frame="orange"></iframe>
+        <div class="variant-description"><h3>Одна точка внимания</h3><p>Яркий оранжевый только на времени до следующего события. Самый сдержанный вариант: цвет сразу отвечает на вопрос «сколько осталось?».</p><div class="palette-sample"><span class="swatch" aria-hidden="true"></span><span>#FF8A3D · графит #282828</span></div><a class="preview-link" href="accent-orange.html">Открыть оранжевый макет</a></div>
+      </section>
+      <section class="variant-preview" data-palette="amber">
+        <div class="variant-heading"><h2>2. Янтарный</h2></div>
+        <iframe src="accent-amber.html?embed=1" title="Янтарный — текущее событие и отсчёт" data-accent-frame="amber"></iframe>
+        <div class="variant-description"><h3>Сейчас и дальше</h3><p>Тёплый янтарный объединяет текущую строку и отсчёт. Состояние дня читается быстрее, но цвет занимает больше места в расписании.</p><div class="palette-sample"><span class="swatch" aria-hidden="true"></span><span>#EABD70 · графит #282828</span></div><a class="preview-link" href="accent-amber.html">Открыть янтарный макет</a></div>
+      </section>
+      <section class="variant-preview" data-palette="mint">
+        <div class="variant-heading"><h2>3. Мятный</h2></div>
+        <iframe src="accent-mint.html?embed=1" title="Мятный — отсчёт и метка сейчас на тёмном фоне" data-accent-frame="mint"></iframe>
+        <div class="variant-description"><h3>Прохладный и спокойный</h3><p>Светлая мята на отсчёте и маленькой метке «сейчас». Более тёмный фон с лёгким зелёным оттенком; названия событий остаются светлыми.</p><div class="palette-sample"><span class="swatch" aria-hidden="true"></span><span>#8BD8BC · фон #222725</span></div><a class="preview-link" href="accent-mint.html">Открыть мятный макет</a></div>
+      </section>
+    </div>
+    <footer class="board-footer"><p>Концепции для обсуждения · Казань, 10 сентября 2026. Времена из существующего эталона, часы зафиксированы. Переключатель убирает цвет выделения, сохраняя фон каждого варианта. Вторичный текст немного осветлён для читаемости. Город и настройки открывают существующие экраны; другая дата показывает состояние без расписания.</p><a href="home.html">Утверждённый монохромный экран</a></footer>
+  </main>
+</body>
+</html>

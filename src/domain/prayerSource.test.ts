@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createOfficialPlace } from './place'
+import { createCityPlace, createGpsPlace, createOfficialPlace } from './place'
 import { resolvePrayerTimeSource, type OfficialDatasetAvailability } from './prayerSource'
 import { automaticPreferences, isSourcePreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
 import { effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
@@ -33,8 +33,29 @@ describe('source resolver', () => {
     expect(resolvePrayerTimeSource(place, '2026-09-01', auto, [official, other])).toMatchObject({ provider: 'aaa' })
     expect(resolvePrayerTimeSource(place, '2026-09-01', auto, [official, { ...other, priority: 10 }])).toMatchObject({ provider: 'aaa' })
   })
-  it.each([['TR.34', 'turkey'], ['PK.01', 'karachi'], ['US.CA', 'northAmerica'], ['RU.48', 'muslimWorldLeague'], ['XX.1', 'muslimWorldLeague']])('chooses supported regional default %s', (code, profile) => {
+  it.each([['TR.34', 'turkey'], ['PK.01', 'karachi'], ['BD.81', 'karachi'], ['US.CA', 'northAmerica'], ['CA.ON', 'northAmerica'], ['RU.48', 'dumRf'], ['ZA.11', 'muslimWorldLeague'], ['XX.1', 'muslimWorldLeague']])('chooses supported regional default %s', (code, profile) => {
     expect(resolvePrayerTimeSource({ ...place, coverage: 'outside', region: { code, name: '' } }, '2026-09-01', auto, [official])).toMatchObject({ kind: 'calculated', settings: { profile } })
+  })
+  it.each([
+    ['Москва', '48', 55.75, 37.62],
+    ['Уфа', '08', 54.74, 55.97],
+    ['Владивосток', '59', 43.12, 131.89],
+  ] as const)('выбирает ДУМ РФ для города %s вне Татарстана', (name, admin1Code, latitude, longitude) => {
+    const city = createCityPlace({ id: 1, name, countryCode: 'RU', admin1Code, admin1Name: name, latitude, longitude, population: 1, timeZone: 'Europe/Moscow' }, 0)
+    expect(resolvePrayerTimeSource(city, '2026-09-01', auto, [official])).toMatchObject({
+      kind: 'calculated', strategy: 'regional', settings: { profile: 'dumRf', asrMethod: 'hanafi', highLatitudeRule: latitude > 48 ? 'seventhOfNight' : 'twilightAngle' },
+    })
+    expect(resolvePrayerTimeSource(city, '2026-09-01', manualCalculation({ profile: 'karachi', overrides: {} }), [official])).toMatchObject({ settings: { profile: 'karachi' }, strategy: 'manual' })
+  })
+  it('для города Татарстана сначала берёт таблицу, затем расчёт ДУМ РТ', () => {
+    const city = createCityPlace({ id: 1, name: 'Казань', countryCode: 'RU', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55.79, longitude: 49.12, population: 1, timeZone: 'Europe/Moscow' }, 0)
+    expect(resolvePrayerTimeSource(city, '2026-09-01', auto, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
+    expect(resolvePrayerTimeSource(city, '2027-09-01', auto, [official])).toMatchObject({ kind: 'calculated', settings: { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt' } })
+  })
+  it('не выводит страну GPS из названия или зоны устройства и не использует недоступный профиль', () => {
+    const gps = createGpsPlace({ latitude: 55.75, longitude: 37.62, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', null, 'gps:1')
+    expect(resolvePrayerTimeSource({ ...gps, name: 'Рядом: Москва' }, '2026-09-01', auto, [])).toMatchObject({ settings: { profile: 'muslimWorldLeague' }, strategy: 'default' })
+    expect(resolvePrayerTimeSource({ ...place, region: { code: 'RU.48', name: 'Москва' }, coverage: 'outside' }, '2026-09-01', auto, [], ['muslimWorldLeague'])).toMatchObject({ settings: { profile: 'muslimWorldLeague' }, strategy: 'default' })
   })
   it('requires explicit capability for Umm al-Qura; unsupported manual profile remains unavailable', () => {
     const sa = { ...place, coverage: 'outside' as const, region: { code: 'SA.01', name: '' } }

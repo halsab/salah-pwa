@@ -78,7 +78,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .native-date:focus-within { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .event-countdown { display: flex; flex-direction: column; min-width: 0; color: var(--text-primary); }
 .event-countdown .countdown-label { font-size: 0.75rem; line-height: 1.5; color: var(--text-secondary); }
-.event-countdown .countdown-value { font-size: 1.125rem; line-height: 1.3; font-weight: 400; font-variant-numeric: tabular-nums; }
+.event-countdown .countdown-value { color: var(--accent-countdown); font-size: 1.125rem; line-height: 1.3; font-weight: 400; font-variant-numeric: tabular-nums; }
 .event-list { list-style: none; padding: 12px 0 0; margin: 0; }
 .event-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 52px; color: var(--text-primary); font-size: 1.25rem; line-height: 1.4; }
 .event-row time { white-space: nowrap; font-variant-numeric: tabular-nums; }

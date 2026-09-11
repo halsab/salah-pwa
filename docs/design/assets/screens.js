@@ -17,7 +17,7 @@
   <template data-template="location">
     <div class="s-top"><button class="s-pill" type="button" data-go="home">Назад</button></div>
     <div class="s-body s-edge">
-      <div data-current-place><h1 class="s-hero" data-city-name>Казань</h1><p class="s-note s-small-gap" data-city-region>Татарстан, Россия</p></div>
+      <div data-current-place><h1 class="s-hero" data-city-name>Казань</h1><p class="s-note s-small-gap" data-city-region>Татарстан, РФ</p></div>
       <button class="s-pill s-wide s-search-open s-space" type="button" data-go="search">Найти город</button>
       <button class="s-pill s-wide s-small-gap" type="button" data-gps>По геопозиции</button>
       <section data-recent-section class="s-space"><h2 class="s-heading">Недавние</h2><div class="s-cities" data-recents></div></section>
@@ -174,10 +174,10 @@
   </template>`;
   const panel = root.querySelector('.s-panel');
   const cities = [
-    {name:'Казань', region:'Татарстан, Россия'},
-    {name:'Уфа', region:'Башкортостан, Россия'},
-    {name:'Москва', region:'Россия'},
-    {name:'Санкт-Петербург', region:'Россия'},
+    {name:'Казань', region:'Татарстан, РФ'},
+    {name:'Уфа', region:'Башкортостан, РФ'},
+    {name:'Москва', region:'РФ'},
+    {name:'Санкт-Петербург', region:'РФ'},
     {name:'Казалы', region:'Кызылординская область, Казахстан'}
   ];
   const profiles = [

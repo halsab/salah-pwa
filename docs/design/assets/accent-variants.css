@@ -1,0 +1,46 @@
+@import url('home-variants.css');
+
+[data-palette='orange'] { --accent: #ff8a3d; }
+[data-palette='amber'] { --accent: #eabd70; }
+[data-palette='mint'] { --accent: #8bd8bc; }
+[data-palette='lime'] { --accent: #c6ed77; }
+[data-palette='lavender'] { --accent: #b7a2ff; }
+
+[data-palette] .phone { --muted: #929292; }
+[data-palette='mint'] .phone {
+  --panel: #222725;
+  --action: #333b38;
+  --text: #eff6f2;
+  --muted: #929e98;
+}
+
+[data-palette] .countdown-value { color: var(--accent); }
+[data-palette='amber'] .event[aria-current='true'],
+[data-palette='amber'] .current-label,
+[data-palette='mint'] .current-label { color: var(--accent); }
+
+.neutral-preview[data-palette] .countdown-value,
+.neutral-preview[data-palette='amber'] .event[aria-current='true'] { color: var(--text); }
+.neutral-preview[data-palette] .current-label { color: var(--muted); }
+
+[data-palette] .phone ::selection { background: var(--accent); color: var(--black); }
+[data-palette] .phone a:focus-visible,
+[data-palette] .phone button:focus-visible,
+[data-palette] .date-control:focus-within { outline-color: var(--text); }
+
+.accent-comparison .board { max-width: 1282px; }
+.accent-comparison .board-intro { max-width: 750px; }
+.accent-comparison .board-controls { margin-bottom: 24px; }
+.accent-comparison .variant-heading { margin-bottom: 10px; }
+.accent-comparison .recommendation { color: #4f4f4f; }
+.accent-comparison .variant-description p { min-height: 116px; }
+.accent-comparison .board-footer p { color: #626262; }
+.palette-sample { display: flex; align-items: center; gap: 10px; font-size: 12px; margin: 14px 0 8px; }
+.swatch { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
+.neutral-toggle { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; font-size: 13px; cursor: pointer; }
+.neutral-toggle input { width: 20px; height: 20px; margin: 0; accent-color: #282828; }
+.neutral-toggle input:focus-visible { outline: 2px solid #282828; outline-offset: 4px; }
+
+@media (max-width: 1050px) {
+  .accent-comparison .variant-description p { min-height: 0; }
+}

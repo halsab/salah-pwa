@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { CityCatalogService, CitySearchResult } from '../../data/cityCatalog'
-import { formatCityLabel, formatCityRegion, getCountryName, type City } from '../../domain/cities'
+import { formatCityLabel, formatCityRegion, type City } from '../../domain/cities'
+import { compactPlaceLabel, getCountryLabel } from '../../domain/countryLabels'
 import type { Place } from '../../domain/place'
 import type { PrayerLocation } from '../../domain/types'
 import { BackButton, Screen } from '../../ui/Screen'
@@ -23,14 +24,14 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
   const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
   return <Screen label={initial ? 'Выбор места' : 'Локация'} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
     {initial ? <h1 className="screen-title">Выберите место</h1> : null}
-    {place ? <div className="location-current"><p className="screen-title">{place.name}</p>{place.region ? <p className="note">{place.region.name}</p> : null}</div> : null}
+    {place ? <div className="location-current"><p className="screen-title">{compactPlaceLabel(place.name)}</p>{place.region ? <p className="note">{place.region.name}</p> : null}</div> : null}
     <div className="screen-stack">
       <button id="location-search" className="pill pill-wide search-open" type="button" onClick={onSearch}>Найти город</button>
       <button className="pill pill-wide" type="button" onClick={() => void locate()} disabled={locating}>{locating ? 'Определяем место…' : 'По геопозиции'}</button>
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
     {recent.length ? <section className="screen-space" aria-label="Недавние города"><p className="screen-heading">Недавние</p><div className="screen-stack screen-space">
-      {recent.map(item => <button className="pill pill-row" key={item.id} type="button" onClick={() => onSelectRecent(item)}>{item.name}</button>)}
+      {recent.map(item => <button className="pill pill-row" key={item.id} type="button" onClick={() => onSelectRecent(item)}>{compactPlaceLabel(item.name)}</button>)}
     </div></section> : null}
     {notice}
   </Screen>
@@ -88,7 +89,7 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
       {cities.map(city => {
         const sameLabel = cities.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))
         return <li key={city.id}><button className="pill city-result" aria-label={formatCityLabel(city, sameLabel)} type="button" onClick={() => onSelectCity(city)}>
-          <span>{city.name}</span><span className="note">{formatCityRegion(city)}, {getCountryName(city.countryCode)}{sameLabel ? ` · ${city.id}` : ''}</span>
+          <span>{city.name}</span><span className="note">{formatCityRegion(city)}, {getCountryLabel(city.countryCode)}{sameLabel ? ` · ${city.id}` : ''}</span>
         </button></li>
       })}
     </ul>

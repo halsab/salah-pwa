@@ -33,6 +33,7 @@ import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
 import { rememberPlace, restoreRecentPlaces } from './domain/recentPlaces'
 import type { Place } from './domain/place'
+import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
 import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
@@ -251,7 +252,7 @@ export function App({
     setPreferences(next)
     persistence.save({ sourcePreferences: next })
   }
-  const calculatedLocationLabel = place?.name ?? 'Выберите место'
+  const calculatedLocationLabel = compactPlaceLabel(place?.name ?? 'Выберите место')
   const dialogOpen = locationDialogOpen
     || settingsDialogOpen
     || methodologyDialogOpen

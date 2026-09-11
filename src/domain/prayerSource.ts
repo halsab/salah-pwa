@@ -24,6 +24,7 @@ const PORTABLE_PROFILES: readonly CalculationProfileId[] = ['dumRt', 'dumRf', 't
 function regionProfile(location: Place): CalculationProfileId | undefined {
   if (location.region?.code === 'RU-TA' && location.coverage === 'inside') return 'dumRt'
   const country = location.region?.code.split('.')[0]
+  if (country === 'RU') return 'dumRf'
   if (country === 'TR') return 'turkey'
   if (country === 'PK' || country === 'BD') return 'karachi'
   if (country === 'US' || country === 'CA') return 'northAmerica'

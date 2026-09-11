@@ -2,13 +2,27 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { failure, success } from '../../domain/result'
-import { createOfficialPlace } from '../../domain/place'
+import { createCityPlace, createOfficialPlace } from '../../domain/place'
 import type { CitySearchResult } from '../../data/cityCatalog'
 import { LocationScreen, SearchScreen } from './LocationScreens'
 const location = { id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.11 }
 const city = { id: 1, name: 'Москва', countryCode: 'RU', admin1Code: '48', admin1Name: 'Москва', latitude: 55.75, longitude: 37.61, population: 100, timeZone: 'Europe/Moscow' }
 const searchProps = { locations: [location], catalogStatus: 'ready' as const, onLoadCities: vi.fn(), onBack: vi.fn(), onSelectOfficial: vi.fn(), onSelectCity: vi.fn(), onSearchCities: vi.fn().mockResolvedValue(success({ cities: [city], status: 'complete', missingPackages: [] })) }
 describe('экраны локации', () => {
+  it('сокращает страну в поиске, сохраняя полное доступное название', async () => {
+    render(<SearchScreen {...searchProps} />)
+    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
+    const result = await screen.findByRole('button', { name: 'Москва, Москва, Россия' })
+    expect(result).toHaveTextContent('Москва, РФ')
+  })
+  it('сокращает старые подписи текущего и недавнего места без изменения данных', () => {
+    const place = createCityPlace(city, 0)
+    const recent = createCityPlace({ ...city, id: 2, name: 'Киров', admin1Name: 'Кировская область' }, 0)
+    render(<LocationScreen place={place} recentPlaces={[recent]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('Москва, Москва, РФ')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Киров, Кировская область, РФ' })).toBeVisible()
+    expect(place.name).toBe('Москва, Москва, Россия')
+  })
   it('не теряет результаты при пробеле после уже найденного названия', async () => {
     const onSearchCities = vi.fn().mockResolvedValue(success({ cities: [city], status: 'complete', missingPackages: [] }))
     render(<SearchScreen {...searchProps} onSearchCities={onSearchCities} />)
