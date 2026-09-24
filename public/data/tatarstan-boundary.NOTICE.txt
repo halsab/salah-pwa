@@ -11,4 +11,4 @@ Transformation: Douglas–Peucker 100 m, rounding to 5 decimal places.
 The 2000 m uncertainty margin is an application policy, not a guarantee
 of source accuracy. See the published source and reproducible preparation:
 https://github.com/halsab/salah-pwa/tree/audit/scripts/geography
-https://github.com/halsab/salah-pwa/blob/audit/docs/local-geography.md
+https://drive.google.com/drive/folders/1Mj0e00ee7n7R3rGS-oTZresvmA7uZ7Vp?usp=drive_link
