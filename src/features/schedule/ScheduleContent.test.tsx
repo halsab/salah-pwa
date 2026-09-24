@@ -14,8 +14,23 @@ const base = {
 }
 
 describe('новое расписание', () => {
+  it('показывает religious banner первым элементом только для ready live today', () => {
+    const religiousDay: typeof day = { ...day, date: '2026-05-23', fajrStart: '02:00', maghrib: '19:00' }
+    const now = () => new Date('2026-05-23T12:00:00+03:00')
+    const onOpenReligiousEvent = vi.fn()
+    const { container, rerender } = render(<ScheduleContent {...base} schedule={religiousDay} schedules={[religiousDay]}
+      selectedDate={religiousDay.date} today={religiousDay.date} currentTime={now()} now={now}
+      hijriSupported onOpenReligiousEvent={onOpenReligiousEvent} />)
+    expect(container.querySelector('.home-content')?.firstElementChild).toHaveAttribute('id', 'religious-event-banner')
+    expect(screen.getByRole('button', { name: 'Первые 10 дней Зуль-хиджи День Арафа через 3 дня' })).toBeVisible()
+    rerender(<ScheduleContent {...base} schedule={religiousDay} schedules={[religiousDay]}
+      selectedDate="2026-05-22" today={religiousDay.date} currentTime={now()} now={now}
+      hijriSupported onOpenReligiousEvent={onOpenReligiousEvent} />)
+    expect(screen.queryByText('Первые 10 дней Зуль-хиджи')).not.toBeInTheDocument()
+  })
+
   it.each([
-    ['00:10', 'Сухур до', 'До Фаджра в мечети, осталось 2 ч 12 мин'],
+    ['00:10', 'Фаджр (конец сухура)', 'До Фаджра в мечети, осталось 2 ч 12 мин'],
     ['04:00', 'Восход', 'До зенита, осталось 7 ч 41 мин'],
     ['11:45', 'Зенит', 'До Зухра, осталось 15 мин'],
   ])('учитывает все события на главной в %s', (time, current, countdown) => {
@@ -41,10 +56,10 @@ describe('новое расписание', () => {
   })
 
   it('после Иши считает до позднего сухура следующей строки', () => {
-    const tomorrow: typeof day = { ...day, date: '2026-05-06', suhurEnd: '23:50' }
+    const tomorrow: typeof day = { ...day, date: '2026-05-06', fajrStart: '23:50' }
     const now = () => new Date('2026-05-05T21:10:00+03:00')
     render(<ScheduleContent {...base} schedules={[day, tomorrow]} currentTime={now()} now={now} />)
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До конца сухура, осталось 2 ч 40 мин')
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 2 ч 40 мин')
   })
 
   it('учитывает восход и зенит в расчётном расписании', () => {
@@ -93,7 +108,7 @@ describe('новое расписание', () => {
     const { container } = render(<ScheduleContent {...base} />)
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getByText('23:54')).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
-    expect(within(list).getByText('Сухур до').parentElement).toHaveTextContent('4 мая')
+    expect(within(list).getByText('Фаджр (конец сухура)').parentElement).toHaveTextContent('4 мая')
     expect(within(list).getByText('Фаджр в мечети')).toBeVisible()
     expect(container.querySelector('[aria-current="true"]')).toHaveTextContent('Асрсейчас16:58')
     expect(within(list).getByText('Зухр').closest('li')).toHaveClass('event-past')

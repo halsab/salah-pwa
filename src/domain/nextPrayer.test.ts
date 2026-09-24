@@ -8,7 +8,7 @@ import { DUM_RT_TIME_ZONE } from './locationTime'
 const today: PrayerDay = {
   locationId: 'kazan',
   date: '2026-09-01',
-  suhurEnd: '02:21',
+  fajrStart: '02:21',
   fajrJamaat: '03:17',
   sunrise: '04:48',
   zenith: '11:44',
@@ -48,7 +48,7 @@ describe('findNextPrayer', () => {
   })
 
   it.each([
-    ['suhurEnd', 'До конца сухура'],
+    ['fajrStart', 'До Фаджра'],
     ['fajrJamaat', 'До утреннего в мечети'],
     ['sunrise', 'До восхода'],
     ['zenith', 'До зенита'],
@@ -87,9 +87,9 @@ describe('findNextPrayer', () => {
     )
 
     expect(next).toMatchObject({
-      key: 'suhurEnd',
-      label: 'Завершение сухура',
-      countdownLabel: 'До конца сухура',
+      key: 'fajrStart',
+      label: 'Фаджр (конец сухура)',
+      countdownLabel: 'До Фаджра',
       date: '2026-09-02',
       time: '02:21',
     })
@@ -214,7 +214,7 @@ describe('formatRemainingTime', () => {
 
 describe('регрессии порядка полей', () => {
   it('на реальной строке Апастово выбирает Зухр 12:00 перед зенитом 12:01', () => {
-    const day: PrayerDay = { ...today, locationId: 'apastovo', date: '2026-02-07', suhurEnd: '05:21', fajrJamaat: '05:56', sunrise: '07:27', zenith: '12:01', dhuhr: '12:00', asr: '14:43', maghrib: '16:35', isha: '18:19' }
+    const day: PrayerDay = { ...today, locationId: 'apastovo', date: '2026-02-07', fajrStart: '05:21', fajrJamaat: '05:56', sunrise: '07:27', zenith: '12:01', dhuhr: '12:00', asr: '14:43', maghrib: '16:35', isha: '18:19' }
     expect(findNextPrayer(new Date('2026-02-07T11:59:59+03:00'), day)?.key).toBe('dhuhr')
     expect(findCurrentPrayer(new Date('2026-02-07T12:01:00+03:00'), day)?.key).toBe('zenith')
   })

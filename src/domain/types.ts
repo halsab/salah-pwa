@@ -1,7 +1,7 @@
 export type PrayerTime = `${number}:${number}`
 
 export type PrayerKey =
-  | 'suhurEnd'
+  | 'fajrStart'
   | 'fajrJamaat'
   | 'sunrise'
   | 'zenith'
@@ -24,7 +24,7 @@ export type SchedulePrayerKey = PrayerKey | 'fajr'
 export interface PrayerDay {
   locationId: string
   date: string
-  suhurEnd: PrayerTime
+  fajrStart: PrayerTime
   fajrJamaat: PrayerTime
   sunrise: PrayerTime
   zenith: PrayerTime
@@ -83,5 +83,5 @@ export interface PrayerDatasetManifest {
 }
 
 export const OFFICIAL_TIME_FIELDS = [
-  'suhurEnd', 'fajrJamaat', 'sunrise', 'zenith', 'dhuhr', 'asr', 'maghrib', 'isha',
+  'fajrStart', 'fajrJamaat', 'sunrise', 'zenith', 'dhuhr', 'asr', 'maghrib', 'isha',
 ] as const satisfies readonly PrayerKey[]

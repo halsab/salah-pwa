@@ -15,10 +15,10 @@ describe('diagnoseOfficialSchedule', () => {
     const original = structuredClone(disputed)
     const warnings = diagnoseOfficialSchedule(disputed)
     expect(warnings).toContainEqual(expect.objectContaining({
-      code: 'previous-day-suhur', locationId: 'kazan', date: '2026-05-05', fields: ['suhurEnd'],
+      code: 'previous-day-fajr-start', locationId: 'kazan', date: '2026-05-05', fields: ['fajrStart'],
     }))
     expect(warnings).toContainEqual(expect.objectContaining({
-      code: 'midnight-transition', locationId: 'kazan', date: '2026-05-05', fields: ['suhurEnd'],
+      code: 'midnight-transition', locationId: 'kazan', date: '2026-05-05', fields: ['fajrStart'],
     }))
     expect(disputed).toEqual(original)
   })
@@ -41,8 +41,8 @@ describe('diagnoseOfficialSchedule', () => {
   })
 
   it('сравнивает соседние даты независимо от порядка строк, включая конец года, и не смешивает места', () => {
-    const first = { ...required(disputed[0]), date: '2026-12-31', suhurEnd: '00:03' as const }
-    const second = { ...first, date: '2027-01-01', suhurEnd: '23:59' as const }
+    const first = { ...required(disputed[0]), date: '2026-12-31', fajrStart: '00:03' as const }
+    const second = { ...first, date: '2027-01-01', fajrStart: '23:59' as const }
     const ordered = diagnoseOfficialSchedule([first, second])
     expect(diagnoseOfficialSchedule([second, first])).toEqual(ordered)
     expect(ordered).toContainEqual(expect.objectContaining({ code: 'midnight-transition', date: '2027-01-01' }))
@@ -52,7 +52,7 @@ describe('diagnoseOfficialSchedule', () => {
   it('полный год с необычной строкой проходит строгую проверку с предупреждением', () => {
     const days = Array.from({ length: 365 }, (_, index) => ({ ...required(disputed[0]), date: addDays('2026-01-01', index) }))
     days[124] = required(disputed[1])
-    expect(validateSchedule(days, 2026)).toContainEqual(expect.objectContaining({ code: 'previous-day-suhur', date: '2026-05-05' }))
+    expect(validateSchedule(days, 2026)).toContainEqual(expect.objectContaining({ code: 'previous-day-fajr-start', date: '2026-05-05' }))
     expect(() => validateSchedule(days.filter(({ date }) => date !== '2026-05-06'), 2026)).toThrow(/kazan.*2026-05-06.*date.*пропущ/)
   })
 })

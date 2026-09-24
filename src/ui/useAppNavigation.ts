@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isReligiousEventId, type ReligiousEventId } from '../domain/religiousEvents'
 
-const SCREENS = ['home', 'date', 'location', 'search', 'settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about', 'share'] as const
+const SCREENS = ['home', 'date', 'location', 'search', 'settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about', 'share', 'religious-event'] as const
 export type AppScreen = typeof SCREENS[number]
-interface Entry { screen: AppScreen; returnFocus: string | null }
+interface Entry { screen: AppScreen; returnFocus: string | null; religiousEventId?: ReligiousEventId }
+type NavigationTarget = AppScreen | { screen: 'religious-event'; religiousEventId: ReligiousEventId }
 const HOME: Entry[] = [{ screen: 'home', returnFocus: null }]
 
 function readEntries(value: unknown, session: string): Entry[] | null {
@@ -12,7 +14,8 @@ function readEntries(value: unknown, session: string): Entry[] | null {
   const entries: unknown[] = state.entries
   const valid = (entry: unknown): entry is Entry => Boolean(entry && typeof entry === 'object'
     && 'screen' in entry && SCREENS.some(screen => screen === entry.screen)
-    && 'returnFocus' in entry && (entry.returnFocus === null || typeof entry.returnFocus === 'string'))
+    && 'returnFocus' in entry && (entry.returnFocus === null || typeof entry.returnFocus === 'string')
+    && (entry.screen !== 'religious-event' || ('religiousEventId' in entry && isReligiousEventId(entry.religiousEventId))))
   return entries.length > 0 && entries.every(valid) ? entries : null
 }
 
@@ -49,10 +52,15 @@ export function useAppNavigation() {
     return () => { cancelAnimationFrame(frame) }
   }, [entries])
 
-  const open = useCallback((screen: AppScreen) => {
+  const open = useCallback((target: NavigationTarget) => {
+    const screen = typeof target === 'string' ? target : target.screen
     if (traversing.current || current.current.at(-1)?.screen === screen) return
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement.id || null : null
-    const next = [...current.current, { screen, returnFocus: trigger }]
+    const next = [...current.current, {
+      screen,
+      returnFocus: trigger,
+      ...(typeof target === 'string' ? {} : { religiousEventId: target.religiousEventId }),
+    }]
     window.history.pushState({ salahNavigation: { session, entries: next } }, '')
     current.current = next
     setEntries(next)
@@ -76,5 +84,6 @@ export function useAppNavigation() {
     window.history.go(-depth)
   }, [])
 
-  return { screen: entries.at(-1)?.screen ?? 'home', open, back, home }
+  const active = entries.at(-1) ?? { screen: 'home', returnFocus: null }
+  return { screen: active.screen, religiousEventId: active.screen === 'religious-event' ? active.religiousEventId ?? null : null, open, back, home }
 }

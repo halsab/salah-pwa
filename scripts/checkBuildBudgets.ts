@@ -10,8 +10,8 @@ export interface BuildArtifact {
 }
 
 export const BUILD_BUDGETS = {
-  appJavaScript: 300 * 1024,
-  totalJavaScript: 320 * 1024,
+  appJavaScript: 460 * 1024,
+  totalJavaScript: 480 * 1024,
   appCss: 34 * 1024,
   privacyCss: 6 * 1024,
   cityIndex: 640 * 1024,

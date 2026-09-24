@@ -13,6 +13,16 @@ const repo = createPrayerRepository()
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteSalahDatabase() })
 
 describe('local initialization and persistence', () => {
+  it.each([1, 2])('classifies a stored legacy schema %s dataset as ready after normalization', async (schemaVersion) => {
+    const legacy = {
+      ...dataset,
+      schemaVersion,
+      days: dataset.days.map(({ fajrStart, ...day }) => ({ ...day, suhurEnd: fajrStart })),
+    } as unknown as typeof dataset
+    await replaceDataset(legacy, { version: 'legacy', sha256: 'a'.repeat(64), url: 'prayer-times-current.json' })
+    expect(await initializePrayerRepository()).toMatchObject({ value: { dataState: 'ready', meta: { schemaVersion } } })
+  })
+
   it('сохраняет календарь с поправкой и возвращает исходный выбор после сброса', async () => {
     const calendarPreferences = { calendar: 'hijri', correction: 1 } as const
     expect(await repo.saveSettings({ calendarPreferences })).toEqual(success(undefined))

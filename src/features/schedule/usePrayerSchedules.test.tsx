@@ -21,7 +21,7 @@ const meta: DatasetMeta = {
   locations: ['A', 'B', 'C'].map((id, index) => ({ id, name: id, latitude: 55 + index, longitude: 49 + index })),
 }
 function day(locationId: string, date: string): PrayerDay {
-  return { locationId, date, suhurEnd: '02:00', fajrJamaat: '03:00', sunrise: '04:30', zenith: '11:45', dhuhr: '12:00', asr: '16:00', maghrib: '18:00', isha: '20:00' }
+  return { locationId, date, fajrStart: '02:00', fajrJamaat: '03:00', sunrise: '04:30', zenith: '11:45', dhuhr: '12:00', asr: '16:00', maghrib: '18:00', isha: '20:00' }
 }
 function options(): Options {
   return {
@@ -94,13 +94,14 @@ describe('usePrayerSchedules', () => {
     const hook = observe(initial)
     hook.rerender({ ...initial, locationId: 'B' })
     hook.rerender({ ...initial, locationId: 'C' })
+    const requestedDates = Array.from({ length: 9 }, (_, index) => addDays('2026-09-01', index - 4))
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'A') request.resolve(['2026-08-31', '2026-09-01', '2026-09-02'].map((date) => day('A', date)))
+      for (const [key, request] of pending) if (key === 'A') request.resolve(requestedDates.map((date) => day('A', date)))
       await Promise.resolve()
     })
     expectHidden(hook.result.current)
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'C') request.resolve(['2026-08-31', '2026-09-01', '2026-09-02'].map((date) => day('C', date)))
+      for (const [key, request] of pending) if (key === 'C') request.resolve(requestedDates.map((date) => day('C', date)))
       await Promise.resolve()
     })
     expect(hook.result.current.schedule).toMatchObject({ locationId: 'C' })

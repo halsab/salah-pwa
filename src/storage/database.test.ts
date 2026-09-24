@@ -46,7 +46,7 @@ async function createLegacyVersion4Database(
 }
 
 async function createVersion5Database(fixture: {
-  day?: PrayerDataset['days'][number]
+  day?: PrayerDataset['days'][number] | (Record<string, unknown> & { locationId: string; date: string })
   meta?: {
     schemaVersion: number
     source: PrayerDataset['source']
@@ -128,7 +128,7 @@ const dataset: PrayerDataset = {
     {
       locationId: 'kazan',
       date: '2026-09-01',
-      suhurEnd: '02:21',
+      fajrStart: '02:21',
       fajrJamaat: '03:17',
       sunrise: '04:48',
       zenith: '11:44',
@@ -213,6 +213,30 @@ describe('database', () => {
     await createVersion5Database({ meta: legacyMeta })
 
     expect(unwrap(await getDatasetMeta())).toEqual(legacyMeta)
+  })
+
+  it.each([1, 2])('нормализует локальный legacy day schema %s без перезаписи IndexedDB', async (schemaVersion) => {
+    const canonical = dataset.days[0]
+    if (!canonical) throw new Error('Не найден тестовый день')
+    const legacy = { ...canonical, suhurEnd: canonical.fajrStart } as Record<string, unknown> & { locationId: string; date: string }
+    delete legacy.fajrStart
+    await createVersion5Database({
+      day: legacy,
+      meta: { schemaVersion, source: dataset.source, locations: dataset.locations },
+    })
+
+    expect(unwrap(await getPrayerDay('kazan', canonical.date))).toEqual(canonical)
+    expect(await getDatabaseVersion()).toBe(11)
+  })
+
+  it('возвращает data-invalid для смешанной или неизвестной локальной формы', async () => {
+    const canonical = dataset.days[0]
+    if (!canonical) throw new Error('Не найден тестовый день')
+    await createVersion5Database({
+      day: { ...canonical, suhurEnd: canonical.fajrStart },
+      meta: { schemaVersion: 2, source: dataset.source, locations: dataset.locations },
+    })
+    expect(await getPrayerDay('kazan', canonical.date)).toEqual({ ok: false, error: { kind: 'data', reason: 'invalid' } })
   })
 
   it('при сбое транзакции не показывает частично заменённые meta и дни', async () => {

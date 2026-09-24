@@ -14,7 +14,7 @@ it('показывает факты официальной таблицы и д�
   expect(within(dialog).getByText('Казань', { exact:true })).toBeVisible()
   expect(dialog).toHaveTextContent('Europe/Moscow')
   expect(dialog).toHaveTextContent('Проверка обновлений не удалась')
-  expect(dialog).toHaveTextContent('Сухур до 23:54 — понедельник, 4 мая, накануне дня поста.')
+  expect(dialog).toHaveTextContent('Фаджр (конец сухура) 23:54 — понедельник, 4 мая, накануне дня поста.')
   expect(within(dialog).getByRole('link', { name: /Первичный источник/ })).toHaveAttribute('href','https://dumrt.ru/ru/help-info/prayertime/')
   expect(dialog.textContent).not.toMatch(/secret-|private-id/)
 })

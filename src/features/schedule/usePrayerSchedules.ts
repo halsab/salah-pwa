@@ -61,7 +61,7 @@ export function usePrayerSchedules({
     let active = true
     const load = async (): Promise<DisplaySchedule[]> => {
       // При offsets [-3, 3] с поправками нужны даты [D-4, D+4], чтобы сохранить и соседний день с каждой стороны.
-      const radius = context.source === 'calculated' ? 4 : 1
+      const radius = 4
       const dates = Array.from({ length: radius * 2 + 1 }, (_, index) => addDays(context.date, index - radius))
       if (context.source === 'official') {
         const days = await services.getDays(context.localityId, dates, context.datasetRevision)

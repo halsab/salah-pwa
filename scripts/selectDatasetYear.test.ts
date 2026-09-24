@@ -13,7 +13,7 @@ function completeYear(year: number, locationId: string): PrayerDay[] {
     days.push({
       locationId,
       date: new Date(timestamp).toISOString().slice(0, 10),
-      suhurEnd: TIME,
+      fajrStart: TIME,
       fajrJamaat: TIME,
       sunrise: TIME,
       zenith: TIME,

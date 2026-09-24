@@ -39,6 +39,7 @@ import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
 import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
+import { ReligiousEventScreen } from './features/religiousEvents/ReligiousEventScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
 import { SettingsScreens } from './features/settings/SettingsScreens'
@@ -236,6 +237,9 @@ export function App({
   }, [openScreen])
 
   const openSettingsDialog = useCallback(() => { openScreen('settings') }, [openScreen])
+  const openReligiousEvent = useCallback((religiousEventId: import('./domain/religiousEvents').ReligiousEventId) => {
+    openScreen({ screen: 'religious-event', religiousEventId })
+  }, [openScreen])
 
   if (loading) return <LoadingScreen />
 
@@ -266,6 +270,7 @@ export function App({
     || methodologyDialogOpen
     || shareDialogOpen
     || navigation.screen === 'source-info'
+    || navigation.screen === 'religious-event'
     || navigation.screen === 'date'
 
   const persistenceNotice = persistence.status === 'failed' ? (
@@ -294,6 +299,8 @@ export function App({
             currentTime={currentTime}
             now={services.now}
             officialMode={officialMode}
+            hijriSupported={hijriSupported}
+            onOpenReligiousEvent={openReligiousEvent}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
             actions={<button className="pill screen-end" id="home-settings" ref={settingsButtonRef} type="button" onClick={openSettingsDialog}>Настройки</button>}
@@ -315,6 +322,9 @@ export function App({
         ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel}
             checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} />
         : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
+        : null}
+      {navigation.screen === 'religious-event' && navigation.religiousEventId
+        ? <ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} />
         : null}
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}

@@ -39,7 +39,10 @@ export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & 
 
 async function readLocalSnapshot(): Promise<Result<PrayerRepositorySnapshot, StorageFailure>> {
   const stored = await getStoredDataset()
-  if (!stored.ok) return stored
+  if (!stored.ok) {
+    if (stored.error.kind === 'data') return success({ meta: null, dataState: 'invalid', update: { status: 'idle' }, checkedAt: null })
+    return failure(stored.error)
+  }
   const valid = stored.value && isPrayerDataset(stored.value.dataset)
   return success({ meta: valid ? stored.value.meta : null, dataState: valid ? 'ready' : stored.value ? 'invalid' : 'not-loaded', update: { status: 'idle' }, checkedAt: null })
 }

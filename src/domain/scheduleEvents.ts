@@ -13,7 +13,7 @@ interface EventDefinition {
 }
 
 const EVENT_DEFINITIONS: Record<SchedulePrayerKey, EventDefinition> = {
-  suhurEnd: { kind: 'marker', label: 'Завершение сухура', countdownLabel: 'До конца сухура' },
+  fajrStart: { kind: 'prayer', label: 'Фаджр (конец сухура)', countdownLabel: 'До Фаджра' },
   fajrJamaat: { kind: 'jamaat', label: 'Утренний намаз в мечетях', countdownLabel: 'До утреннего в мечети' },
   fajr: { kind: 'prayer', label: 'Фаджр', countdownLabel: 'До фаджра' },
   sunrise: { kind: 'marker', label: 'Восход', countdownLabel: 'До восхода' },
@@ -53,8 +53,8 @@ export function buildScheduleEvents(schedule: PrayerSchedule): ScheduleEvent[] {
       : null
     const time = entry?.time ?? (schedule as PrayerDay)[key as keyof Omit<PrayerDay, 'date' | 'locationId'>]
     const source: EventSource = { ...EVENT_DEFINITIONS[key], key, scheduleDate: schedule.date, timeZone, time }
-    // Поздний сухур наступает накануне: дата строки обозначает следующий день поста.
-    const eventDate = !calculated && key === 'suhurEnd' && Number(time.split(':')[0]) >= 12
+    // Позднее начало Фаджра наступает накануне: дата строки обозначает следующий день поста.
+    const eventDate = !calculated && key === 'fajrStart' && Number(time.split(':')[0]) >= 12
       ? addDays(schedule.date, -1) : schedule.date
     const instant = entry?.instant ?? clock.toInstant(eventDate, time).getTime()
     const date = clock.getCivilDate(new Date(instant))

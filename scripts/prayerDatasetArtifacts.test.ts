@@ -38,7 +38,7 @@ const dataset: PrayerDataset = {
   days: [{
     locationId: 'kazan',
     date: '2026-01-01',
-    suhurEnd: '06:19',
+    fajrStart: '06:19',
     fajrJamaat: '07:44',
     sunrise: '08:08',
     zenith: '11:43',

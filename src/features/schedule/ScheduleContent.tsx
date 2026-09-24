@@ -1,17 +1,19 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { DEFAULT_CALENDAR_PREFERENCES, formatCalendarDate, type CalendarPreferences } from '../../domain/calendar'
+import { resolveReligiousBanner, type ReligiousEventId } from '../../domain/religiousEvents'
 import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
 import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
 import { Screen } from '../../ui/Screen'
+import { ReligiousEventBanner } from '../religiousEvents/ReligiousEventBanner'
 import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
 
 const LABELS: Record<SchedulePrayerKey, string> = {
-  suhurEnd: 'Сухур до', fajrJamaat: 'Фаджр в мечети', fajr: 'Фаджр', sunrise: 'Восход',
+  fajrStart: 'Фаджр (конец сухура)', fajrJamaat: 'Фаджр в мечети', fajr: 'Фаджр', sunrise: 'Восход',
   zenith: 'Зенит', dhuhr: 'Зухр', asr: 'Аср', maghrib: 'Магриб', isha: 'Иша',
 }
 const COUNTDOWN: Record<SchedulePrayerKey, string> = {
-  suhurEnd: 'До конца сухура', fajrJamaat: 'До Фаджра в мечети', fajr: 'До Фаджра', sunrise: 'До восхода',
+  fajrStart: 'До Фаджра', fajrJamaat: 'До Фаджра в мечети', fajr: 'До Фаджра', sunrise: 'До восхода',
   zenith: 'До зенита', dhuhr: 'До Зухра', asr: 'До Асра', maghrib: 'До Магриба', isha: 'До Иши',
 }
 
@@ -48,6 +50,8 @@ interface ScheduleContentProps {
   currentTime: Date
   now: () => Date
   officialMode: boolean
+  hijriSupported?: boolean
+  onOpenReligiousEvent?: (eventId: ReligiousEventId) => void
   onChangeDate: (date: string) => void
   onRetrySchedule: () => void
   top?: ReactNode
@@ -56,7 +60,8 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
-  currentTime, now, officialMode, onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
+  currentTime, now, officialMode, hijriSupported = false, onOpenReligiousEvent = () => {},
+  onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
 }: ScheduleContentProps) {
   const [boundary, setBoundary] = useState<{ time: Date; parentTime: number; schedules: DisplaySchedule[] } | null>(null)
   // Граница относится к загруженному набору, а не к предыдущему расписанию.
@@ -66,6 +71,15 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   const ready = !scheduleLoading && !scheduleError && schedule !== null
   const live = selectedDate === today && ready
   const { current, next } = live ? selectEventPair(effectiveNow, events) : { current: null, next: null }
+  const religiousBanner = resolveReligiousBanner({
+    now: effectiveNow,
+    today,
+    selectedDate,
+    correction: calendarPreferences.correction,
+    hijriSupported,
+    scheduleReady: ready,
+    schedules,
+  })
   const countdown = next ? <ScheduleCountdown key={`${next.scheduleDate}:${next.key}:${next.instant}`} countdownLabel={COUNTDOWN[next.key]}
     targetInstant={next.instant} now={now} onElapsed={onElapsed} /> : null
   const footer = <>
@@ -77,6 +91,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
       : scheduleLoading ? <p className="note" role="status">Загружаем расписание…</p>
         : !schedule ? <p className="screen-copy">Нет расписания на эту дату</p>
           : <>
+            {religiousBanner ? <ReligiousEventBanner state={religiousBanner} onOpen={onOpenReligiousEvent} /> : null}
             <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} calendarPreferences={calendarPreferences} />
             {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">≈ По северному правилу</p> : null}
             {live && !next ? <p className="note screen-space">{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующее событие не найдено'}</p> : null}

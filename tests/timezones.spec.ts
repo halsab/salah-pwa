@@ -198,7 +198,7 @@ test('около полуночи показывает календарную д
   await expect(page.getByText('23:54', { exact: true })).toHaveAttribute('datetime', '2026-05-04T20:54:00.000Z')
   await openSource(page)
   await page.getByRole('button', { name: 'О расписании' }).click()
-  await expect(page.getByText('Сухур до 23:54 — понедельник, 4 мая, накануне дня поста.')).toBeVisible()
+  await expect(page.getByText('Фаджр (конец сухура) 23:54 — понедельник, 4 мая, накануне дня поста.')).toBeVisible()
   await back(page)
   await back(page)
   await back(page)

@@ -22,7 +22,7 @@ import type { PrayerDay } from './domain/types'
 const kazanToday: PrayerDay = {
   locationId: 'kazan',
   date: '2026-09-01',
-  suhurEnd: '02:21',
+  fajrStart: '02:21',
   fajrJamaat: '03:17',
   sunrise: '04:48',
   zenith: '11:44',
@@ -517,10 +517,10 @@ describe('Salah', () => {
     await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     await chooseCity('Апастово', /Апастово.*ДУМ РТ/, /Набережные Челны/)
-    await act(async () => { chelny.resolve(success([undefined, chelnyToday, undefined])); await chelny.promise })
+    await act(async () => { chelny.resolve(success(Array.from({ length: 9 }, (_, index) => index === 4 ? chelnyToday : undefined))); await chelny.promise })
     expect(screen.getByText('Загружаем расписание…')).toBeVisible()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    await act(async () => { apastovo.resolve(success([undefined, { ...kazanToday, locationId: 'apastovo', asr: '16:45' }, undefined])); await apastovo.promise })
+    await act(async () => { apastovo.resolve(success(Array.from({ length: 9 }, (_, index) => index === 4 ? { ...kazanToday, locationId: 'apastovo', asr: '16:45' } : undefined))); await apastovo.promise })
     expect(await screen.findByText('16:45')).toBeVisible()
     await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('16:45')).toBeVisible()

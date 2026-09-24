@@ -5,6 +5,7 @@ import { migratePlaceChoice } from '../domain/placeMigration'
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 import { getDatasetRevision } from '../domain/scheduleContext'
+import { normalizeStoredPrayerDataset, normalizeStoredPrayerDay } from '../domain/prayerDatasetValidation'
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import type { LocationSelectionSource } from '../domain/locationSelection'
 import type { CalculationSettings } from '../domain/prayerCalculation'
@@ -320,16 +321,24 @@ export function replaceDataset(
 export function getPrayerDay(
   locationId: string,
   date: string,
-): Promise<Result<PrayerDay | undefined, StorageFailure>> {
+): Promise<Result<PrayerDay | undefined, StorageFailure | DataFailure>> {
   return storageResult(async () => {
-    const record = await (await getDatabase()).get(
-      'days',
-      dayKey(locationId, date),
-    )
-    if (!record) return undefined
-
+    const database = await getDatabase()
+    const transaction = database.transaction(['days', 'meta'], 'readonly')
+    const [meta, record] = await Promise.all([
+      transaction.objectStore('meta').get('current'),
+      transaction.objectStore('days').get(dayKey(locationId, date)),
+    ])
+    await transaction.done
+    return { meta, record }
+  }).then(result => {
+    if (!result.ok) return result
+    const { meta, record } = result.value
+    if (!record) return success(undefined)
+    if (!meta) return failure({ kind: 'data', reason: 'invalid' })
     const { key: _key, ...day } = record
-    return day
+    const normalized = normalizeStoredPrayerDay(day, meta.schemaVersion)
+    return normalized ? success(normalized) : failure({ kind: 'data', reason: 'invalid' })
   })
 }
 
@@ -354,11 +363,18 @@ export async function getPrayerDays(
   if (!meta || getDatasetRevision(meta) !== expectedRevision) {
     return failure({ kind: 'data', reason: 'invalid' })
   }
-  return success(records.map((record) => {
-    if (!record) return undefined
+  const days: (PrayerDay | undefined)[] = []
+  for (const record of records) {
+    if (!record) {
+      days.push(undefined)
+      continue
+    }
     const { key: _key, ...day } = record
-    return day
-  }))
+    const normalized = normalizeStoredPrayerDay(day, meta.schemaVersion)
+    if (!normalized) return failure({ kind: 'data', reason: 'invalid' })
+    days.push(normalized)
+  }
+  return success(days)
 }
 
 export function getDatasetMeta(): Promise<
@@ -442,13 +458,19 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
   })
 }
 
-export function getStoredDataset(): Promise<Result<{ dataset: PrayerDataset; meta: DatasetMeta } | null, StorageFailure>> {
+export function getStoredDataset(): Promise<Result<{ dataset: PrayerDataset; meta: DatasetMeta } | null, StorageFailure | DataFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     const transaction = database.transaction(['days', 'meta'], 'readonly')
     const [meta, records] = await Promise.all([transaction.objectStore('meta').get('current'), transaction.objectStore('days').getAll()])
     await transaction.done
     return meta ? { meta, dataset: { ...meta, days: records.map(({ key: _key, ...day }) => day) } } : null
+  }).then(result => {
+    if (!result.ok || !result.value) return result
+    const normalized = normalizeStoredPrayerDataset(result.value.dataset)
+    return normalized
+      ? success({ meta: result.value.meta, dataset: normalized })
+      : failure({ kind: 'data', reason: 'invalid' })
   })
 }
 

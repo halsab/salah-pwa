@@ -25,6 +25,13 @@ function CalendarNavigationExample() {
         onDateChange={setDate} onPreferencesChange={() => {}} onBack={navigation.back} />
 }
 
+function ReligiousNavigationExample() {
+  const navigation = useAppNavigation()
+  return navigation.screen === 'home'
+    ? <button id="religious-event-banner" onClick={() => navigation.open({ screen: 'religious-event', religiousEventId: 'arafa' })}>День Арафа</button>
+    : <><p>{navigation.religiousEventId}</p><button onClick={navigation.back}>Назад</button></>
+}
+
 function controlFrames() {
   const callbacks = new Map<number, FrameRequestCallback>()
   let id = 0
@@ -38,6 +45,17 @@ function controlFrames() {
 }
 
 describe('навигация экранов', () => {
+  it('сохраняет snapshot статьи при Browser Back/Forward и возвращает фокус баннеру', async () => {
+    const user = userEvent.setup()
+    render(<ReligiousNavigationExample />)
+    await user.click(screen.getByRole('button', { name: 'День Арафа' }))
+    expect(screen.getByText('arafa')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Назад' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'День Арафа' })).toHaveFocus())
+    act(() => { window.history.forward() })
+    await waitFor(() => expect(screen.getByText('arafa')).toBeVisible())
+  })
+
   it.each(['Сегодня', 'Месяц'])('отложенный автофокус не перехватывает фокус после действия «%s»', action => {
     const paint = controlFrames()
     render(<CalendarNavigationExample />)

@@ -60,12 +60,12 @@ export function parseDumRtCsv(csv: string, locationId: string): PrayerDay[] {
         throw new Error(`${context} [date, ${OFFICIAL_TIME_FIELDS.join(', ')}]: Ожидалось 9 или 10 столбцов в строке ${lineNumber}`)
       }
 
-      const [date, suhurEnd, fajrJamaat, sunrise, zenith, dhuhr, asr, maghrib, isha] =
+      const [date, fajrStart, fajrJamaat, sunrise, zenith, dhuhr, asr, maghrib, isha] =
         columns
 
       if (
         date === undefined ||
-        suhurEnd === undefined ||
+        fajrStart === undefined ||
         fajrJamaat === undefined ||
         sunrise === undefined ||
         zenith === undefined ||
@@ -80,7 +80,7 @@ export function parseDumRtCsv(csv: string, locationId: string): PrayerDay[] {
       return {
         locationId,
         date: parseDate(date, context),
-        suhurEnd: parseTime(suhurEnd, context, 'suhurEnd'),
+        fajrStart: parseTime(fajrStart, context, 'fajrStart'),
         fajrJamaat: parseTime(fajrJamaat, context, 'fajrJamaat'),
         sunrise: parseTime(sunrise, context, 'sunrise'),
         zenith: parseTime(zenith, context, 'zenith'),

@@ -87,6 +87,22 @@ test('расписание, шрифт, источник и QR доступны 
   } finally { await context.setOffline(false) }
 })
 
+test('баннер и локальная статья религиозного события доступны офлайн без Markdown fetch', async ({ page, context }) => {
+  await page.clock.setFixedTime(new Date('2026-05-23T09:00:00.000Z'))
+  const markdownRequests: string[] = []
+  page.on('request', request => { if (/religious-events|[.]md(?:[?#]|$)/.test(request.url())) markdownRequests.push(request.url()) })
+  await page.goto('./')
+  await choosePlace(page)
+  await controlServiceWorker(page)
+  await context.setOffline(true)
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.locator('#religious-event-banner').click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Первые 10 дней Зуль-хиджи' })).toBeVisible()
+    expect(markdownRequests).toEqual([])
+  } finally { await context.setOffline(false) }
+})
+
 test('GPS вне Татарстана рассчитывается без справочника городов, включая офлайн', async ({ context, page }) => {
   let cities = 0
   await page.route('**/data/cities/*/*.json', route => { cities += 1; return route.abort() })

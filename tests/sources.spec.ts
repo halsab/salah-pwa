@@ -29,7 +29,7 @@ test('сначала показывает кеш, затем проверенн�
   await context.route('**/data/prayer-times-manifest.json', async route => {
     receivedManifest = true
     await gate
-    await route.fulfill({ json: { schemaVersion: 1, version: `2-${sha256.slice(0, 16)}`, sha256, url: 'prayer-times-current.json', sequence: 2 } })
+    await route.fulfill({ json: { schemaVersion: 1, version: `2-${sha256.slice(0, 16)}`, sha256, url: 'prayer-times-current.json', sequence: 3 } })
   })
   await context.route('**/data/prayer-times-current.json', async route => {
     receivedBytes = true

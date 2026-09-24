@@ -13,7 +13,7 @@ describe('parseDumRtCsv', () => {
     expect(day).toEqual({
       locationId: 'kazan',
       date: '2026-09-01',
-      suhurEnd: '02:21',
+      fajrStart: '02:21',
       fajrJamaat: '03:17',
       sunrise: '04:48',
       zenith: '11:44',
@@ -31,7 +31,7 @@ describe('parseDumRtCsv', () => {
     )
 
     expect(day?.isha).toBe('17:18')
-    expect(day?.suhurEnd).toBe('05:53')
+    expect(day?.fajrStart).toBe('05:53')
   })
 
   it('восстанавливает пропущенный перевод строки между годами в источнике', () => {

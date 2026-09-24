@@ -75,6 +75,28 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .event-countdown .countdown-label { font: var(--font-footnote); color: var(--text-secondary); }
 .event-countdown .countdown-value { font: var(--font-emphasis); color: var(--accent-countdown); font-weight: 400; font-variant-numeric: tabular-nums; }
 .event-list { list-style: none; padding: 12px 0 0; margin: 0; }
+.religious-event-banner {
+  font: var(--font-body);
+  width: 100%;
+  min-height: 58px;
+  margin: 0 0 4px;
+  padding: 10px 16px;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  border: 0;
+  border-radius: var(--button-radius);
+  background: var(--background-tertiary);
+  color: var(--text-primary);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+button.religious-event-banner { appearance: none; cursor: pointer; }
+button.religious-event-banner:active { background: var(--text-primary); color: var(--background-primary); }
+button.religious-event-banner:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+.religious-event-banner-title { font-size: 16px; line-height: 1.2; }
+.religious-event-banner-secondary { font-size: 13px; line-height: 1.2; color: var(--text-secondary); }
+button.religious-event-banner:active .religious-event-banner-secondary { color: inherit; }
 .event-row { font: var(--font-emphasis); display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 52px; color: var(--text-primary); }
 .event-row time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .event-name { min-width: 0; overflow-wrap: anywhere; }
@@ -109,6 +131,15 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .app-credits { font: var(--font-footnote); color: var(--text-secondary); }
 .app-credits p + p { margin-top: 16px; }
 .app-credits a { color: var(--text-primary); }
+
+.religious-event-article { font: var(--font-body); overflow-wrap: anywhere; }
+.religious-event-article > * + * { margin-top: 16px; }
+.religious-event-article h1 { font: var(--font-title); color: var(--text-primary); }
+.religious-event-article h2 { font: var(--font-emphasis); color: var(--text-primary); }
+.religious-event-article p, .religious-event-article li, .religious-event-article blockquote { font: var(--font-body); }
+.religious-event-article ul, .religious-event-article ol { margin-bottom: 0; padding-left: 1.5em; }
+.religious-event-article li + li { margin-top: 8px; }
+.religious-event-article blockquote { margin-left: 0; margin-right: 0; padding-left: 16px; border-left: 1px solid var(--text-secondary); color: var(--text-secondary); }
 
 .date-field { position: relative; flex-wrap: wrap; }
 .date-field > span:first-child { flex-shrink: 0; max-width: 100%; }

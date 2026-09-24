@@ -18,7 +18,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   const provider = official ? PRAYER_PROVIDERS.find(item => item.id === context.provider) : null
   const calculated = 'entries' in schedule ? schedule : null
   const params = context.source === 'calculated' ? getEffectiveParameters(context.settings, context.date, context.timeZone) : null
-  const lateSuhur = buildScheduleEvents(schedule).find(event => event.key === 'suhurEnd' && event.dayOffset === -1)
+  const lateFajrStart = buildScheduleEvents(schedule).find(event => event.key === 'fajrStart' && event.dayOffset === -1)
   const title = context.source === 'official' ? provider?.label ?? 'Официальная таблица'
     : CALCULATION_PROFILES.find(profile => profile.id === context.settings.profile)?.label ?? 'Расчёт'
   const facts: [string, string][] = [['Часовой пояс', context.timeZone]]
@@ -43,7 +43,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
       {context.mode === 'automatic' ? <p>Автоматически: таблица для места и даты. Вне её покрытия — расчёт по региону.</p> : null}
       {calculated?.estimatedPrayers.length ? <p>≈ По северному правилу: {calculated.estimatedPrayers.map(key => EVENT_LABELS[key]).join(', ')}.</p> : null}
       {calculated?.polarResolutionApplied ? <p>{staticText('source-copy-3')}</p> : null}
-      {lateSuhur ? <p>Сухур до {lateSuhur.time} — {formatDateLabel(lateSuhur.date)}, накануне дня поста.</p> : null}
+      {lateFajrStart ? <p>Фаджр (конец сухура) {lateFajrStart.time} — {formatDateLabel(lateFajrStart.date)}, накануне дня поста.</p> : null}
       <details className="app-details"><summary>Подробности</summary>
         <dl className="readout-facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         {official ? <><p className="screen-space">{staticText('source-copy-1')}</p><a href={meta?.source.url ?? provider?.bundled.source.url} target="_blank" rel="noreferrer">Первичный источник · {provider?.label ?? 'Поставщик'}</a></>
