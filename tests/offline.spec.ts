@@ -99,6 +99,12 @@ test('баннер и локальная статья религиозного �
     await page.reload({ waitUntil: 'domcontentloaded' })
     await page.locator('#religious-event-banner').click()
     await expect(page.getByRole('heading', { level: 1, name: 'Первые 10 дней Зуль-хиджи' })).toBeVisible()
+    await page.getByRole('button', { name: 'Назад' }).click()
+    await page.locator('#home-date').click()
+    await page.getByRole('button', { name: 'Праздники и события' }).click()
+    await expect(page.getByRole('region', { name: 'Праздники и события' })).toBeVisible()
+    await page.getByRole('button', { name: /Начало Рамадана/ }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Рамадан' })).toBeVisible()
     expect(markdownRequests).toEqual([])
   } finally { await context.setOffline(false) }
 })
