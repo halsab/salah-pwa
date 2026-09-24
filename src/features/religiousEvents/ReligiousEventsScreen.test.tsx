@@ -6,8 +6,8 @@ import type { ReligiousEventOccurrence } from '../../domain/religiousEvents'
 import {
   ReligiousEventOccurrenceRow,
   ReligiousEventsScreen,
-  formatReligiousEventOccurrenceDate,
 } from './ReligiousEventsScreen'
+import { formatReligiousEventOccurrenceDate } from './religiousEventDate'
 
 it('показывает хронологический список с display titles и двумя календарями', async () => {
   const onBack = vi.fn()
