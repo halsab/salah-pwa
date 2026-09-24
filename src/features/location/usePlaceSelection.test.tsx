@@ -13,7 +13,9 @@ import type { City } from '../../domain/cities'
 const geometry = parseCoverageGeometry(geometryData)
 const locations = [{ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }]
 const coarseFix = { latitude: 55.79, longitude: 49.12, accuracy: 1200, timestamp: 100 }
+const goodCoarseFix = { ...coarseFix, accuracy: 500 }
 const preciseFix = { ...coarseFix, latitude: 55.8, accuracy: 10, timestamp: 200 }
+const poorPreciseFix = { ...coarseFix, latitude: 55.791, accuracy: 1100, timestamp: 200 }
 const city: City = { id: 1, name: 'Berlin', countryCode: 'DE', admin1Code: '16', admin1Name: 'Berlin', latitude: 52.52, longitude: 13.4, population: 1, timeZone: 'Europe/Berlin' }
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -41,16 +43,52 @@ function setup(overrides: Partial<AppServices & TestSettingsServices> = {}) {
 }
 
 describe('one-shot GPS operations', () => {
-  it('publishes coarse schedule coordinates before precise or local name; refines significantly', async () => {
+  it('publishes a poor coarse point and waits for precise refinement before navigation', async () => {
     const h = setup()
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
     expect(h.result.current.place).toMatchObject({ ...coarseFix, coverage: 'inside', timeZone: 'Europe/Moscow' })
+    expect(h.result.current.gpsState).toEqual({ status: 'refining' })
+    expect(h.chosen).not.toHaveBeenCalled()
     expect(h.services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'automatic', expect.objectContaining(coarseFix), expect.any(Function))
     const id = h.result.current.place?.id
     await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
     expect(h.result.current.place).toMatchObject({ ...preciseFix, id })
+    expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
+    expect(h.chosen).toHaveBeenCalledOnce()
+  })
+  it('finishes once after a sufficiently accurate coarse point while precise continues', async () => {
+    const h = setup()
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
+    expect(h.chosen).toHaveBeenCalledOnce()
+    await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
+    expect(h.chosen).toHaveBeenCalledOnce()
+  })
+  it('keeps a final low-accuracy point available for explicit acceptance', async () => {
+    const h = setup()
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); h.precise.resolve(success(poorPreciseFix)); await pending })
+    expect(h.result.current.place).toMatchObject(coarseFix)
+    expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: true })
+    expect(h.chosen).not.toHaveBeenCalled()
+    act(() => h.result.current.acceptGps())
+    expect(h.chosen).toHaveBeenCalledOnce()
+  })
+  it('accepts provisional coarse once and still applies a late useful precise point', async () => {
+    const h = setup()
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    act(() => h.result.current.acceptGps())
+    expect(h.chosen).toHaveBeenCalledOnce()
+    await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
+    expect(h.result.current.place).toMatchObject(preciseFix)
+    expect(h.chosen).toHaveBeenCalledOnce()
   })
   it('ignores late coarse after precise and never replaces GPS coordinates with city coordinates', async () => {
     const h = setup()
@@ -68,6 +106,32 @@ describe('one-shot GPS operations', () => {
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(coarseFix)); h.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await pending })
     expect(h.result.current.place).toMatchObject(coarseFix)
+    expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: true })
+    expect(h.chosen).not.toHaveBeenCalled()
+  })
+  it('uses deterministic failure priority when both requests fail', async () => {
+    const h = setup()
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => {
+      h.coarse.resolve(failure({ kind: 'geolocation', reason: 'timeout' }))
+      h.precise.resolve(failure({ kind: 'geolocation', reason: 'denied' }))
+      await pending
+    })
+    expect(h.result.current.gpsState).toEqual({ status: 'error', reason: 'denied' })
+    expect(h.result.current.place).toBeNull()
+  })
+  it('treats one valid fix and one error as a successful operation', async () => {
+    const h = setup()
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => {
+      h.coarse.resolve(success(goodCoarseFix))
+      h.precise.resolve(failure({ kind: 'geolocation', reason: 'denied' }))
+      await pending
+    })
+    expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
+    expect(h.chosen).toHaveBeenCalledOnce()
   })
   it('ignores both GPS responses after a manual city and resets override', async () => {
     const h = setup()
@@ -89,6 +153,46 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place?.name).toContain('Berlin')
     h.unmount()
     expect(h.services.saveCalculatedLocation).toHaveBeenCalledTimes(1)
+  })
+  it('allows package loading for interactive lookup and keeps background lookup local-only', async () => {
+    const interactive = setup()
+    let interactivePending!: Promise<void>
+    act(() => { interactivePending = interactive.result.current.locate() })
+    await act(async () => { interactive.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    expect(interactive.services.cities.findNearest).toHaveBeenCalledWith(goodCoarseFix.latitude, goodCoarseFix.longitude, 25, false)
+    await act(async () => { interactive.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await interactivePending })
+
+    const background = setup()
+    let backgroundPending!: Promise<void>
+    act(() => { backgroundPending = background.result.current.locate(false) })
+    await act(async () => { background.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    expect(background.services.cities.findNearest).toHaveBeenCalledWith(goodCoarseFix.latitude, goodCoarseFix.longitude, 25, true)
+    await act(async () => { background.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await backgroundPending })
+  })
+  it.each([
+    [success(null), 'not-found'],
+    [failure({ kind: 'data' as const, reason: 'offline' as const }), 'offline'],
+    [failure({ kind: 'data' as const, reason: 'unavailable' as const }), 'failed'],
+  ] as const)('keeps coordinates when name lookup finishes as %s', async (lookupResult, expectedState) => {
+    const h = setup()
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    expect(h.result.current.nameLookupState).toBe('loading')
+    await act(async () => { h.lookup.resolve(lookupResult); await Promise.resolve() })
+    expect(h.result.current.nameLookupState).toBe(expectedState)
+    expect(h.result.current.place).toMatchObject(goodCoarseFix)
+    await act(async () => { h.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await pending })
+  })
+  it('maps a rejected name lookup to failed without rolling back coordinates', async () => {
+    const h = setup()
+    h.services.cities.findNearest = vi.fn().mockRejectedValue(new Error('network'))
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    await waitFor(() => expect(h.result.current.nameLookupState).toBe('failed'))
+    expect(h.result.current.place).toMatchObject(goodCoarseFix)
+    await act(async () => { h.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await pending })
   })
   it('ignores responses after unmount without saving', async () => {
     const h = setup()
