@@ -20,6 +20,7 @@ import { automaticPreferences, type SourcePreferences } from './domain/sourcePre
 import { effectiveCalculationSettings } from './domain/calculationSettings'
 import { useSettingsPersistence } from './features/settings/useSettingsPersistence'
 import { usePlaceSelection } from './features/location/usePlaceSelection'
+import { nameLookupMessage } from './features/location/locationState'
 import type { GeolocationFailure } from './domain/errors'
 import {
   DEFAULT_CALCULATION_SETTINGS,
@@ -143,7 +144,7 @@ export function App({
   }, [backScreen])
   const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
-  const { place, notice: locationNotice, restore, locate: locateAutomatically,
+  const { place, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
     selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(services, locations, onPlaceChosen, persistPlace)
   const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
@@ -281,6 +282,7 @@ export function App({
           <button type="button" className="pill" onClick={persistence.retry}>Повторить</button>
         </div>
       ) : null
+  const nearbyCityNotice = place?.selection === 'gps' ? nameLookupMessage(nameLookupState) : null
 
   return (
     <AppShell>
@@ -289,6 +291,7 @@ export function App({
       >
           {!place ? <LocationScreen initial place={null} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
             onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+            gpsState={gpsState} nameLookupState={nameLookupState} onAcceptGps={acceptGps}
             notice={persistenceNotice} bottom={<button id="home-settings" className="pill screen-end" type="button" onClick={openSettingsDialog}>Настройки</button>} /> : <ScheduleContent
             schedule={schedule}
             schedules={schedules}
@@ -312,7 +315,8 @@ export function App({
                 <circle cx="12" cy="12" r="1.6" fill="currentColor" />
               </svg>
             </button>}
-            notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}{persistenceNotice}</>}
+            notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}
+              {!locationNotice && nearbyCityNotice ? <p className="note" role="status">{nearbyCityNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
           />}
@@ -327,7 +331,8 @@ export function App({
         hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} /> : null}
 
       {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
-        onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically} notice={persistenceNotice} /> : null}
+        onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+        onAcceptGps={acceptGps} gpsState={gpsState} nameLookupState={nameLookupState} notice={persistenceNotice} /> : null}
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
         onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
       {navigation.screen === 'source-info' ? schedule && context

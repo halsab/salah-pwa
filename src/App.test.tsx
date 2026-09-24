@@ -276,7 +276,7 @@ describe('Salah', () => {
     )
     expect(services.cities.load).not.toHaveBeenCalled()
     expect(services.cities.search).not.toHaveBeenCalled()
-    expect(services.cities.findNearest).toHaveBeenCalled()
+    expect(services.cities.findNearest).toHaveBeenCalledWith(55.742, 52.3992, 25, true)
   })
 
   it('показывает весь день и выделяет текущее событие сразу на главной', async () => {
@@ -358,6 +358,9 @@ describe('Salah', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
     await userEvent.click(screen.getByRole('button', { name: 'Отмена' }))
     expect(screen.getByRole('heading', { name: 'Выберите место' })).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+    expect(await screen.findByRole('region', { name: 'Главная' })).toBeVisible()
+    expect(services.getPosition).toHaveBeenCalledTimes(2)
   })
 
   it('возвращает фокус между отдельными экранами с клавиатуры', async () => {
@@ -438,18 +441,22 @@ describe('Salah', () => {
     await expectSchedule()
     expect(within(await screen.findByRole('list')).getByText('16:37')).toBeVisible()
     expect(services.getPosition).toHaveBeenCalledTimes(2)
+    expect(services.cities.findNearest).toHaveBeenCalledWith(55.742, 52.3992, 25, false)
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'automatic', expect.objectContaining({ selection: 'gps' }), expect.any(Function))
   })
 
   it('вне Татарстана сохраняет грубые GPS-координаты при отказе точного запроса и каталога', async () => {
     const position = { latitude: 41.01, longitude: 28.95, accuracy: 200, timestamp: 1_788_265_600_000 }
-    const services = createServices({ getPosition: vi.fn().mockResolvedValueOnce(success(position)).mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'unavailable' })) })
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
+      getPosition: vi.fn().mockResolvedValueOnce(success(position)).mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'unavailable' })),
+    })
     services.cities.findNearest = vi.fn().mockRejectedValue(new Error('offline'))
     render(<App services={services} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
-    await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
     await screen.findByRole('button', { name: 'Моё местоположение' })
     await expectSchedule()
+    expect(await screen.findByText('Название места определить не удалось. Используем координаты.')).toBeVisible()
     expect(within(await screen.findByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining(position), 'automatic', expect.any(Function))
   })

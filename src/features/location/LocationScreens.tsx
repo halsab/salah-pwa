@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CityCatalogService, CitySearchResult } from '../../data/cityCatalog'
 import { formatCityLabel, formatCityRegion, type City } from '../../domain/cities'
 import { compactPlaceLabel, getCountryLabel } from '../../domain/countryLabels'
@@ -6,28 +6,42 @@ import type { Place } from '../../domain/place'
 import type { PrayerLocation } from '../../domain/types'
 import { BackButton, Screen } from '../../ui/Screen'
 import type { CityCatalogStatus } from './useCityCatalog'
+import { formatAccuracy, formatCoordinates, geolocationFailureMessage, nameLookupMessage, type GpsUiState, type NameLookupState } from './locationState'
 
-export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, notice, initial = false, bottom }: {
+const idleGpsState: GpsUiState = { status: 'idle' }
+
+function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, gpsPlace: boolean): string | null {
+  if (gpsState.status === 'locating') return 'Определяем местоположение…'
+  if (gpsState.status === 'refining') return 'Местоположение найдено. Уточняем…'
+  if (gpsState.status === 'ready' && gpsState.lowAccuracy) return 'Местоположение определено с низкой точностью'
+  if (!gpsPlace || gpsState.status === 'error') return null
+  return nameLookupMessage(nameLookupState)
+}
+
+export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
+  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom }: {
   place: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
-  onSelectRecent: (place: Place) => void; onLocate: () => Promise<void>; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
+  onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
+  gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
 }) {
-  const [locating, setLocating] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const active = useRef(true)
-  useEffect(() => { active.current = true; return () => { active.current = false } }, [])
-  const locate = async () => {
-    setLocating(true); setError(null)
-    try { await onLocate() }
-    catch (failure) { if (active.current) setError(failure instanceof Error ? failure.message : 'Не удалось определить место') }
-    finally { if (active.current) setLocating(false) }
-  }
   const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
+  const gpsPlace = place?.selection === 'gps'
+  const busy = gpsState.status === 'locating' || gpsState.status === 'refining'
+  const lowAccuracy = gpsState.status === 'ready' && gpsState.lowAccuracy
+  const status = locationStatus(gpsState, nameLookupState, gpsPlace)
+  const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason) : null
   return <Screen label={initial ? 'Выбор места' : 'Локация'} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
     {initial ? <h1 className="screen-title">Выберите место</h1> : null}
-    {place ? <div className="location-current"><p className="screen-title">{compactPlaceLabel(place.name)}</p>{place.region ? <p className="note">{place.region.name}</p> : null}</div> : null}
+    {place ? <div className="location-current"><p className="screen-title">{compactPlaceLabel(place.name)}</p>
+      {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy)}</p></>
+        : place.region ? <p className="note">{place.region.name}</p> : null}
+    </div> : null}
     <div className="screen-stack">
       <button id="location-search" className="pill pill-wide search-open" type="button" onClick={onSearch}>Найти город</button>
-      <button className="pill pill-wide" type="button" onClick={() => void locate()} disabled={locating}>{locating ? 'Определяем место…' : 'По геопозиции'}</button>
+      <button className="pill pill-wide" type="button" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? 'Повторить' : 'По геопозиции'}</button>
+      {initial ? <p className="note">Браузер запросит доступ к геопозиции. При необходимости город можно выбрать вручную.</p> : null}
+      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <button className="pill pill-wide" type="button" onClick={onAcceptGps}>Использовать эту точку</button> : null}
+      {status ? <p className="note" role="status" aria-live="polite">{status}</p> : null}
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
     {recent.length ? <section className="screen-space" aria-label="Недавние города"><p className="screen-heading">Недавние</p><div className="screen-stack screen-space">
