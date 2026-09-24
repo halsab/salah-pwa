@@ -140,6 +140,14 @@ function createServices(
 }
 
 describe('Salah', () => {
+  it('показывает icon-only кнопку настроек с доступным именем', async () => {
+    render(<App services={createServices()} />)
+    const settings = await screen.findByRole('button', { name: 'Настройки' })
+    expect(settings).toHaveTextContent('')
+    expect(settings.querySelector('svg[aria-hidden="true"] path')).toBeInTheDocument()
+    expect(settings.querySelector('svg[aria-hidden="true"] circle')).toBeInTheDocument()
+  })
+
   it('автоматически сохраняет параметры, повторяет неудачную запись и сохраняет старые поправки', async () => {
     const initial = manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19 } })
     const saveSettings = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(success(undefined))

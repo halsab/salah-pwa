@@ -15,9 +15,11 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   background: var(--background-primary);
 }
 .app-screen {
+  --screen-inset-left: max(var(--content-inset), env(safe-area-inset-left));
+  --screen-inset-right: max(var(--content-inset), env(safe-area-inset-right));
   width: 100%;
   min-height: 0;
-  padding: var(--content-inset) max(var(--content-inset), env(safe-area-inset-right)) var(--content-inset) max(var(--content-inset), env(safe-area-inset-left));
+  padding: var(--content-inset) var(--screen-inset-right) var(--content-inset) var(--screen-inset-left);
   border-radius: var(--container-radius);
   background: var(--background-secondary);
   display: flex;
@@ -27,6 +29,12 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 }
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
 .screen-content { flex: 1; min-height: 0; overflow: auto; scrollbar-width: none; }
+.screen-content.home-content {
+  margin-left: calc(0px - var(--screen-inset-left));
+  margin-right: calc(0px - var(--screen-inset-right));
+  padding-left: var(--screen-inset-left);
+  padding-right: var(--screen-inset-right);
+}
 .screen-content::-webkit-scrollbar { display: none; }
 .app-screen p, .app-screen h1, .app-screen h2, .app-screen dl, .app-screen dd { margin: 0; font-weight: 400; }
 .pill, .text-field, .select-field {
@@ -71,9 +79,14 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 
 .app-layout { container-type: inline-size; }
 .home-location { min-width: 44px; flex: 0 1 auto; display: block; overflow: hidden; text-overflow: ellipsis; }
-.event-countdown { display: flex; flex-direction: column; min-width: 0; color: var(--text-primary); }
-.event-countdown .countdown-label { font: var(--font-footnote); color: var(--text-secondary); }
-.event-countdown .countdown-value { font: var(--font-emphasis); color: var(--accent-countdown); font-weight: 400; font-variant-numeric: tabular-nums; }
+#home-location, #home-date { height: var(--home-control-height); }
+.screen-bottom:has(#home-settings) { height: var(--home-control-height); min-height: var(--home-control-height); flex-wrap: nowrap; }
+.event-countdown { height: var(--home-control-height); display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; color: var(--text-primary); }
+.event-countdown .countdown-label, .event-countdown .countdown-value { line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-countdown .countdown-label { font: var(--font-emphasis); line-height: 1.05; color: var(--text-secondary); }
+.event-countdown .countdown-value { font: var(--font-title); line-height: 1.05; color: var(--accent-countdown); font-weight: 400; font-variant-numeric: tabular-nums; }
+.home-settings-button { width: var(--home-control-height); min-width: var(--home-control-height); height: var(--home-control-height); min-height: var(--home-control-height); padding: 0; flex: 0 0 var(--home-control-height); }
+.home-settings-button svg { width: 24px; height: 24px; display: block; }
 .event-list { list-style: none; padding: 12px 0 0; margin: 0; }
 .religious-event-banner {
   font: var(--font-body);
@@ -118,11 +131,19 @@ button.religious-event-list-row { appearance: none; cursor: pointer; }
 button.religious-event-list-row:active { background: var(--text-primary); color: var(--background-primary); }
 button.religious-event-list-row:active .religious-event-banner-secondary { color: inherit; }
 button.religious-event-list-row:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
-.event-row { font: var(--font-emphasis); display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 52px; color: var(--text-primary); }
+.event-row { font: var(--font-emphasis); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; padding-inline: 4px; color: var(--text-primary); }
 .event-row time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .event-name { min-width: 0; overflow-wrap: anywhere; }
 .event-past { color: var(--text-secondary); }
-.event-current-label, .event-day { font: var(--font-footnote); display: block; color: var(--text-secondary); }
+.event-current {
+  margin-left: calc(0px - var(--screen-inset-left));
+  margin-right: calc(0px - var(--screen-inset-right));
+  padding-left: calc(var(--screen-inset-left) + 4px);
+  padding-right: calc(var(--screen-inset-right) + 4px);
+  border-radius: 0;
+  background: var(--background-tertiary);
+}
+.event-day { font: var(--font-footnote); display: block; color: var(--text-secondary); }
 .home-content > .screen-status, .home-content > .note { margin-top: 16px; }
 .location-current { margin-bottom: 16px; }
 .search-open { font: var(--font-body); justify-content: flex-start; color: var(--text-secondary); }

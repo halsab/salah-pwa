@@ -29,8 +29,8 @@ function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
     {events.map(event => {
       const active = live && event.key === current?.key && event.scheduleDate === current.scheduleDate
       const past = live && !active && event.instant <= now.getTime()
-      return <li key={event.key} className={`event-row${past ? ' event-past' : ''}`} aria-current={active || undefined}>
-        <div className="event-name"><span>{LABELS[event.key]}</span>{active ? <small className="event-current-label">сейчас</small> : null}
+      return <li key={event.key} className={`event-row${past ? ' event-past' : ''}${active ? ' event-current' : ''}`} aria-current={active || undefined}>
+        <div className="event-name"><span>{LABELS[event.key]}</span>
           {event.dayOffset ? <small className="event-day">{formatCalendarDate(event.date, calendarPreferences)}</small> : null}
         </div>
         <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label="Приблизительное время">≈ </span> : null}{event.time}</time>

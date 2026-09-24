@@ -305,7 +305,13 @@ export function App({
             onOpenReligiousEvent={openReligiousEvent}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
-            actions={<button className="pill screen-end" id="home-settings" ref={settingsButtonRef} type="button" onClick={openSettingsDialog}>Настройки</button>}
+            actions={<button className="pill home-settings-button screen-end" id="home-settings" ref={settingsButtonRef} type="button"
+              aria-label="Настройки" title="Настройки" onClick={openSettingsDialog}>
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 3.75 19.15 7.9v8.2L12 20.25 4.85 16.1V7.9L12 3.75Z" stroke="currentColor" strokeWidth="1.55" strokeLinejoin="round" />
+                <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+              </svg>
+            </button>}
             notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
