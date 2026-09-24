@@ -202,7 +202,15 @@ test('боковая safe area защищает содержимое, не су�
     const rule = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules))
       .find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-screen')
     if (!rule) throw new Error('Нет правила контейнера')
-    rule.style.padding = rule.style.padding.replace('env(safe-area-inset-left)', '47px').replace('env(safe-area-inset-right)', '47px')
+    // Safe area хранится в переменных, чтобы те же inset использовали вложенные edge-to-edge блоки.
+    for (const [property, inset] of [
+      ['--screen-inset-left', 'safe-area-inset-left'],
+      ['--screen-inset-right', 'safe-area-inset-right'],
+    ] as const) {
+      const value = rule.style.getPropertyValue(property)
+      if (!value.includes(`env(${inset})`)) throw new Error(`Нет ${inset} в ${property}`)
+      rule.style.setProperty(property, value.replace(`env(${inset})`, '47px'))
+    }
   })
   const bounds = await page.locator('.app-screen').boundingBox()
   expect(bounds?.x).toBe(0)
