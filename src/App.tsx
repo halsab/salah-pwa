@@ -40,6 +40,7 @@ import { useCityCatalog } from './features/location/useCityCatalog'
 import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
 import { ReligiousEventScreen } from './features/religiousEvents/ReligiousEventScreen'
+import { ReligiousEventsScreen } from './features/religiousEvents/ReligiousEventsScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
 import { SettingsScreens } from './features/settings/SettingsScreens'
@@ -270,6 +271,7 @@ export function App({
     || methodologyDialogOpen
     || shareDialogOpen
     || navigation.screen === 'source-info'
+    || navigation.screen === 'religious-events'
     || navigation.screen === 'religious-event'
     || navigation.screen === 'date'
 
@@ -312,7 +314,11 @@ export function App({
       </div> : null}
 
       {navigation.screen === 'date' ? <DateScreen selectedDate={selectedDate} today={today} preferences={calendarPreferences} hijriSupported={hijriSupported}
-        onDateChange={changeDate} onPreferencesChange={updateCalendarPreferences} onBack={backScreen} notice={persistenceNotice} /> : null}
+        onDateChange={changeDate} onPreferencesChange={updateCalendarPreferences} onOpenReligiousEvents={() => openScreen('religious-events')}
+        onBack={backScreen} notice={persistenceNotice} /> : null}
+
+      {navigation.screen === 'religious-events' ? <ReligiousEventsScreen today={today} correction={calendarPreferences.correction}
+        hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} /> : null}
 
       {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
         onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically} notice={persistenceNotice} /> : null}

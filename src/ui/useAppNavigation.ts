@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isReligiousEventId, type ReligiousEventId } from '../domain/religiousEvents'
 
-const SCREENS = ['home', 'date', 'location', 'search', 'settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about', 'share', 'religious-event'] as const
+const SCREENS = ['home', 'date', 'location', 'search', 'settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about', 'share', 'religious-events', 'religious-event'] as const
 export type AppScreen = typeof SCREENS[number]
 interface Entry { screen: AppScreen; returnFocus: string | null; religiousEventId?: ReligiousEventId }
 type NavigationTarget = AppScreen | { screen: 'religious-event'; religiousEventId: ReligiousEventId }

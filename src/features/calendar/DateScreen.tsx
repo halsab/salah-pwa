@@ -24,10 +24,10 @@ function numbers(first: number, last: number): SelectOption[] {
   return Array.from({ length: last - first + 1 }, (_, index) => ({ value: String(first + index), label: String(first + index) }))
 }
 
-export function DateScreen({ selectedDate, today, preferences, hijriSupported, onDateChange, onPreferencesChange, onBack, notice }: {
+export function DateScreen({ selectedDate, today, preferences, hijriSupported, onDateChange, onPreferencesChange, onOpenReligiousEvents, onBack, notice }: {
   selectedDate: string; today: string; preferences: CalendarPreferences; hijriSupported: boolean
   onDateChange: (date: string) => void; onPreferencesChange: (preferences: CalendarPreferences) => void
-  onBack: () => void; notice?: ReactNode
+  onOpenReligiousEvents: () => void; onBack: () => void; notice?: ReactNode
 }) {
   const dayRef = useRef<HTMLSelectElement>(null)
   const { calendar, correction } = preferences
@@ -57,6 +57,9 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
         const correction = Number(value)
         if (correction === -1 || correction === 0 || correction === 1) onPreferencesChange({ ...preferences, correction })
       }} /> : null}
+      <button id="date-religious-events" className="pill pill-wide" type="button" disabled={!hijriSupported} onClick={onOpenReligiousEvents}>
+        Праздники и события
+      </button>
       {!hijriSupported ? <p className="note" role="status">Этот браузер не поддерживает календарь хиджры.</p> : null}
       {notice}
     </div>

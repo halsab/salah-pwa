@@ -97,6 +97,27 @@ button.religious-event-banner:focus-visible { outline: 2px solid var(--text-prim
 .religious-event-banner-title { font-size: 16px; line-height: 1.2; }
 .religious-event-banner-secondary { font-size: 13px; line-height: 1.2; color: var(--text-secondary); }
 button.religious-event-banner:active .religious-event-banner-secondary { color: inherit; }
+.religious-events-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.religious-events-list > li { min-width: 0; }
+.religious-event-list-row {
+  font: var(--font-body);
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 16px;
+  display: grid;
+  place-content: center;
+  gap: 2px;
+  border: 0;
+  border-radius: var(--button-radius);
+  background: var(--background-tertiary);
+  color: var(--text-primary);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+button.religious-event-list-row { appearance: none; cursor: pointer; }
+button.religious-event-list-row:active { background: var(--text-primary); color: var(--background-primary); }
+button.religious-event-list-row:active .religious-event-banner-secondary { color: inherit; }
+button.religious-event-list-row:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .event-row { font: var(--font-emphasis); display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-height: 52px; color: var(--text-primary); }
 .event-row time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .event-name { min-width: 0; overflow-wrap: anywhere; }

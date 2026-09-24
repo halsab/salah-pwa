@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import { DateScreen } from '../features/calendar/DateScreen'
 import { DEFAULT_CALENDAR_PREFERENCES } from '../domain/calendar'
+import { ReligiousEventsScreen } from '../features/religiousEvents/ReligiousEventsScreen'
 import { useAppNavigation } from './useAppNavigation'
 
 function NavigationExample() {
@@ -22,7 +23,7 @@ function CalendarNavigationExample() {
   return navigation.screen === 'home'
     ? <button id="open-date" onClick={() => navigation.open('date')}>Выбрать дату</button>
     : <DateScreen selectedDate={date} today="2026-09-01" preferences={DEFAULT_CALENDAR_PREFERENCES} hijriSupported
-        onDateChange={setDate} onPreferencesChange={() => {}} onBack={navigation.back} />
+        onDateChange={setDate} onPreferencesChange={() => {}} onOpenReligiousEvents={() => navigation.open('religious-events')} onBack={navigation.back} />
 }
 
 function ReligiousNavigationExample() {
@@ -30,6 +31,17 @@ function ReligiousNavigationExample() {
   return navigation.screen === 'home'
     ? <button id="religious-event-banner" onClick={() => navigation.open({ screen: 'religious-event', religiousEventId: 'arafa' })}>День Арафа</button>
     : <><p>{navigation.religiousEventId}</p><button onClick={navigation.back}>Назад</button></>
+}
+
+function NestedReligiousNavigationExample() {
+  const navigation = useAppNavigation()
+  if (navigation.screen === 'home') return <button id="open-date" onClick={() => navigation.open('date')}>Выбрать дату</button>
+  if (navigation.screen === 'date') return <DateScreen selectedDate="2026-01-01" today="2026-01-01"
+    preferences={DEFAULT_CALENDAR_PREFERENCES} hijriSupported onDateChange={() => {}} onPreferencesChange={() => {}}
+    onOpenReligiousEvents={() => navigation.open('religious-events')} onBack={navigation.back} />
+  if (navigation.screen === 'religious-events') return <ReligiousEventsScreen today="2026-01-01" correction={0} hijriSupported
+    onOpenEvent={religiousEventId => navigation.open({ screen: 'religious-event', religiousEventId })} onBack={navigation.back} />
+  return <><p>{navigation.religiousEventId}</p><button onClick={navigation.back}>Назад</button></>
 }
 
 function controlFrames() {
@@ -45,6 +57,27 @@ function controlFrames() {
 }
 
 describe('навигация экранов', () => {
+  it('сохраняет вложенную цепочку DateScreen → список → статья и восстанавливает focus', async () => {
+    const user = userEvent.setup()
+    render(<NestedReligiousNavigationExample />)
+    await user.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    const listButton = screen.getByRole('button', { name: 'Праздники и события' })
+    await user.click(listButton)
+    const occurrence = screen.getByRole('button', { name: /Начало Рамадана/ })
+    await user.click(occurrence)
+    expect(screen.getByText('ramadan')).toBeVisible()
+
+    await user.click(screen.getByRole('button', { name: 'Назад' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: /Начало Рамадана/ })).toHaveFocus())
+    await user.click(screen.getByRole('button', { name: 'Назад' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Праздники и события' })).toHaveFocus())
+
+    act(() => { window.history.forward() })
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Праздники и события' })).toBeVisible())
+    act(() => { window.history.forward() })
+    await waitFor(() => expect(screen.getByText('ramadan')).toBeVisible())
+  })
+
   it('сохраняет snapshot статьи при Browser Back/Forward и возвращает фокус баннеру', async () => {
     const user = userEvent.setup()
     render(<ReligiousNavigationExample />)
