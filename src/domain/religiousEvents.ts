@@ -1,4 +1,4 @@
-import { calendarDateFromCivil, type DateCorrection } from './calendar'
+import { calendarDateFromCivil, type CalendarDate, type DateCorrection } from './calendar'
 import { addDays } from './date'
 import { buildScheduleEvents, type PrayerSchedule } from './scheduleEvents'
 
@@ -29,6 +29,8 @@ type ReligiousEventRule =
 export interface ReligiousEventDefinition {
   readonly id: ReligiousEventId
   readonly title: string
+  readonly listTitle?: string
+  readonly showInEventsList?: boolean
   readonly kind: ReligiousEventKind
   readonly rule: ReligiousEventRule
   readonly contentId?: ReligiousEventId
@@ -45,12 +47,12 @@ export const RELIGIOUS_EVENTS: readonly Readonly<ReligiousEventDefinition>[] = O
   event({ id: 'raghaib', title: 'Ночь Рагаиб', kind: 'night', rule: { type: 'ragaib' }, contentId: 'raghaib' }),
   event({ id: 'isra-miraj', title: 'Исра и Ми‘радж', kind: 'night', rule: { type: 'fixed', month: 7, day: 27 }, contentId: 'isra-miraj' }),
   event({ id: 'baraat', title: 'Ночь Бараат', kind: 'night', rule: { type: 'fixed', month: 8, day: 15 }, contentId: 'baraat' }),
-  event({ id: 'ramadan', title: 'Рамадан', kind: 'period', rule: { type: 'month', month: 9 }, contentId: 'ramadan' }),
+  event({ id: 'ramadan', title: 'Рамадан', listTitle: 'Начало Рамадана', kind: 'period', rule: { type: 'month', month: 9 }, contentId: 'ramadan' }),
   event({ id: 'eid-al-fitr', title: 'Ураза-байрам', kind: 'day', rule: { type: 'fixed', month: 10, day: 1 }, contentId: 'eid-al-fitr' }),
-  event({ id: 'dhul-hijjah-first-ten', title: 'Первые 10 дней Зуль-хиджи', kind: 'period', rule: { type: 'range', month: 12, startDay: 1, endDay: 10 }, contentId: 'dhul-hijjah-first-ten' }),
+  event({ id: 'dhul-hijjah-first-ten', title: 'Первые 10 дней Зуль-хиджи', listTitle: 'Начало Зуль-хиджи', kind: 'period', rule: { type: 'range', month: 12, startDay: 1, endDay: 10 }, contentId: 'dhul-hijjah-first-ten' }),
   event({ id: 'arafa', title: 'День Арафа', kind: 'day', rule: { type: 'fixed', month: 12, day: 9 }, contentId: 'arafa' }),
   event({ id: 'eid-al-adha', title: 'Курбан-байрам', kind: 'day', rule: { type: 'fixed', month: 12, day: 10 }, contentId: 'eid-al-adha' }),
-  event({ id: 'tashriq', title: 'Дни ташрика', kind: 'period', rule: { type: 'range', month: 12, startDay: 11, endDay: 13 }, contentId: 'tashriq' }),
+  event({ id: 'tashriq', title: 'Дни ташрика', showInEventsList: false, kind: 'period', rule: { type: 'range', month: 12, startDay: 11, endDay: 13 }, contentId: 'tashriq' }),
 ])
 
 const RELIGIOUS_EVENT_ID_SET = new Set<string>(RELIGIOUS_EVENT_IDS)
@@ -81,6 +83,22 @@ interface UpcomingEvent {
   offset: number
 }
 
+export interface ReligiousEventOccurrence {
+  eventId: ReligiousEventId
+  kind: ReligiousEventKind
+  title: string
+  civilDate: string
+  hijriDate: CalendarDate
+  contentId: ReligiousEventId | null
+}
+
+export interface ListReligiousEventOccurrencesInput {
+  fromDate: string
+  toDateExclusive: string
+  correction: DateCorrection
+  hijriSupported: boolean
+}
+
 function hijriDate(date: string, correction: DateCorrection) {
   return calendarDateFromCivil(date, 'hijri', correction)
 }
@@ -104,6 +122,29 @@ function isPeriodStart(definition: Readonly<ReligiousEventDefinition>, date: str
 
 function compareDefinitions(left: Readonly<ReligiousEventDefinition>, right: Readonly<ReligiousEventDefinition>): number {
   return left.id.localeCompare(right.id)
+}
+
+export function listReligiousEventOccurrences(input: ListReligiousEventOccurrencesInput): ReligiousEventOccurrence[] {
+  if (!input.hijriSupported || input.fromDate >= input.toDateExclusive) return []
+  const occurrences: ReligiousEventOccurrence[] = []
+  for (let date = input.fromDate; date < input.toDateExclusive; date = addDays(date, 1)) {
+    for (const definition of RELIGIOUS_EVENTS) {
+      if (definition.showInEventsList === false) continue
+      const matches = definition.kind === 'period'
+        ? isPeriodStart(definition, date, input.correction)
+        : matchesRule(definition, date, input.correction)
+      if (!matches) continue
+      occurrences.push({
+        eventId: definition.id,
+        kind: definition.kind,
+        title: definition.listTitle ?? definition.title,
+        civilDate: date,
+        hijriDate: hijriDate(date, input.correction),
+        contentId: definition.contentId ?? null,
+      })
+    }
+  }
+  return occurrences.sort((left, right) => left.civilDate.localeCompare(right.civilDate) || left.eventId.localeCompare(right.eventId))
 }
 
 function countdown(offset: number): string {

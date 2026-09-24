@@ -8,6 +8,7 @@ import {
   RELIGIOUS_EVENT_IDS,
   RELIGIOUS_EVENTS,
   isReligiousEventId,
+  listReligiousEventOccurrences,
   resolveReligiousBanner,
 } from './religiousEvents'
 import type { PrayerSchedule } from './scheduleEvents'
@@ -56,6 +57,67 @@ describe('реестр религиозных событий', () => {
     ])
     expect(isReligiousEventId('arafa')).toBe(true)
     expect(isReligiousEventId('laylat-al-qadr')).toBe(false)
+  })
+
+  it('задаёт отдельные названия списка и скрывает в нём только дни ташрика', () => {
+    expect(RELIGIOUS_EVENTS.find(event => event.id === 'ramadan')).toMatchObject({ listTitle: 'Начало Рамадана' })
+    expect(RELIGIOUS_EVENTS.find(event => event.id === 'dhul-hijjah-first-ten')).toMatchObject({ listTitle: 'Начало Зуль-хиджи' })
+    expect(RELIGIOUS_EVENTS.find(event => event.id === 'tashriq')).toMatchObject({ showInEventsList: false })
+  })
+})
+
+describe('listReligiousEventOccurrences', () => {
+  const list = (fromDate: string, toDateExclusive: string, correction: -1 | 0 | 1 = 0) => listReligiousEventOccurrences({
+    fromDate,
+    toDateExclusive,
+    correction,
+    hijriSupported: true,
+  })
+
+  it('перечисляет reference dates, начала периодов и target dates ночей', () => {
+    const occurrences = list('2025-12-25', '2026-06-17')
+    expect(occurrences.map(({ eventId, civilDate, title }) => ({ eventId, civilDate, title }))).toEqual([
+      { eventId: 'raghaib', civilDate: '2025-12-26', title: 'Ночь Рагаиб' },
+      { eventId: 'isra-miraj', civilDate: '2026-01-16', title: 'Исра и Ми‘радж' },
+      { eventId: 'baraat', civilDate: '2026-02-03', title: 'Ночь Бараат' },
+      { eventId: 'ramadan', civilDate: '2026-02-18', title: 'Начало Рамадана' },
+      { eventId: 'eid-al-fitr', civilDate: '2026-03-20', title: 'Ураза-байрам' },
+      { eventId: 'dhul-hijjah-first-ten', civilDate: '2026-05-18', title: 'Начало Зуль-хиджи' },
+      { eventId: 'arafa', civilDate: '2026-05-26', title: 'День Арафа' },
+      { eventId: 'eid-al-adha', civilDate: '2026-05-27', title: 'Курбан-байрам' },
+      { eventId: 'hijri-new-year', civilDate: '2026-06-16', title: 'Новый год по хиджре' },
+    ])
+    expect(occurrences.find(event => event.eventId === 'baraat')?.hijriDate).toEqual({ year: 1447, month: 8, day: 15 })
+    expect(occurrences.some(event => event.eventId === 'tashriq')).toBe(false)
+  })
+
+  it('добавляет period только в первый день и не подхватывает уже начавшийся период', () => {
+    expect(list('2026-02-18', '2026-03-01').filter(event => event.eventId === 'ramadan')).toHaveLength(1)
+    expect(list('2026-02-19', '2026-03-01').some(event => event.eventId === 'ramadan')).toBe(false)
+    expect(list('2026-05-18', '2026-05-28').filter(event => event.eventId === 'dhul-hijjah-first-ten')).toHaveLength(1)
+  })
+
+  it('применяет correction и соблюдает inclusive/exclusive границы', () => {
+    expect(list('2026-06-15', '2026-06-16', 1).map(event => event.eventId)).toEqual(['hijri-new-year'])
+    expect(list('2026-06-16', '2026-06-17', 0).map(event => event.eventId)).toEqual(['hijri-new-year'])
+    expect(list('2026-06-17', '2026-06-18', -1).map(event => event.eventId)).toEqual(['hijri-new-year'])
+    expect(list('2026-06-15', '2026-06-16', 0)).toEqual([])
+    expect(list('2026-06-15', '2026-06-16', -1)).toEqual([])
+  })
+
+  it('сохраняет обе annual occurrences в длинном Gregorian окне и сортирует результат', () => {
+    const occurrences = list('2025-12-26', '2026-12-27')
+    expect(occurrences.filter(event => event.eventId === 'raghaib').map(event => event.civilDate)).toEqual(['2025-12-26', '2026-12-11'])
+    expect(occurrences).toEqual([...occurrences].sort((left, right) => left.civilDate.localeCompare(right.civilDate) || left.eventId.localeCompare(right.eventId)))
+  })
+
+  it('возвращает пустой список без Umm al-Qura', () => {
+    expect(listReligiousEventOccurrences({
+      fromDate: '2026-01-01',
+      toDateExclusive: '2027-01-01',
+      correction: 0,
+      hijriSupported: false,
+    })).toEqual([])
   })
 })
 
