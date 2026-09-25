@@ -13,6 +13,17 @@ const repo = createPrayerRepository()
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteSalahDatabase() })
 
 describe('local initialization and persistence', () => {
+  it('restores, validates and resets the theme family without using legacy appearance', async () => {
+    await setSetting('appearance', 'light')
+    expect(await initializePrayerRepository()).toMatchObject({ value: { themeFamily: 'classic' } })
+    expect(await repo.saveSettings({ themeFamily: 'seasonal' })).toEqual(success(undefined))
+    expect(await initializePrayerRepository()).toMatchObject({ value: { themeFamily: 'seasonal' } })
+    expect(await repo.saveSettings({ themeFamily: 'invalid' as import('../domain/theme').ThemeFamily })).toMatchObject({ ok: false, error: { kind: 'data' } })
+    await setSetting('themeFamily', 'invalid' as import('../domain/theme').ThemeFamily)
+    expect(await initializePrayerRepository()).toMatchObject({ value: { themeFamily: 'classic' } })
+    await clearAppData()
+    expect(await initializePrayerRepository()).toMatchObject({ value: { themeFamily: 'classic' } })
+  })
   it.each([1, 2])('classifies a stored legacy schema %s dataset as ready after normalization', async (schemaVersion) => {
     const legacy = {
       ...dataset,

@@ -6,11 +6,14 @@ import { HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { StaticContent } from '../../ui/StaticContent'
 import type { AppScreen } from '../../ui/useAppNavigation'
+import type { ThemeFamily } from '../../domain/theme'
 
 interface SettingsScreensProps {
   screen: AppScreen
   preferences: SourcePreferences
   sourceLabel: string
+  themeFamily: ThemeFamily
+  onThemeFamilyChange: (family: ThemeFamily) => void
   onChange: (preferences: SourcePreferences) => void
   onOpen: (screen: AppScreen) => void
   onBack: () => void
@@ -20,7 +23,7 @@ interface SettingsScreensProps {
   version?: string | undefined
 }
 
-export function SettingsScreens({ screen, preferences, sourceLabel, onChange, onOpen, onBack, getCapability, onReset, notice, version }: SettingsScreensProps) {
+export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily, onThemeFamilyChange, onChange, onOpen, onBack, getCapability, onReset, notice, version }: SettingsScreensProps) {
   const calculation = preferences.mode === 'manual' && preferences.source.kind === 'calculated' ? preferences.source.calculation
     : preferences.calculationDraft ?? { profile: 'muslimWorldLeague', overrides: {} }
   const parameters = effectiveCalculationSettings(calculation)
@@ -30,7 +33,13 @@ export function SettingsScreens({ screen, preferences, sourceLabel, onChange, on
   const top = <BackButton onClick={onBack} />
   const row = (id: string, title: string, target: AppScreen, value?: string) => <button className="pill pill-row" id={id} aria-label={value ? `${title} ${value}` : title} type="button" onClick={() => onOpen(target)}><span>{title}</span>{value ? <span className="note">{value}</span> : null}</button>
   if (screen === 'settings') return <Screen label="Настройки" top={top} contentClassName="settings-menu" bottom={<button id="settings-share" className="pill screen-end" type="button" onClick={() => onOpen('share')}>Поделиться</button>}>
-    <div className="screen-stack">{row('settings-source', 'Расписание', 'source', sourceLabel)}{row('settings-privacy', 'Данные и конфиденциальность', 'privacy')}{row('settings-about', 'О приложении', 'about')}{notice}</div>
+    <div className="screen-stack">{row('settings-source', 'Расписание', 'source', sourceLabel)}
+      <label className="pill pill-row theme-field"><span>Тема</span><span className="note">{themeFamily === 'classic' ? 'Классическая' : 'Сезонная'}</span>
+        <select aria-label="Тема" value={themeFamily} onChange={event => onThemeFamilyChange(event.target.value as ThemeFamily)}>
+          <option value="classic">Классическая</option><option value="seasonal">Сезонная</option>
+        </select>
+      </label>
+      {row('settings-privacy', 'Данные и конфиденциальность', 'privacy')}{row('settings-about', 'О приложении', 'about')}{notice}</div>
   </Screen>
   if (screen === 'source') return <Screen label="Источник расписания" top={top} bottom={<button id="source-info" className="pill" type="button" onClick={() => onOpen('source-info')}>О расписании</button>}>
     <p className="screen-heading">Расписание</p><h1 className="screen-title">{mode === 'automatic' ? 'Автоматически' : mode === 'official' ? 'Официальная таблица' : 'Ручной расчёт'}</h1>

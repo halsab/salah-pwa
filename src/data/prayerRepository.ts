@@ -14,6 +14,7 @@ import {
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, dumRtProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
+import { restoreThemeFamily, type ThemeFamily } from '../domain/theme'
 
 const MANIFEST_URL = dumRtProvider.manifestUrl
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -29,6 +30,7 @@ export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   recentPlaces?: Place[]
   locationChoice: LocationChoice | null
   appearance?: Appearance
+  themeFamily: ThemeFamily
   preferences: SourcePreferences
 }
 export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & {
@@ -59,15 +61,16 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
 export async function initializePrayerRepository(): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [snapshot, choice, preferences, legacy, appearance, recentPlaces, calendarPreferences] = await Promise.all([
-    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('recentPlaces'),
-    getSetting('calendarPreferences'),
+  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, calendarPreferences] = await Promise.all([
+    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('themeFamily'),
+    getSetting('recentPlaces'), getSetting('calendarPreferences'),
   ])
   if (!snapshot.ok) return snapshot
   if (!choice.ok) return choice
   if (!preferences.ok) return preferences
   if (!legacy.ok) return legacy
   if (!appearance.ok) return appearance
+  if (!themeFamily.ok) return themeFamily
   if (!recentPlaces.ok) return recentPlaces
   if (!calendarPreferences.ok) return calendarPreferences
   const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta)
@@ -75,6 +78,7 @@ export async function initializePrayerRepository(): Promise<Result<PrayerReposit
     calendarPreferences: restoreCalendarPreferences(calendarPreferences.value),
     recentPlaces: restoreRecentPlaces(recentPlaces.value, locationChoice?.place?.id),
     appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',
+    themeFamily: restoreThemeFamily(themeFamily.value),
     preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
 
@@ -165,6 +169,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.appearance && !['system', 'light', 'dark'].includes(patch.appearance)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      if (patch.themeFamily && restoreThemeFamily(patch.themeFamily) !== patch.themeFamily) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       return saveSettings(patch, isCurrent, generation)
     },

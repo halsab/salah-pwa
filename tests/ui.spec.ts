@@ -1,7 +1,8 @@
 import type { Locator, Page } from '@playwright/test'
-import { back, chooseDate, choosePlace, expectSchedule, openSource, setSource, expect, test } from './fixtures'
+import { back, chooseDate, choosePlace, expectSchedule, openSource, readSavedSetting, setSource, expect, test } from './fixtures'
 
 async function geometry(page: Page) {
+  await expect(page.locator('html')).toHaveAttribute('data-theme-tone', 'light')
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
   const panel = page.locator('.app-screen')
   const textSizes = await panel.evaluate(node => [...node.querySelectorAll<HTMLElement>('*')]
@@ -10,7 +11,7 @@ async function geometry(page: Page) {
   expect([...new Set(textSizes)].every(size => ['14px', '16px', '18px', '20px'].includes(size))).toBe(true)
   await expect(panel).toHaveCSS('padding', '16px')
   await expect(panel).toHaveCSS('border-radius', '38px')
-  await expect(panel).toHaveCSS('background-color', 'rgb(40, 40, 40)')
+  await expect(panel).toHaveCSS('background-color', 'rgb(242, 242, 238)')
   const bounds = await panel.boundingBox()
   const viewport = page.viewportSize()
   if (!bounds || !viewport) throw new Error('Нет размеров экрана')
@@ -72,7 +73,7 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
     await expect(footer).toHaveCSS('height', '48px')
     await expect(current).toContainText('Зухр')
     await expect(current).not.toContainText('сейчас')
-    await expect(current).toHaveCSS('background-color', 'rgb(56, 56, 56)')
+    await expect(current).toHaveCSS('background-color', 'rgb(227, 227, 222)')
     await expect(current).toHaveCSS('border-radius', '0px')
     const listBounds = await page.locator('.event-list').boundingBox()
     const panelBounds = await page.locator('.app-screen').boundingBox()
@@ -257,7 +258,7 @@ test('поделиться копирует каноническую ссылк�
   await expect(page.getByRole('status')).toContainText('Скопируйте')
 })
 
-test('тема остаётся монохромной; недавних не больше трёх, текущий город исключён', async ({ page }) => {
+test('системная цветовая схема не меняет солнечный tone; недавних не больше трёх, текущий город исключён', async ({ page }) => {
   await page.goto('./')
   await choosePlace(page)
   for (const name of ['Набережные Челны', 'Апастово', 'Арск', 'Балтаси']) await choosePlace(page, name, new RegExp(`${name}.*ДУМ РТ`))
@@ -271,7 +272,52 @@ test('тема остаётся монохромной; недавних не б
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme, reducedMotion: 'reduce' })
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
-    await expect(page.locator('.app-screen')).toHaveCSS('background-color', 'rgb(40, 40, 40)')
+    await expect(page.locator('.app-screen')).toHaveCSS('background-color', 'rgb(242, 242, 238)')
+    await expect(page.locator('html')).toHaveAttribute('data-theme-tone', 'light')
+  }
+})
+
+test('classic и все сезонные палитры меняют ровно шесть цветов по текущему дню', async ({ page }) => {
+  const expected = {
+    'classic-light': ['#000000', '#F2F2EE', '#E3E3DE', '#181818', '#5F5F5A', '#B34900'],
+    'classic-dark': ['#000000', '#282828', '#383838', '#FFFFFF', '#A8A8A8', '#FF8A3D'],
+    'winter-light': ['#8FD0FF', '#F3F9FD', '#9FC7DF', '#0D2638', '#334C5E', '#0A5C9C'],
+    'winter-dark': ['#176FC2', '#071B2D', '#244F70', '#F5FAFF', '#C8DCEB', '#7DD3FC'],
+    'spring-light': ['#9EE06F', '#F5FAF1', '#ADD29B', '#15301D', '#3A5541', '#267A38'],
+    'spring-dark': ['#0E7A4D', '#082018', '#285943', '#F3FAF4', '#CDE5D4', '#8FE388'],
+    'summer-light': ['#59C1E8', '#FFF4CF', '#B0C27C', '#243016', '#40502E', '#946000'],
+    'summer-dark': ['#007FA8', '#17210F', '#4A5F31', '#FFF8E8', '#DFE3C9', '#FFD24A'],
+    'autumn-light': ['#FFB26B', '#FFF4EA', '#E8B28F', '#32170D', '#624334', '#A84600'],
+    'autumn-dark': ['#A54212', '#24100A', '#63301B', '#FFF8F1', '#E8C9B7', '#FFC857'],
+  } as const
+  const variables = ['--background-primary', '--background-secondary', '--background-tertiary', '--text-primary', '--text-secondary', '--accent-countdown']
+  const expectPalette = async (name: keyof typeof expected) => {
+    await expect(page.locator('html')).toHaveAttribute('data-theme-tone', name.endsWith('light') ? 'light' : 'dark')
+    expect(await page.locator('html').evaluate((root, properties) => properties.map(property => getComputedStyle(root).getPropertyValue(property).trim()), variables)).toEqual(expected[name])
+  }
+
+  await page.goto('./')
+  await choosePlace(page)
+  await expectPalette('classic-light')
+  await page.clock.setFixedTime(new Date('2026-09-04T21:00:00.000Z'))
+  await page.reload()
+  await expectPalette('classic-dark')
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  const theme = page.getByRole('combobox', { name: 'Тема' })
+  await expect(theme).toHaveValue('classic')
+  await expect(theme.getByRole('option')).toHaveCount(2)
+  await theme.selectOption('seasonal')
+  await expect.poll(() => readSavedSetting(page, 'themeFamily')).toBe('seasonal')
+
+  for (const [season, month] of [['winter', '01'], ['spring', '04'], ['summer', '07'], ['autumn', '10']] as const) {
+    for (const [tone, hour] of [['light', '09'], ['dark', '21']] as const) {
+      await page.clock.setFixedTime(new Date(`2026-${month}-15T${hour}:00:00.000Z`))
+      await page.reload()
+      await expect(page.locator('html')).toHaveAttribute('data-season', season)
+      await expectPalette(`${season}-${tone}`)
+      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', expected[`${season}-${tone}`][0])
+      expect(await page.evaluate(() => document.documentElement.style.length)).toBe(7)
+    }
   }
 })
 

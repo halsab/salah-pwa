@@ -5,9 +5,20 @@ import { describe, expect, it, vi } from 'vitest'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
 import { SettingsScreens } from './SettingsScreens'
 import type { AppScreen } from '../../ui/useAppNavigation'
-const defaults = { onBack: vi.fn(), onOpen: vi.fn(), sourceLabel: 'ДУМ РТ', getCapability: () => ({ supported: true as const }), onReset: vi.fn(), version: 'v26.4' }
+const defaults = { onBack: vi.fn(), onOpen: vi.fn(), sourceLabel: 'ДУМ РТ', themeFamily: 'classic' as const, onThemeFamilyChange: vi.fn(), getCapability: () => ({ supported: true as const }), onReset: vi.fn(), version: 'v26.4' }
 
 describe('новые настройки', () => {
+  it('выбирает одно из двух семейств темы прямо в корневом экране', async () => {
+    const onThemeFamilyChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="settings" preferences={automaticPreferences()} onChange={vi.fn()} onThemeFamilyChange={onThemeFamilyChange} />)
+    const theme = screen.getByRole('combobox', { name: 'Тема' })
+    expect(theme).toHaveValue('classic')
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Классическая', 'Сезонная'])
+    expect(theme.closest('.pill-row')).toHaveTextContent('Классическая')
+    await userEvent.selectOptions(theme, 'seasonal')
+    expect(onThemeFamilyChange).toHaveBeenCalledWith('seasonal')
+    expect(screen.queryByRole('region', { name: /тема/i })).not.toBeInTheDocument()
+  })
   it('блокирует повторное удаление во время операции и даёт повторить при ошибке', async () => {
     let resolve!: (value: boolean) => void
     const onReset = vi.fn().mockImplementationOnce(() => new Promise(r => { resolve = r })).mockResolvedValue(true)

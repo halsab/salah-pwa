@@ -7,7 +7,7 @@ button, input, select, textarea { font: inherit; }
 button { touch-action: manipulation; }
 a { color: inherit; }
 a:focus-visible, summary:focus-visible, textarea:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
-::selection { color: var(--background-primary); background: var(--text-primary); }
+::selection { color: var(--background-secondary); background: var(--text-primary); }
 .app-background { display: contents; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .methodology-section + .methodology-section { margin-top: 16px; }

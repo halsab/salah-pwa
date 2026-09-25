@@ -4,6 +4,7 @@ import { DateScreen } from './features/calendar/DateScreen'
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -44,6 +45,7 @@ import { ReligiousEventScreen } from './features/religiousEvents/ReligiousEventS
 import { ReligiousEventsScreen } from './features/religiousEvents/ReligiousEventsScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
+import { useDaylightWindow } from './features/schedule/useDaylightWindow'
 import { SettingsScreens } from './features/settings/SettingsScreens'
 import { ShareDialog } from './features/share/ShareDialog'
 import {
@@ -61,6 +63,8 @@ import { SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
 import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation } from './ui/useAppNavigation'
+import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
+import { applyTheme, resolveTheme } from './ui/theme'
 
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
   cities: CityCatalogService
@@ -109,6 +113,7 @@ export function App({
   const meta = repositoryState.meta
   const [preferences, setPreferences] = useState<SourcePreferences>(automaticPreferences)
   const [storedCalendarPreferences, setCalendarPreferences] = useState(DEFAULT_CALENDAR_PREFERENCES)
+  const [themeFamily, setThemeFamily] = useState<ThemeFamily>(DEFAULT_THEME_FAMILY)
   const [hijriSupported] = useState(supportsHijriCalendar)
   const calendarPreferences: CalendarPreferences = hijriSupported ? storedCalendarPreferences : { ...storedCalendarPreferences, calendar: 'gregorian' }
   const persistence = useSettingsPersistence(services.saveSettings)
@@ -149,10 +154,6 @@ export function App({
   const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
-  useEffect(() => {
-    document.documentElement.dataset.theme = 'dark'
-    return () => { delete document.documentElement.dataset.theme }
-  }, [])
   useEffect(() => () => { void invalidateSaves() }, [invalidateSaves])
   useEffect(() => {
     if (place && !sessionHasPlace.current && !resetting.current) void services.refresh()
@@ -178,6 +179,7 @@ export function App({
       setRecentPlaces(recent)
       setPreferences(state.preferences)
       setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
+      setThemeFamily(restoreThemeFamily(state.themeFamily))
       sessionHasPlace.current = Boolean(state.locationChoice)
       setLoading(false)
     }
@@ -200,14 +202,15 @@ export function App({
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
-  const todayResolution = place ? resolvePrayerTimeSource(place, services.now(), preferences, datasets, capabilities) : null
-  const calendarTimeZone = todayResolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
+  const initialTodayResolution = place ? resolvePrayerTimeSource(place, services.now(), preferences, datasets, capabilities) : null
+  const calendarTimeZone = initialTodayResolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
   const {
     selectedDate,
     currentTime,
     today,
     changeDate,
   } = useScheduleDate(services, calendarTimeZone)
+  const todayResolution = place ? resolvePrayerTimeSource(place, currentTime, preferences, datasets, capabilities) : null
   const resolution = place ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
@@ -219,6 +222,9 @@ export function App({
       return result.value
     },
   }), [services])
+  const daylight = useDaylightWindow({ services: scheduleServices, location: place, resolution: todayResolution, date: today })
+  const theme = useMemo(() => resolveTheme(themeFamily, today, currentTime, daylight), [currentTime, daylight, themeFamily, today])
+  useLayoutEffect(() => applyTheme(theme), [theme])
   const {
     schedule,
     context,
@@ -265,6 +271,10 @@ export function App({
   const updateCalendarPreferences = (next: CalendarPreferences) => {
     setCalendarPreferences(next)
     persistence.save({ calendarPreferences: next })
+  }
+  const updateThemeFamily = (next: ThemeFamily) => {
+    setThemeFamily(next)
+    persistence.save({ themeFamily: next })
   }
   const calculatedLocationLabel = compactPlaceLabel(place?.name ?? 'Выберите место')
   const dialogOpen = locationDialogOpen
@@ -344,6 +354,7 @@ export function App({
         ? <ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} />
         : null}
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
+        themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}
         sourceLabel={officialMode ? 'ДУМ РТ' : CALCULATION_PROFILES.find(profile => profile.id === calculationSettings.profile)?.label ?? 'Авто'} /> : null}
       <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />

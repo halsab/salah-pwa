@@ -35,7 +35,7 @@ it('не восстанавливает выбор, режим или оформ
   expect((await first.saveSettings({ appearance: 'dark' })).ok).toBe(false)
   const second = createPrayerRepository()
   const result = await second.initialize()
-  expect(result.ok && result.value).toMatchObject({ locationChoice:null,appearance:'system',preferences:{mode:'automatic'},meta:null,dataState:'not-loaded' })
+  expect(result.ok && result.value).toMatchObject({ locationChoice:null,appearance:'system',themeFamily:'classic',preferences:{mode:'automatic'},meta:null,dataState:'not-loaded' })
   expect((await second.saveSettings({ appearance:'light' })).ok).toBe(true)
 })
 

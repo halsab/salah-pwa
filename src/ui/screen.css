@@ -51,7 +51,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   text-decoration: none;
 }
 .pill { display: inline-flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer; white-space: normal; overflow-wrap: anywhere; flex-shrink: 0; max-width: 100%; padding-block: 10px; }
-.pill:active { background: var(--text-primary); color: var(--background-primary); }
+.pill:active { background: var(--text-primary); color: var(--background-secondary); }
 .pill:disabled { background: transparent; color: var(--text-secondary); opacity: 1; cursor: default; }
 .pill:focus-visible, .text-field:focus-visible, .select-field:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .pill-wide { width: 100%; }
@@ -105,7 +105,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   overflow-wrap: anywhere;
 }
 button.religious-event-banner { appearance: none; cursor: pointer; }
-button.religious-event-banner:active { background: var(--text-primary); color: var(--background-primary); }
+button.religious-event-banner:active { background: var(--text-primary); color: var(--background-secondary); }
 button.religious-event-banner:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .religious-event-banner-title { font-size: 16px; line-height: 1.2; }
 .religious-event-banner-secondary { font-size: 13px; line-height: 1.2; color: var(--text-secondary); }
@@ -128,7 +128,7 @@ button.religious-event-banner:active .religious-event-banner-secondary { color: 
   overflow-wrap: anywhere;
 }
 button.religious-event-list-row { appearance: none; cursor: pointer; }
-button.religious-event-list-row:active { background: var(--text-primary); color: var(--background-primary); }
+button.religious-event-list-row:active { background: var(--text-primary); color: var(--background-secondary); }
 button.religious-event-list-row:active .religious-event-banner-secondary { color: inherit; }
 button.religious-event-list-row:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .event-row { font: var(--font-emphasis); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; padding-inline: 4px; color: var(--text-primary); }
@@ -184,8 +184,8 @@ button.religious-event-list-row:focus-visible { outline: 2px solid var(--text-pr
 .religious-event-article li + li { margin-top: 8px; }
 .religious-event-article blockquote { margin-left: 0; margin-right: 0; padding-left: 16px; border-left: 1px solid var(--text-secondary); color: var(--text-secondary); }
 
-.date-field { position: relative; flex-wrap: wrap; }
-.date-field > span:first-child { flex-shrink: 0; max-width: 100%; }
-.date-field > .note { flex: 0 1 auto; max-width: 100%; margin-left: auto; }
-.date-field select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; font: var(--font-body); }
-.date-field:has(select:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+.date-field, .theme-field { position: relative; flex-wrap: wrap; }
+.date-field > span:first-child, .theme-field > span:first-child { flex-shrink: 0; max-width: 100%; }
+.date-field > .note, .theme-field > .note { flex: 0 1 auto; max-width: 100%; margin-left: auto; }
+.date-field select, .theme-field select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; font: var(--font-body); }
+.date-field:has(select:focus-visible), .theme-field:has(select:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: -3px; }

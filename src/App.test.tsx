@@ -80,6 +80,7 @@ const initializedState = {
     ],
   },
   locationChoice: { mode: 'official', locationId: 'kazan', source: 'default' },
+  themeFamily: 'classic',
   preferences: automaticPreferences(),
   dataState: 'ready', update: { status: 'idle' }, checkedAt: null,
 } satisfies PrayerRepositoryState
@@ -513,7 +514,7 @@ describe('Salah', () => {
 
   it('повторяет загрузку после ошибки открытия хранилища и ошибки дня', async () => {
     const base = createServices()
-    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()), getDays: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockImplementation(base.getDays) })
+    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()), getDays: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockImplementation(base.getDays) })
     render(<App services={services} />)
     expect(await screen.findByRole('alert')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }))
@@ -583,12 +584,53 @@ describe('Salah', () => {
     }
   })
 
-  it('сохранённая светлая тема не включает старый интерфейс и не добавляет прежние разделы', async () => {
+  it('legacy appearance не управляет новой темой и не возвращает прежние разделы', async () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ appearance: 'light' })) })} />)
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    expect(document.documentElement.dataset.theme).toBe('dark')
+    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
+    expect(document.documentElement.dataset.theme).toBe('classic')
     expect(screen.queryByRole('combobox', { name: 'Оформление' })).not.toBeInTheDocument()
     expect(screen.queryByText('Часовой пояс')).not.toBeInTheDocument()
+  })
+
+  it('применяет classic light днём и classic dark ночью по сегодняшнему расписанию', async () => {
+    const view = render(<App services={createServices()} />)
+    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
+    expect(document.documentElement.style.getPropertyValue('--background-secondary')).toBe('#F2F2EE')
+    view.unmount()
+
+    render(<App services={createServices({ now: () => new Date('2026-09-01T20:00:00.000Z') })} />)
+    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('dark'))
+    expect(document.documentElement.style.getPropertyValue('--background-secondary')).toBe('#282828')
+  })
+
+  it('применяет сезон текущего дня, а не открытой даты, и сохраняет выбор без reload', async () => {
+    const saveSettings = vi.fn().mockResolvedValue(success(undefined))
+    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal' })), saveSettings })} />)
+    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
+    expect(document.documentElement.dataset.season).toBe('autumn')
+    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#FFB26B')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '1')
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    expect(document.documentElement.dataset.season).toBe('autumn')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Тема' }), 'classic')
+    expect(document.documentElement.dataset.theme).toBe('classic')
+    expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'classic' }, expect.any(Function))
+  })
+
+  it('выбирает летнюю палитру по локальной текущей дате', async () => {
+    const preferences = manualCalculation({ profile: 'dumRt', overrides: {} })
+    render(<App services={createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal', preferences })),
+      now: () => new Date('2026-06-15T09:00:00.000Z'),
+    })} />)
+    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
+    expect(document.documentElement.dataset.season).toBe('summer')
+    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#59C1E8')
   })
 })
 

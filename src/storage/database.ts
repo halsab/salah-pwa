@@ -9,6 +9,7 @@ import { normalizeStoredPrayerDataset, normalizeStoredPrayerDay } from '../domai
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import type { LocationSelectionSource } from '../domain/locationSelection'
 import type { CalculationSettings } from '../domain/prayerCalculation'
+import type { ThemeFamily } from '../domain/theme'
 import { failure, success, type Result } from '../domain/result'
 import type {
   PrayerDataset,
@@ -43,6 +44,7 @@ interface SettingValueMap {
   calendarPreferences: CalendarPreferences
   recentPlaces: Place[]
   appearance: Appearance
+  themeFamily: ThemeFamily
   locationChoice: LocationChoice
   sourcePreferences: SourcePreferences
   calculationSettings: CalculationSettings
@@ -434,7 +436,7 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'recentPlaces' | 'calendarPreferences'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences'>>
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
@@ -445,6 +447,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) throw new Error('Сессия завершена')
       if (!isCurrent()) { await transaction.done; return }
       if (patch.appearance) await transaction.objectStore('settings').put({ key: 'appearance', value: patch.appearance })
+      if (patch.themeFamily) await transaction.objectStore('settings').put({ key: 'themeFamily', value: patch.themeFamily })
       if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
       if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
