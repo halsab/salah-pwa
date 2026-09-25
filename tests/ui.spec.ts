@@ -292,6 +292,7 @@ test('classic и все сезонные палитры меняют ровно 
   } as const
   const variables = ['--background-primary', '--background-secondary', '--background-tertiary', '--text-primary', '--text-secondary', '--accent-countdown']
   const expectPalette = async (name: keyof typeof expected) => {
+    await expect(page.locator('html')).toHaveAttribute('data-theme', name.startsWith('classic') ? 'classic' : 'seasonal')
     await expect(page.locator('html')).toHaveAttribute('data-theme-tone', name.endsWith('light') ? 'light' : 'dark')
     expect(await page.locator('html').evaluate((root, properties) => properties.map(property => getComputedStyle(root).getPropertyValue(property).trim()), variables)).toEqual(expected[name])
   }
