@@ -137,6 +137,22 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
   })
 }
 
+test('верхняя полоса ограничена установленной portrait PWA с touch-указателем', async ({ page }) => {
+  await page.goto('./')
+  const spacing = await page.evaluate(() => {
+    const rules = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules))
+    const base = rules.find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-layout')
+    const mobile = rules.find((rule): rule is CSSMediaRule => rule instanceof CSSMediaRule
+      && rule.conditionText.includes('(display-mode: standalone)')
+      && rule.conditionText.includes('(orientation: portrait)')
+      && rule.conditionText.includes('(pointer: coarse)'))
+    const layout = Array.from(mobile?.cssRules ?? []).find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-layout')
+    return { base: base?.style.paddingTop, mobile: layout?.style.paddingTop, background: base?.style.background }
+  })
+  expect(spacing).toEqual({ base: '0px', mobile: '6px', background: 'var(--background-primary)' })
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
+})
+
 test('контейнер доходит до низа, а нижний контент учитывает safe area и клавиатуру', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./')
@@ -144,18 +160,18 @@ test('контейнер доходит до низа, а нижний конт�
     // Браузерная эмуляция iPhone не задаёт env(safe-area-inset-bottom).
     const rule = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules))
       .find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-screen'
-        && rule.style.getPropertyValue('--screen-bottom-inset').includes('env(safe-area-inset-bottom)'))
+        && rule.style.getPropertyValue('--screen-bottom-inset').includes('env(safe-area-inset-bottom'))
     if (!rule) throw new Error('Нет правила нижней безопасной области контента')
-    rule.style.setProperty('--screen-bottom-inset', rule.style.getPropertyValue('--screen-bottom-inset').replace('env(safe-area-inset-bottom)', '34px'))
+    rule.style.setProperty('--screen-bottom-inset', rule.style.getPropertyValue('--screen-bottom-inset').replace(/env\(safe-area-inset-bottom,\s*0px\)/, '34px'))
   })
   await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '50px')
+  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '34px')
   await choosePlace(page)
   const home = await page.locator('.app-screen').boundingBox()
   const footer = await page.locator('.screen-bottom').boundingBox()
   if (!home || !footer) throw new Error('Нет геометрии главного экрана')
   expect(home.y + home.height).toBeCloseTo(844, 0)
-  expect(home.y + home.height - footer.y - footer.height).toBeCloseTo(50, 0)
+  expect(home.y + home.height - footer.y - footer.height).toBeCloseTo(34, 0)
   await page.screenshot({ path: '/tmp/salah-home-safe-area.png' })
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'Найти город' }).click()
@@ -170,7 +186,7 @@ test('контейнер доходит до низа, а нижний конт�
   await expect(page.locator('.app-layout')).toHaveCSS('height', '360px')
   await expect(page.locator('.app-layout')).toHaveCSS('top', '40px')
   await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '24px')
+  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '16px')
   const panel = await page.locator('.app-screen').boundingBox()
   if (!panel) throw new Error('Нет контейнера поиска')
   expect(400 - panel.y - panel.height).toBeCloseTo(0, 0)
@@ -186,7 +202,7 @@ test('контейнер доходит до низа, а нижний конт�
   })
   await expect(page.locator('.app-layout')).toHaveCSS('height', '844px')
   await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '50px')
+  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '34px')
   await page.getByRole('button', { name: 'Отмена' }).click()
   await expect(page.getByRole('button', { name: 'Найти город' })).toBeFocused()
 })

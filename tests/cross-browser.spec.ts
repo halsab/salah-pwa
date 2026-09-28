@@ -90,7 +90,7 @@ test('поиск остаётся доступен в уменьшенной в�
   })
   await expect(page.locator('.app-layout')).toHaveCSS('height', `${visibleHeight}px`)
   await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '24px')
+  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '16px')
   const panel = await page.locator('.app-screen').boundingBox()
   if (!panel) throw new Error('Нет контейнера поиска')
   expect(visibleHeight + 30 - panel.y - panel.height).toBeCloseTo(0, 0)
