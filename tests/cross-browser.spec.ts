@@ -79,24 +79,27 @@ test('поиск остаётся доступен в уменьшенной в�
   await expect(page.getByRole('searchbox')).toBeFocused()
   await page.getByRole('searchbox').fill('Москва')
   await expect(page.getByRole('button', { name: 'Москва, Москва, Россия' })).toBeVisible()
-  await page.evaluate(() => {
+  const visibleHeight = await page.evaluate(() => {
     const viewport = window.visualViewport
     if (!viewport) throw new Error('Нет visualViewport')
-    Object.defineProperties(viewport, { height: { configurable: true, value: 300 }, offsetTop: { configurable: true, value: 30 } })
+    // Потеря высоты должна превысить порог AppShell для открытой клавиатуры.
+    const height = Math.min(300, document.documentElement.clientHeight - 130)
+    Object.defineProperties(viewport, { height: { configurable: true, value: height }, offsetTop: { configurable: true, value: 30 } })
     viewport.dispatchEvent(new Event('resize'))
+    return height
   })
-  await expect(page.locator('.app-layout')).toHaveCSS('height', '300px')
+  await expect(page.locator('.app-layout')).toHaveCSS('height', `${visibleHeight}px`)
   await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
   await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '24px')
   const panel = await page.locator('.app-screen').boundingBox()
   if (!panel) throw new Error('Нет контейнера поиска')
-  expect(330 - panel.y - panel.height).toBeCloseTo(0, 0)
+  expect(visibleHeight + 30 - panel.y - panel.height).toBeCloseTo(0, 0)
   const field = await page.getByRole('searchbox').boundingBox()
   const result = await page.getByRole('button', { name: 'Москва, Москва, Россия' }).boundingBox()
   const cancel = await page.getByRole('button', { name: 'Отмена' }).boundingBox()
   if (!field || !result || !cancel) throw new Error('Нет геометрии поиска')
   expect(field.x).toBe(cancel.x)
   expect(result.x).toBe(cancel.x)
-  expect(result.y + result.height).toBeLessThanOrEqual(330)
+  expect(result.y + result.height).toBeLessThanOrEqual(visibleHeight + 30)
   await page.screenshot({ path: `/tmp/salah-final-keyboard-${testInfo.project.name}.png` })
 })
