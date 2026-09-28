@@ -65,6 +65,21 @@ test('DateScreen открывает локальный список на 12 ме
   if (!lastRow) throw new Error('Нет последней строки событий')
   expect(lastRow.y + lastRow.height).toBeLessThanOrEqual(scrollArea.y + scrollArea.height - 15)
   await page.screenshot({ path: '/tmp/salah-events-scroll.png' })
+  await page.evaluate(() => {
+    const rule = Array.from(document.styleSheets).flatMap(sheet => Array.from(sheet.cssRules))
+      .find((rule): rule is CSSStyleRule => rule instanceof CSSStyleRule && rule.selectorText === '.app-screen'
+        && rule.style.getPropertyValue('--screen-bottom-inset').includes('env(safe-area-inset-bottom)'))
+    if (!rule) throw new Error('Нет правила нижней безопасной области списка')
+    rule.style.setProperty('--screen-bottom-inset', rule.style.getPropertyValue('--screen-bottom-inset').replace('env(safe-area-inset-bottom)', '34px'))
+  })
+  await expect(listScreen).toHaveCSS('padding-bottom', '50px')
+  await listScreen.locator('.screen-content').evaluate(element => { element.scrollTop = element.scrollHeight })
+  const safeScrollArea = await listScreen.locator('.screen-content').boundingBox()
+  const safeLastRow = await listScreen.locator('li').last().boundingBox()
+  if (!safeScrollArea || !safeLastRow) throw new Error('Нет геометрии списка с safe area')
+  expect(safeScrollArea.y + safeScrollArea.height).toBeCloseTo(panel.y + panel.height, 0)
+  expect(safeLastRow.y + safeLastRow.height).toBeLessThanOrEqual(safeScrollArea.y + safeScrollArea.height - 49)
+  await page.screenshot({ path: '/tmp/salah-events-safe-area.png' })
 
   const ramadanRow = listScreen.getByRole('button', { name: /Начало Рамадана/ })
   await ramadanRow.click()
