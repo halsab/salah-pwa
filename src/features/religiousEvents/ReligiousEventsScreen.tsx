@@ -43,7 +43,7 @@ export function ReligiousEventsScreen({ today, correction, hijriSupported, onOpe
     return listReligiousEventOccurrences({ fromDate: today, toDateExclusive, correction, hijriSupported })
   }, [today, correction, hijriSupported])
 
-  return <Screen label="Праздники и события" top={<BackButton onClick={onBack} />} contentClassName="screen-content--edge-bottom">
+  return <Screen label="Праздники и события" top={<BackButton onClick={onBack} />}>
     <ul className="religious-events-list">
       {occurrences.map(occurrence => <ReligiousEventOccurrenceRow
         key={`${occurrence.civilDate}:${occurrence.eventId}`}

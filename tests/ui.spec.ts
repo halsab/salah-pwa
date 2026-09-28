@@ -68,9 +68,9 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
     const next = page.locator('.event-row[aria-current=true] + .event-row')
     const timer = page.getByRole('timer')
     for (const control of ['#home-location', '#home-date', '#home-settings']) {
-      await expect(page.locator(control)).toHaveCSS('height', '48px')
+      await expect(page.locator(control)).toHaveCSS('height', '44px')
     }
-    await expect(footer).toHaveCSS('height', '48px')
+    await expect(footer).toHaveCSS('height', '44px')
     await expect(current).toContainText('Зухр')
     await expect(current).not.toContainText('сейчас')
     await expect(current).toHaveCSS('background-color', 'rgb(227, 227, 222)')
@@ -136,6 +136,71 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
     expect(errors).toEqual([])
   })
 }
+
+test('длинное название места переносится целиком, не перекрывая дату', async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('./')
+    await choosePlace(page)
+    const location = page.locator('#home-location')
+    const label = 'Набережные Челны — очень длинное название выбранного местоположения'
+    await location.evaluate((element, text) => { element.textContent = text }, label)
+    await expect(location).toHaveText(label)
+    const metrics = await location.evaluate(element => {
+      const style = getComputedStyle(element)
+      const contentHeight = element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+      return { height: element.getBoundingClientRect().height, lines: contentHeight / parseFloat(style.lineHeight), clipped: element.scrollHeight > element.clientHeight }
+    })
+    expect(metrics.lines).toBeGreaterThan(1.5)
+    expect(metrics.height).toBeGreaterThan(44)
+    expect(metrics.clipped).toBe(false)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+    await expect(page.locator('#home-date')).toBeVisible()
+  }
+})
+
+test('обычные однострочные controls равны BackButton, а экран без footer прокручивается до края', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.goto('./')
+  await choosePlace(page)
+  await page.locator('#home-location').click()
+  const location = page.getByRole('region', { name: 'Локация' })
+  await expect(location.getByRole('button', { name: 'Назад' })).toHaveCSS('height', '44px')
+  await expect(location.getByRole('button', { name: 'Найти город' })).toHaveCSS('height', '44px')
+  const bounds = await location.boundingBox()
+  const scroll = await location.locator('.screen-content').boundingBox()
+  if (!bounds || !scroll) throw new Error('Нет геометрии экрана')
+  expect(scroll.y + scroll.height).toBeCloseTo(bounds.y + bounds.height, 0)
+  await location.getByRole('button', { name: 'Назад' }).click()
+  await page.getByRole('button', { name: 'Настройки' }).click()
+  await page.getByRole('button', { name: 'О приложении' }).click()
+  const about = page.getByRole('region', { name: 'О приложении' })
+  await about.locator('.screen-content').evaluate(element => { element.scrollTop = element.scrollHeight })
+  const article = await about.locator('.markdown-article').boundingBox()
+  const articleScroll = await about.locator('.screen-content').boundingBox()
+  const panel = await about.boundingBox()
+  if (!article || !articleScroll || !panel) throw new Error('Нет геометрии статьи')
+  expect(articleScroll.y + articleScroll.height).toBeCloseTo(panel.y + panel.height, 0)
+  expect(article.y + article.height).toBeLessThanOrEqual(articleScroll.y + articleScroll.height - 15)
+})
+
+test('однострочные настройки равны 44 px, двухстрочный результат поиска растёт', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 })
+  await page.goto('./')
+  await choosePlace(page)
+  await page.getByRole('button', { name: 'Настройки' }).click()
+  const settings = page.getByRole('region', { name: 'Настройки' })
+  await expect(settings.getByRole('button', { name: 'О приложении' })).toHaveCSS('height', '44px')
+  await expect(settings.getByRole('combobox', { name: 'Тема' }).locator('..')).toHaveCSS('height', '44px')
+  await page.getByRole('button', { name: 'Назад' }).click()
+  await page.locator('#home-location').click()
+  await page.getByRole('button', { name: 'Найти город' }).click()
+  await page.getByRole('searchbox').fill('Стамбул')
+  const city = page.getByRole('button', { name: 'Стамбул, Стамбул, Турция' })
+  await expect(city).toBeVisible()
+  expect((await city.boundingBox())?.height).toBeGreaterThan(44)
+  expect(await city.evaluate(element => element.scrollHeight <= element.clientHeight)).toBe(true)
+})
 
 test('верхняя полоса ограничена установленной portrait PWA с touch-указателем', async ({ page }) => {
   await page.goto('./')

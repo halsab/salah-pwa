@@ -12,9 +12,9 @@ it('сохраняет доступные верхние и нижние дей�
   expect(screen.getByText('Аср 16:06').parentElement).not.toHaveClass('screen-content--edge-bottom')
 })
 
-it('добавляет режим прокрутки до нижней границы без изменения семантики экрана', () => {
-  render(<Screen label="Список" contentClassName="screen-content--edge-bottom"><ul><li>Событие</li></ul></Screen>)
+it('прокручивает экран без нижнего действия до края и сохраняет локальный класс', () => {
+  render(<Screen label="Список" contentClassName="screen-center"><ul><li>Событие</li></ul></Screen>)
   const region = screen.getByRole('region', { name: 'Список' })
-  expect(region.querySelector('.screen-content')).toHaveClass('screen-content--edge-bottom')
+  expect(region.querySelector('.screen-content')).toHaveClass('screen-content--edge-bottom', 'screen-center')
   expect(screen.getByRole('list')).toBeInTheDocument()
 })

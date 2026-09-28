@@ -10,7 +10,7 @@ export function Screen({ label, top, bottom, children, contentClassName = '', bu
 }) {
   return <section className="app-screen" aria-label={label} aria-busy={busy || undefined}>
     {top ? <div className="screen-top">{top}</div> : null}
-    <div className={`screen-content ${contentClassName}`}>{children}</div>
+    <div className={`screen-content${bottom ? '' : ' screen-content--edge-bottom'}${contentClassName ? ` ${contentClassName}` : ''}`}>{children}</div>
     {bottom ? <div className="screen-bottom">{bottom}</div> : null}
   </section>
 }

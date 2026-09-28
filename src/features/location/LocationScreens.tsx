@@ -93,7 +93,7 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
               : ready?.data?.status === 'refine' ? 'Уточните название города'
                 : query && ready && !cities.length && !official.length ? 'Город не найден' : null
   const canRetry = ['offline', 'error'].includes(catalogStatus) || ready?.failed || ready?.data?.status === 'needs-download'
-  return <Screen label="Поиск города" top={<BackButton onClick={onBack} label="Отмена" />} contentClassName="screen-content--edge-bottom">
+  return <Screen label="Поиск города" top={<BackButton onClick={onBack} label="Отмена" />}>
     <input className="text-field" data-screen-focus type="search" aria-label="Поиск населённого пункта" placeholder="Найти город" value={text}
       onChange={event => { setText(event.target.value); if (event.target.value.trim() !== query) setCompletion(null) }} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
     <ul className="city-results" aria-label="Результаты поиска" aria-busy={pending}>

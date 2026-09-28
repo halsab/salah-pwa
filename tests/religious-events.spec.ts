@@ -13,6 +13,9 @@ test('баннер, статья, focus и browser snapshot работают н�
   await expect(banner).toContainText('Первые 10 дней Зуль-хиджи')
   await expect(banner).toContainText('День Арафа через 3 дня')
   await expect(page.locator('.home-content > :first-child')).toHaveAttribute('id', 'religious-event-banner')
+  expect((await banner.boundingBox())?.height).toBeGreaterThan(44)
+  await banner.evaluate(element => element.querySelector('.religious-event-banner-secondary')?.remove())
+  await expect(banner).toHaveCSS('height', '44px')
 
   await page.setViewportSize({ width: 320, height: 700 })
   await expect(banner).toBeVisible()
