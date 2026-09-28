@@ -28,6 +28,9 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   gap: var(--content-inset);
   overflow: hidden;
 }
+@media (hover: hover) and (pointer: fine) {
+  .app-screen { border-radius: 0; }
+}
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
 .screen-content { flex: 1; min-height: 0; overflow: auto; scrollbar-width: none; }
 .screen-content--edge-bottom { margin-bottom: calc(0px - var(--screen-bottom-inset)); padding-bottom: var(--screen-bottom-inset); }

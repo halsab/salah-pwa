@@ -10,7 +10,7 @@ async function geometry(page: Page) {
     .map(element => getComputedStyle(element).fontSize))
   expect([...new Set(textSizes)].every(size => ['14px', '16px', '18px', '20px'].includes(size))).toBe(true)
   await expect(panel).toHaveCSS('padding', '16px')
-  await expect(panel).toHaveCSS('border-radius', '38px')
+  await expect(panel).toHaveCSS('border-radius', '0px')
   await expect(panel).toHaveCSS('background-color', 'rgb(242, 242, 238)')
   const bounds = await panel.boundingBox()
   const viewport = page.viewportSize()

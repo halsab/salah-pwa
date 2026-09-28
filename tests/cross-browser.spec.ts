@@ -47,6 +47,9 @@ test('профиль сохраняет заданную ориентацию б
   const panel = await page.locator('.app-screen').boundingBox()
   expect(panel?.x).toBe(0)
   expect(panel?.width).toBe(viewport.width)
+  if (testInfo.project.name.startsWith('mobile-')) {
+    await expect(page.locator('.app-screen')).toHaveCSS('border-radius', '38px')
+  }
 })
 
 test('поиск города в Worker показывает регион и сохраняет выбор', async ({ page }) => {
