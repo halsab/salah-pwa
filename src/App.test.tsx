@@ -609,7 +609,7 @@ describe('Salah', () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal' })), saveSettings })} />)
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
     expect(document.documentElement.dataset.season).toBe('autumn')
-    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#FFB26B')
+    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#D6B29B')
 
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '1')
@@ -630,7 +630,7 @@ describe('Salah', () => {
     })} />)
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
     expect(document.documentElement.dataset.season).toBe('summer')
-    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#59C1E8')
+    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#B9D0CD')
   })
 })
 

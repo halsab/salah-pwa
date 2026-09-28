@@ -21,36 +21,36 @@ export const themePalettes = {
     textPrimary: '#181818', textSecondary: '#5F5F5A', accentCountdown: '#B34900',
   },
   'winter-dark': {
-    backgroundPrimary: '#176FC2', backgroundSecondary: '#071B2D', backgroundTertiary: '#244F70',
-    textPrimary: '#F5FAFF', textSecondary: '#C8DCEB', accentCountdown: '#7DD3FC',
+    backgroundPrimary: '#4E6270', backgroundSecondary: '#171D21', backgroundTertiary: '#35444D',
+    textPrimary: '#F1F4F6', textSecondary: '#BBC6CC', accentCountdown: '#8EB6C9',
   },
   'winter-light': {
-    backgroundPrimary: '#8FD0FF', backgroundSecondary: '#F3F9FD', backgroundTertiary: '#9FC7DF',
-    textPrimary: '#0D2638', textSecondary: '#334C5E', accentCountdown: '#0A5C9C',
+    backgroundPrimary: '#B7C8D2', backgroundSecondary: '#F3F6F7', backgroundTertiary: '#D7E0E4',
+    textPrimary: '#222A2F', textSecondary: '#536168', accentCountdown: '#476A7E',
   },
   'spring-dark': {
-    backgroundPrimary: '#0E7A4D', backgroundSecondary: '#082018', backgroundTertiary: '#285943',
-    textPrimary: '#F3FAF4', textSecondary: '#CDE5D4', accentCountdown: '#8FE388',
+    backgroundPrimary: '#516858', backgroundSecondary: '#18201A', backgroundTertiary: '#37463A',
+    textPrimary: '#F1F5F1', textSecondary: '#BDCAC0', accentCountdown: '#97B798',
   },
   'spring-light': {
-    backgroundPrimary: '#9EE06F', backgroundSecondary: '#F5FAF1', backgroundTertiary: '#ADD29B',
-    textPrimary: '#15301D', textSecondary: '#3A5541', accentCountdown: '#267A38',
+    backgroundPrimary: '#BBD0BA', backgroundSecondary: '#F2F6F1', backgroundTertiary: '#D4E0D2',
+    textPrimary: '#263028', textSecondary: '#556156', accentCountdown: '#557759',
   },
   'summer-dark': {
-    backgroundPrimary: '#007FA8', backgroundSecondary: '#17210F', backgroundTertiary: '#4A5F31',
-    textPrimary: '#FFF8E8', textSecondary: '#DFE3C9', accentCountdown: '#FFD24A',
+    backgroundPrimary: '#536C70', backgroundSecondary: '#1D211C', backgroundTertiary: '#3C4940',
+    textPrimary: '#F4F2E9', textSecondary: '#C6C9BB', accentCountdown: '#CDB77D',
   },
   'summer-light': {
-    backgroundPrimary: '#59C1E8', backgroundSecondary: '#FFF4CF', backgroundTertiary: '#B0C27C',
-    textPrimary: '#243016', textSecondary: '#40502E', accentCountdown: '#946000',
+    backgroundPrimary: '#B9D0CD', backgroundSecondary: '#F6F3E9', backgroundTertiary: '#D9DDCC',
+    textPrimary: '#29302B', textSecondary: '#566158', accentCountdown: '#796738',
   },
   'autumn-dark': {
-    backgroundPrimary: '#A54212', backgroundSecondary: '#24100A', backgroundTertiary: '#63301B',
-    textPrimary: '#FFF8F1', textSecondary: '#E8C9B7', accentCountdown: '#FFC857',
+    backgroundPrimary: '#6E5146', backgroundSecondary: '#211C1A', backgroundTertiary: '#493B35',
+    textPrimary: '#F5EFEA', textSecondary: '#CABCB3', accentCountdown: '#DFA774',
   },
   'autumn-light': {
-    backgroundPrimary: '#FFB26B', backgroundSecondary: '#FFF4EA', backgroundTertiary: '#E8B28F',
-    textPrimary: '#32170D', textSecondary: '#624334', accentCountdown: '#A84600',
+    backgroundPrimary: '#D6B29B', backgroundSecondary: '#F7F1EC', backgroundTertiary: '#DFD0C5',
+    textPrimary: '#2E2622', textSecondary: '#655750', accentCountdown: '#8A5033',
   },
 } as const satisfies Record<ThemePaletteKey, ThemePalette>
 

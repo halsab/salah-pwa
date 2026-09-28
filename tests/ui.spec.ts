@@ -290,14 +290,14 @@ test('classic и все сезонные палитры меняют ровно 
   const expected = {
     'classic-light': ['#000000', '#F2F2EE', '#E3E3DE', '#181818', '#5F5F5A', '#B34900'],
     'classic-dark': ['#000000', '#282828', '#383838', '#FFFFFF', '#A8A8A8', '#FF8A3D'],
-    'winter-light': ['#8FD0FF', '#F3F9FD', '#9FC7DF', '#0D2638', '#334C5E', '#0A5C9C'],
-    'winter-dark': ['#176FC2', '#071B2D', '#244F70', '#F5FAFF', '#C8DCEB', '#7DD3FC'],
-    'spring-light': ['#9EE06F', '#F5FAF1', '#ADD29B', '#15301D', '#3A5541', '#267A38'],
-    'spring-dark': ['#0E7A4D', '#082018', '#285943', '#F3FAF4', '#CDE5D4', '#8FE388'],
-    'summer-light': ['#59C1E8', '#FFF4CF', '#B0C27C', '#243016', '#40502E', '#946000'],
-    'summer-dark': ['#007FA8', '#17210F', '#4A5F31', '#FFF8E8', '#DFE3C9', '#FFD24A'],
-    'autumn-light': ['#FFB26B', '#FFF4EA', '#E8B28F', '#32170D', '#624334', '#A84600'],
-    'autumn-dark': ['#A54212', '#24100A', '#63301B', '#FFF8F1', '#E8C9B7', '#FFC857'],
+    'winter-light': ['#B7C8D2', '#F3F6F7', '#D7E0E4', '#222A2F', '#536168', '#476A7E'],
+    'winter-dark': ['#4E6270', '#171D21', '#35444D', '#F1F4F6', '#BBC6CC', '#8EB6C9'],
+    'spring-light': ['#BBD0BA', '#F2F6F1', '#D4E0D2', '#263028', '#556156', '#557759'],
+    'spring-dark': ['#516858', '#18201A', '#37463A', '#F1F5F1', '#BDCAC0', '#97B798'],
+    'summer-light': ['#B9D0CD', '#F6F3E9', '#D9DDCC', '#29302B', '#566158', '#796738'],
+    'summer-dark': ['#536C70', '#1D211C', '#3C4940', '#F4F2E9', '#C6C9BB', '#CDB77D'],
+    'autumn-light': ['#D6B29B', '#F7F1EC', '#DFD0C5', '#2E2622', '#655750', '#8A5033'],
+    'autumn-dark': ['#6E5146', '#211C1A', '#493B35', '#F5EFEA', '#CABCB3', '#DFA774'],
   } as const
   const variables = ['--background-primary', '--background-secondary', '--background-tertiary', '--text-primary', '--text-secondary', '--accent-countdown']
   const expectPalette = async (name: keyof typeof expected) => {
