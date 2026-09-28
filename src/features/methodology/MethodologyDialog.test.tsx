@@ -11,4 +11,7 @@ it('сразу показывает разделы методологии и п�
   }
   expect(screen.getByRole('link', { name: 'ДУМ РТ' })).toHaveAttribute('href', 'https://dumrt.ru/ru/help-info/prayertime/')
   expect(article).toHaveTextContent('Координаты не отправляются геокодерам')
+  const parameters = screen.getByRole('heading', { level: 2, name: 'Расчёт на устройстве' }).parentElement
+  expect(parameters?.querySelectorAll('li')).toHaveLength(3)
+  expect(article.querySelector('blockquote')).toHaveTextContent('информационное приложение')
 })

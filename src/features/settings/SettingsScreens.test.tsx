@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
@@ -21,6 +21,10 @@ describe('новые настройки', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'О приложении' })).toBeVisible()
     expect(screen.getByText('Версия v26.4.')).toBeVisible()
     expect(screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' })).toBeVisible()
+    const sources = screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' }).nextElementSibling
+    expect(sources?.tagName).toBe('UL')
+    expect(within(sources as HTMLElement).getAllByRole('listitem')).toHaveLength(5)
+    expect(within(sources as HTMLElement).getByRole('link', { name: 'SIL Open Font License 1.1' })).toBeVisible()
     expect(screen.getByRole('link', { name: 'Все источники и лицензии' })).toBeVisible()
     expect(document.querySelector('details')).toBeNull()
   })

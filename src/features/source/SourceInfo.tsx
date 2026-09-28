@@ -41,21 +41,29 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     .map(([key, value]) => `${EVENT_LABELS[key as CalculatedPrayerKey]} ${value > 0 ? '+' : ''}${value} мин`).join('; ') : ''
   if (adjustments) facts.push(['Прежние поправки', adjustments])
 
+  const lateFajrNote = lateFajrStart ? `Фаджр (конец сухура) ${markdownText(lateFajrStart.time)} — ${markdownText(formatDateLabel(lateFajrStart.date))}, накануне дня поста.` : ''
+  const runtimeNotes = [
+    calculated?.estimatedPrayers.length ? `≈ По северному правилу: ${markdownText(calculated.estimatedPrayers.map(key => EVENT_LABELS[key]).join(', '))}.` : '',
+    calculated?.polarResolutionApplied ? 'Солнечный цикл восстановлен по ближайшей подходящей широте или дню.' : '',
+    lateFajrNote,
+  ].filter(Boolean)
+  const important = official
+    ? ['Опубликованные значения показаны без пересчёта. Пункт таблицы может отличаться от выбранного места: для подтверждённого покрытия используется ближайший опубликованный пункт. Утренний намаз в мечетях — время джамаата, а завершение сухура не заменяет начало Фаджра.', ...runtimeNotes]
+    : [...runtimeNotes, 'Вычислено на устройстве для выбранного места и даты. Интернет для расчёта не нужен. Название профиля обозначает параметры расчёта, а не официальность результата.']
+
   const article = [
     `# ${markdownText(title)}`,
     official ? 'Официальная таблица' : 'Расчётное время',
-    `**Место:** ${markdownText(placeLabel)}`,
-    `**Дата:** ${markdownText(formatCompactDateLabel(context.date))}`,
+    `- **Место:** ${markdownText(placeLabel)}\n- **Дата:** ${markdownText(formatCompactDateLabel(context.date))}`,
     official ? 'Времена взяты из опубликованной таблицы без пересчёта.' : 'Время рассчитывается на устройстве по координатам, дате и выбранному профилю.',
     context.mode === 'automatic' ? 'Автоматически: таблица для места и даты. Вне её покрытия — расчёт по региону.' : '',
-    calculated?.estimatedPrayers.length ? `≈ По северному правилу: ${markdownText(calculated.estimatedPrayers.map(key => EVENT_LABELS[key]).join(', '))}.` : '',
-    calculated?.polarResolutionApplied ? 'Солнечный цикл восстановлен по ближайшей подходящей широте или дню.' : '',
-    lateFajrStart ? `Фаджр (конец сухура) ${markdownText(lateFajrStart.time)} — ${markdownText(formatDateLabel(lateFajrStart.date))}, накануне дня поста.` : '',
-    '## Сведения',
-    ...facts.map(([label, value]) => `**${label}:** ${markdownText(value)}`),
-    official ? 'Опубликованные значения показаны без пересчёта. Пункт таблицы может отличаться от выбранного места: для подтверждённого покрытия используется ближайший опубликованный пункт. Утренний намаз в мечетях — время джамаата, а завершение сухура не заменяет начало Фаджра.' : 'Вычислено на устройстве для выбранного места и даты. Интернет для расчёта не нужен. Название профиля обозначает параметры расчёта, а не официальность результата.',
-    official ? markdownLink(`Первичный источник · ${provider?.label ?? 'Поставщик'}`, meta?.source.url ?? provider?.bundled.source.url ?? '') : '[Профили Adhan](https://github.com/batoulapps/adhan-js/blob/master/METHODS.md)',
-    DISCLAIMER,
+    official ? '## Сведения' : '## Параметры',
+    facts.map(([label, value]) => `- **${label}:** ${markdownText(value)}`).join('\n'),
+    official ? markdownLink(`Первичный источник · ${provider?.label ?? 'Поставщик'}`, meta?.source.url ?? provider?.bundled.source.url ?? '') : '',
+    '## Важно',
+    ...important,
+    official ? '' : '[Профили Adhan](https://github.com/batoulapps/adhan-js/blob/master/METHODS.md)',
+    `> ${DISCLAIMER}`,
   ].filter(Boolean).join('\n\n')
 
   return <Screen label="Сведения об источнике" top={<BackButton onClick={onClose} />}

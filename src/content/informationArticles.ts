@@ -35,11 +35,11 @@ export function aboutArticle(version?: string): string {
 ${version ? `\nВерсия ${markdownText(version)}.\n` : ''}
 ## Источники и лицензии
 
-Таблицы: [ДУМ РТ](https://dumrt.ru/ru/help-info/prayertime/). Расчёт: [Adhan JS](https://github.com/batoulapps/adhan-js) (MIT).
-
-Города: [GeoNames](https://www.geonames.org/) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)). Граница Татарстана: © участники [OpenStreetMap](https://www.openstreetmap.org/copyright) через geoBoundaries (ODbL).
-
-Old Timey Mono — © 2024 Darren Embry. [SIL Open Font License 1.1](${import.meta.env.BASE_URL}old-timey-mono-license.txt).
+- Таблицы: [ДУМ РТ](https://dumrt.ru/ru/help-info/prayertime/).
+- Расчёт: [Adhan JS](https://github.com/batoulapps/adhan-js) (MIT).
+- Города: [GeoNames](https://www.geonames.org/) ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)).
+- Граница Татарстана: © участники [OpenStreetMap](https://www.openstreetmap.org/copyright) через geoBoundaries (ODbL).
+- Шрифт: Old Timey Mono — © 2024 Darren Embry, [SIL Open Font License 1.1](${import.meta.env.BASE_URL}old-timey-mono-license.txt).
 
 [Все источники и лицензии](https://github.com/halsab/salah-pwa/blob/main/THIRD_PARTY_NOTICES.md).`
 }
@@ -55,7 +55,13 @@ export function methodologyArticle(officialScheduleUrl: string): string {
 
 Время рассчитывается прямо на устройстве библиотекой [Adhan JS 4.4.6](https://github.com/batoulapps/adhan-js). Для расчёта интернет не нужен.
 
-Профиль задаёт углы или интервал Иша: ДУМ РТ — 18°/15°, ДУМ РФ — 16°/15°. Аср и правило для северных широт выбираются отдельно. Ручные параметры могут переопределять профиль; эффективные значения указаны в сведениях об источнике.
+Профиль задаёт углы или интервал Иша:
+
+- **ДУМ РТ:** Фаджр 18°, Иша 15°.
+- **ДУМ РФ:** Фаджр 16°, Иша 15°.
+- Аср и правило для северных широт выбираются отдельно.
+
+Ручные параметры могут переопределять профиль; эффективные значения указаны в сведениях об источнике.
 
 Если сумерек нет, правило ДУМ РТ ставит Фаджр за 120 минут до восхода, а Иша — через 90 минут после заката. Другие варианты перечислены здесь: [описание профилей](https://github.com/batoulapps/adhan-js/blob/master/METHODS.md).
 
@@ -69,5 +75,5 @@ GPS обрабатывается на устройстве. Справочник
 
 Координаты не отправляются геокодерам. Название-ориентир находится в локальных пакетах GeoNames, а территория Татарстана проверяется по локальной границе [OpenStreetMap](https://www.openstreetmap.org/copyright) через geoBoundaries (ODbL). В автоматическом режиме у границы или при недостаточной точности используется расчёт. Для GPS внутри подтверждённой территории выбирается таблица ближайшего опубликованного пункта, а не отдельная таблица для точки GPS.
 
-Salah — информационное приложение и не представляет ДУМ РТ или другую религиозную организацию. Расчётное время может отличаться от расписания местной мечети. При наличии официального местного расписания рекомендуется руководствоваться им.`
+> Salah — информационное приложение и не представляет ДУМ РТ или другую религиозную организацию. Расчётное время может отличаться от расписания местной мечети. При наличии официального местного расписания рекомендуется руководствоваться им.`
 }
