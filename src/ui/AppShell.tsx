@@ -11,21 +11,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (frame !== undefined) return
       frame = requestAnimationFrame(() => {
         frame = undefined
-        // Клавиатура Safari меняет visual viewport; масштабирование жестом оставляем браузеру.
-        if (viewport.scale !== 1) {
+        const layoutHeight = document.documentElement.clientHeight
+        const viewportLoss = layoutHeight - viewport.height
+        // Небольшие изменения visual viewport при bounce не означают открытие клавиатуры.
+        const keyboardVisible = viewport.scale === 1 && viewportLoss > Math.max(120, layoutHeight * 0.15)
+        if (!keyboardVisible) {
           element.style.removeProperty('--app-viewport-height')
           element.style.removeProperty('--app-viewport-top')
           element.style.removeProperty('--app-viewport-bottom-padding')
           return
         }
         element.style.setProperty('--app-viewport-height', `${viewport.height}px`)
-        element.style.setProperty('--app-viewport-top', `${viewport.offsetTop}px`)
+        element.style.setProperty('--app-viewport-top', `${Math.max(0, viewport.offsetTop)}px`)
         // Safari сохраняет safe-area-inset-bottom над клавиатурой; там нужен только небольшой зазор.
-        if (viewport.height + viewport.offsetTop < document.documentElement.clientHeight - 1) {
-          element.style.setProperty('--app-viewport-bottom-padding', '8px')
-        } else {
-          element.style.removeProperty('--app-viewport-bottom-padding')
-        }
+        element.style.setProperty('--app-viewport-bottom-padding', '8px')
       })
     }
     update()

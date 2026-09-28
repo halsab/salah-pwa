@@ -22,6 +22,7 @@ function renderDateScreen(hijriSupported = true) {
 
 it('открывает список праздников, не меняя календарные поля', async () => {
   const onOpenReligiousEvents = renderDateScreen()
+  expect(screen.getByRole('button', { name: 'Праздники и события' })).toHaveClass('pill-row')
   expect(screen.getAllByRole('combobox')).toHaveLength(4)
   await userEvent.click(screen.getByRole('button', { name: 'Праздники и события' }))
   expect(onOpenReligiousEvents).toHaveBeenCalledOnce()

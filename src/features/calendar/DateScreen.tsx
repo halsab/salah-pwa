@@ -57,7 +57,7 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
         const correction = Number(value)
         if (correction === -1 || correction === 0 || correction === 1) onPreferencesChange({ ...preferences, correction })
       }} /> : null}
-      <button id="date-religious-events" className="pill pill-wide" type="button" disabled={!hijriSupported} onClick={onOpenReligiousEvents}>
+      <button id="date-religious-events" className="pill pill-row" type="button" disabled={!hijriSupported} onClick={onOpenReligiousEvents}>
         Праздники и события
       </button>
       {!hijriSupported ? <p className="note" role="status">Этот браузер не поддерживает календарь хиджры.</p> : null}

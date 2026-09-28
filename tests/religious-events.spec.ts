@@ -41,6 +41,7 @@ test('DateScreen открывает локальный список на 12 ме
   await choosePlace(page)
   await page.locator('#home-date').click()
   const dateScreen = page.getByRole('region', { name: 'Установка даты' })
+  await expect(dateScreen.getByRole('button', { name: 'Праздники и события' })).toHaveCSS('justify-content', 'space-between')
   await dateScreen.getByRole('button', { name: 'Праздники и события' }).click()
 
   const listScreen = page.getByRole('region', { name: 'Праздники и события' })
@@ -55,6 +56,15 @@ test('DateScreen открывает локальный список на 12 ме
 
   await page.setViewportSize({ width: 320, height: 700 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+  const panel = await listScreen.boundingBox()
+  const scrollArea = await listScreen.locator('.screen-content').boundingBox()
+  if (!panel || !scrollArea) throw new Error('Нет геометрии списка событий')
+  expect(scrollArea.y + scrollArea.height).toBeCloseTo(panel.y + panel.height, 0)
+  await listScreen.locator('.screen-content').evaluate(element => { element.scrollTop = element.scrollHeight })
+  const lastRow = await listScreen.locator('li').last().boundingBox()
+  if (!lastRow) throw new Error('Нет последней строки событий')
+  expect(lastRow.y + lastRow.height).toBeLessThanOrEqual(scrollArea.y + scrollArea.height - 15)
+  await page.screenshot({ path: '/tmp/salah-events-scroll.png' })
 
   const ramadanRow = listScreen.getByRole('button', { name: /Начало Рамадана/ })
   await ramadanRow.click()

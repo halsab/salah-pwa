@@ -15,6 +15,7 @@ it('показывает хронологический список с display 
   render(<ReligiousEventsScreen today="2026-01-01" correction={0} hijriSupported onOpenEvent={onOpenEvent} onBack={onBack} />)
 
   const region = screen.getByRole('region', { name: 'Праздники и события' })
+  expect(region.querySelector('.screen-content')).toHaveClass('screen-content--edge-bottom')
   expect(within(region).getAllByRole('button', { name: 'Назад' })).toHaveLength(1)
   expect(within(region).queryByRole('heading')).not.toBeInTheDocument()
   const rows = within(region).getAllByRole('listitem')

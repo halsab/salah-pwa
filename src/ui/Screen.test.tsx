@@ -8,4 +8,13 @@ it('сохраняет доступные верхние и нижние дей�
   expect(screen.getByRole('button', { name: 'Назад' })).toBeInTheDocument()
   expect(screen.getByText('Аср 16:06')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Сегодня' })).toBeInTheDocument()
+  expect(screen.getByText('Аср 16:06').parentElement).toHaveClass('screen-content')
+  expect(screen.getByText('Аср 16:06').parentElement).not.toHaveClass('screen-content--edge-bottom')
+})
+
+it('добавляет режим прокрутки до нижней границы без изменения семантики экрана', () => {
+  render(<Screen label="Список" contentClassName="screen-content--edge-bottom"><ul><li>Событие</li></ul></Screen>)
+  const region = screen.getByRole('region', { name: 'Список' })
+  expect(region.querySelector('.screen-content')).toHaveClass('screen-content--edge-bottom')
+  expect(screen.getByRole('list')).toBeInTheDocument()
 })

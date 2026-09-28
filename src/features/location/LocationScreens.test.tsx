@@ -65,6 +65,7 @@ describe('экраны локации', () => {
   })
   it('сокращает страну в поиске, сохраняя полное доступное название', async () => {
     render(<SearchScreen {...searchProps} />)
+    expect(screen.getByRole('region', { name: 'Поиск города' }).querySelector('.screen-content')).toHaveClass('screen-content--edge-bottom')
     await userEvent.type(screen.getByRole('searchbox'), 'Москва')
     const result = await screen.findByRole('button', { name: 'Москва, Москва, Россия' })
     expect(result).toHaveTextContent('Москва, РФ')
