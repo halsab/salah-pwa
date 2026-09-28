@@ -4,7 +4,8 @@ import { effectiveCalculationSettings } from '../../domain/calculationSettings'
 import { CALCULATION_PROFILES, type CalculationProfileCapability, type CalculationProfileId, type HighLatitudeMethod } from '../../domain/prayerCalculation'
 import { HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
-import { StaticContent } from '../../ui/StaticContent'
+import { MarkdownArticle } from '../../ui/MarkdownArticle'
+import { PRIVACY_ARTICLE, aboutArticle } from '../../content/informationArticles'
 import type { AppScreen } from '../../ui/useAppNavigation'
 import type { ThemeFamily } from '../../domain/theme'
 
@@ -43,6 +44,7 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
   </Screen>
   if (screen === 'source') return <Screen label="Источник расписания" top={top} bottom={<button id="source-info" className="pill" type="button" onClick={() => onOpen('source-info')}>О расписании</button>}>
     <p className="screen-heading">Расписание</p><h1 className="screen-title">{mode === 'automatic' ? 'Автоматически' : mode === 'official' ? 'Официальная таблица' : 'Ручной расчёт'}</h1>
+    <p className="note screen-space">{mode === 'automatic' ? 'Официальная таблица используется, если она доступна для места и даты. Иначе время рассчитывается по региону.' : mode === 'official' ? 'Используется выбранная официальная таблица без пересчёта. Если для места или даты данных нет, расписание не подменяется расчётом.' : 'Время рассчитывается на устройстве по выбранному профилю, координатам и дате.'}</p>
     <div className="screen-stack screen-space">
       {row('source-method', 'Способ', 'source-choice', mode === 'automatic' ? 'Авто' : mode === 'official' ? 'ДУМ РТ' : 'Ручной')}
       {mode === 'official' ? row('source-table', 'Таблица', 'source-info') : null}
@@ -89,10 +91,9 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
     </div>
   </Screen>
   if (screen === 'privacy') return <Screen label="Данные и конфиденциальность" top={top} bottom={<button id="reset-trigger" className="pill pill-wide" type="button" onClick={() => onOpen('reset')}>Удалить данные</button>}>
-    <p className="screen-copy">Место, координаты, настройки и три недавних города — на этом устройстве.</p><p className="note screen-space">Без аккаунта и аналитики.</p>
-    <a className="pill screen-space" href={`${import.meta.env.BASE_URL}privacy/`}>Конфиденциальность</a>{notice}
+    <MarkdownArticle content={PRIVACY_ARTICLE} />{notice}
   </Screen>
-  if (screen === 'about') return <Screen label="О приложении" top={top}><p className="screen-copy">Время намаза для выбранного места. По официальной таблице или расчёту.</p><p className="note screen-space">Дата хиджры рассчитывается по календарю Умм аль-Кура.</p>{version ? <p className="note screen-space">Версия <span className="app-version">{version}</span></p> : null}<details className="screen-space app-details"><summary>Источники и лицензии</summary><StaticContent id="app-credits" /></details></Screen>
+  if (screen === 'about') return <Screen label="О приложении" top={top}><MarkdownArticle content={aboutArticle(version)} /></Screen>
   if (screen === 'reset') return <ResetScreen onBack={onBack} onReset={onReset} />
   return null
 }

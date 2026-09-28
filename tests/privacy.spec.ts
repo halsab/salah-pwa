@@ -3,142 +3,43 @@ import { resolve } from 'node:path'
 
 import { back, choosePlace, expectSchedule, openSource, openReset, setSource, expect, readSavedSetting, test } from './fixtures'
 
-test('статическая privacy page точно описывает данные и внешние запросы', async ({ page }) => {
-  await page.goto('./privacy/')
-
-  await expect(page.getByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
-  await expect(page.locator('script')).toHaveCount(0)
-  await expect(page.locator('style')).toHaveCount(0)
-  const stylesheet = page.locator('link[rel="stylesheet"]')
-  await expect(stylesheet).toHaveCount(1)
-  await expect(stylesheet).toHaveAttribute('href', /^\/salah-pwa\/assets\/privacy-.+\.css$/)
-
-  await expect(page.getByText('Приложение поддерживает GitHub-пользователь halsab.')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'GitHub Issues проекта' })).toHaveAttribute('href', 'https://github.com/halsab/salah-pwa/issues')
-  await expect(page.locator('main')).toContainText('Обращения там публичные')
-  await expect(page.locator('a[href^="mailto:"]')).toHaveCount(0)
-
-  const localData = page.getByRole('region', { name: 'Данные на устройстве' })
-  for (const detail of ['выбранное место', 'координаты', 'точность', 'время получения', 'часовой пояс', 'настройки', 'недавних', 'до сброса', 'Браузер может удалить']) {
-    await expect(localData).toContainText(detail)
-  }
-  await expect(page.locator('main')).toContainText('нет аккаунтов, собственного сервера, аналитики, рекламы и профилирования')
-  await expect(page.locator('main')).toContainText('Историю перемещений и поисковых запросов Salah не ведёт')
-  await expect(page.locator('main')).not.toContainText(/IndexedDB|Cache Storage|SHA-256|\bhash\b|JSON|Nominatim|параметры API/i)
-
-  const deletion = page.getByRole('region', { name: 'Как удалить данные' })
-  await expect(deletion).toContainText('Настройки → Данные и конфиденциальность → Удалить данные')
-  await expect(deletion).toContainText('подтвердите удаление')
-  await expect(deletion).toContainText('во всех вкладках')
-  await expect(deletion).toContainText('загруженные публичные справочники')
-  await expect(deletion).toContainText('настройках браузера')
-  await expect(page.getByRole('button', { name: /сброс|удалить/i })).toHaveCount(0)
-
-  await expect(page.getByRole('link', { name: 'политике конфиденциальности GitHub' })).toHaveAttribute(
-    'href', 'https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement',
-  )
-  const network = page.getByRole('region', { name: 'Сеть и геопозиция' })
-  await expect(network).toContainText(/GitHub Pages.+IP-адрес.+запрос/is)
-  await expect(network).toContainText('состав запрошенных пакетов')
-  await expect(network).toContainText('не добавляет GPS-координаты')
-  await expect(network).toContainText('Браузер или ОС')
-  await expect(network).toContainText('ранее выданном разрешении')
-  await expect(network).toContainText('Поделиться')
-})
-
-test('сохраняет атрибуцию и единое информационное позиционирование', async ({ page, request }) => {
-  await page.goto('./privacy/')
-  for (const [name, href] of [
-    ['ДУМ РТ', 'https://dumrt.ru/ru/help-info/prayertime/'],
-    ['GeoNames', 'https://www.geonames.org/'],
-    ['CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/'],
-    ['OpenStreetMap', 'https://www.openstreetmap.org/copyright'],
-    ['ODbL', 'https://opendatacommons.org/licenses/odbl/1-0/'],
-    ['Источники, изменения данных и лицензии', 'https://github.com/halsab/salah-pwa/blob/main/THIRD_PARTY_NOTICES.md'],
-  ]) {
-    await expect(page.getByRole('link', { name, exact: true })).toHaveAttribute('href', href)
-  }
-  const disclaimer = 'Salah — информационное приложение и не представляет ДУМ РТ или другую религиозную организацию.'
-  await expect(page.locator('main')).toContainText(disclaimer)
-  await expect(page.locator('main')).toContainText('При наличии официального местного расписания рекомендуется руководствоваться им')
-  const appHtml = await (await request.get('./')).text()
-  expect(appHtml.match(/Salah — информационное приложение/g)).toHaveLength(2)
-  const manifest = await (await request.get('./manifest.webmanifest')).json() as { description: string; start_url: string; scope: string; name: string }
-  expect(manifest.description).toBe('Время намаза для выбранного места: официальные таблицы и расчёт на устройстве. Сохранённые данные доступны офлайн.')
-  expect(manifest.start_url).toBe('./')
-  expect(manifest.scope).toBe('./')
-  expect(manifest.name).toBe('Salah — времена намаза')
-})
-
-test('переходит из приложения в privacy page и обратно без роутера', async ({ page }) => {
+test('конфиденциальность открывается внутри настроек и возвращает фокус', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 })
   await page.goto('./')
-  await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
-
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
-  await page.getByRole('link', { name: 'Конфиденциальность' }).click()
-  await expect(page).toHaveURL(/\/salah-pwa\/privacy\/$/)
-  await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
-
-  await page.getByRole('link', { name: 'Назад' }).first().click()
-  await expect(page).toHaveURL(/\/salah-pwa\/$/)
-  await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
+  const trigger = page.getByRole('button', { name: 'Данные и конфиденциальность' })
+  await trigger.click()
+  const region = page.getByRole('region', { name: 'Данные и конфиденциальность' })
+  await expect(region.getByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
+  await expect(region.getByRole('heading', { level: 2 })).toHaveCount(4)
+  await expect(region).toContainText('GitHub получает стандартные технические данные сетевого запроса, включая IP-адрес')
+  await expect(region).toContainText('Координаты и выбранное место не передаются поставщикам')
+  await expect(region.getByRole('button', { name: 'Удалить данные' })).toBeVisible()
+  await expect(region.getByRole('link', { name: 'Конфиденциальность' })).toHaveCount(0)
+  const content = region.locator('.screen-content')
+  await content.evaluate(element => { element.scrollTop = element.scrollHeight })
+  const lastParagraph = await region.locator('.markdown-article p').last().boundingBox()
+  const contentBounds = await content.boundingBox()
+  const actionBounds = await region.getByRole('button', { name: 'Удалить данные' }).boundingBox()
+  if (!lastParagraph || !contentBounds || !actionBounds) throw new Error('Не удалось измерить прокрутку privacy')
+  expect(lastParagraph.y + lastParagraph.height).toBeLessThanOrEqual(contentBounds.y + contentBounds.height + 1)
+  expect(actionBounds.y).toBeGreaterThanOrEqual(contentBounds.y + contentBounds.height)
+  await back(page)
+  await expect(trigger).toBeFocused()
 })
 
-test('не обрезает заголовок и сохраняет touch-цели 44 px на мобильном экране', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 800 })
-  await page.goto('./privacy/')
-
-  const heading = page.getByRole('heading', { level: 1, name: 'Конфиденциальность' })
-  const dimensions = await heading.evaluate((element) => ({
-    clientWidth: element.clientWidth,
-    scrollWidth: element.scrollWidth,
-  }))
-
-  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth)
-  for (const link of await page.locator('main a').all()) {
-    const bounds = await link.boundingBox()
-    expect(bounds?.width).toBeGreaterThanOrEqual(44)
-    expect(bounds?.height).toBeGreaterThanOrEqual(44)
-  }
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme })
-    const contrast = await page.locator('.privacy-footer').evaluate(element => {
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')
-      if (!context) throw new Error('Canvas unavailable')
-      const luminance = (color: string) => {
-        context.fillStyle = color
-        context.fillRect(0, 0, 1, 1)
-        const [red = 0, green = 0, blue = 0] = Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3)
-          .map(value => value / 255).map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
-        return red * 0.2126 + green * 0.7152 + blue * 0.0722
-      }
-      const foreground = luminance(getComputedStyle(element).color)
-      const background = luminance(getComputedStyle(document.body).backgroundColor)
-      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
-    })
-    expect(contrast, `footer contrast in ${colorScheme}`).toBeGreaterThanOrEqual(4.5)
-  }
-
-})
-
-test('privacy page открывается офлайн после первого запуска только приложения', async ({ context, page }) => {
-  await page.goto('./')
-  await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
-  await page.evaluate(async () => navigator.serviceWorker.ready)
-  await page.reload()
-  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true)
-
-  await context.setOffline(true)
-  try {
-    await page.goto('./privacy/', { waitUntil: 'domcontentloaded' })
-    await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
-    await expect(page.locator('script')).toHaveCount(0)
-    await page.getByRole('link', { name: 'Назад' }).first().click()
-    await expect(page.getByRole('button', { name: 'Найти город', exact: true })).toBeVisible()
-  } finally {
-    await context.setOffline(false)
+test('текстовые экраны не выходят за ширину mobile и desktop', async ({ page }) => {
+  for (const [width, height] of [[320, 800], [390, 844], [667, 375], [1280, 800]]) {
+    await page.setViewportSize({ width, height })
+    await page.goto('./')
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+    for (const name of ['Данные и конфиденциальность', 'О приложении']) {
+      await page.getByRole('button', { name }).click()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+      const article = page.locator('.markdown-article')
+      expect(await article.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1)
+      await back(page)
+    }
   }
 })
 
@@ -238,7 +139,6 @@ test('публичные запросы при поиске, настройка�
   await page.reload()
   await openSource(page)
   await page.getByRole('button', { name: 'О расписании' }).click()
-  await page.getByText('Подробности', { exact: true }).click()
   await expect(page.getByRole('region', { name: 'Сведения об источнике' })).toContainText(/Проверено/)
   expect(requests.filter(request => request.phase === phase && request.url.endsWith('/data/prayer-times-current.json'))).toEqual([])
   await back(page); await back(page); await back(page)
@@ -272,7 +172,7 @@ test('публичные запросы при поиске, настройка�
   for (const request of requests) {
     const url = new URL(request.url)
     expect(url.origin).toBe('http://127.0.0.1:4175')
-    expect(url.pathname).toMatch(/^\/salah-pwa\/(?:$|index\.html$|privacy\/index\.html$|assets\/[^/]+$|[a-z0-9-]+\.(?:js|svg|png|txt|webmanifest)$|data\/(?:prayer-times-(?:current|manifest)\.json|cities\/index\.json|cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json|tatarstan-boundary\.(?:json|NOTICE\.txt)|ODbL-1\.0\.txt)$)/)
+    expect(url.pathname).toMatch(/^\/salah-pwa\/(?:$|index\.html$|assets\/[^/]+$|[a-z0-9-]+\.(?:js|svg|png|txt|webmanifest)$|data\/(?:prayer-times-(?:current|manifest)\.json|cities\/index\.json|cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json|tatarstan-boundary\.(?:json|NOTICE\.txt)|ODbL-1\.0\.txt)$)/)
     expect([...url.searchParams.keys()].filter(key => key !== '__WB_REVISION__')).toEqual([])
     expect(request.method).toBe('GET')
     expect(request.body).toBeNull()

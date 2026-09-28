@@ -18,7 +18,7 @@ const CSP = [
   "form-action 'none'",
 ].join('; ')
 
-for (const [name, path] of [['app', './'], ['privacy', './privacy/']] as const) {
+for (const [name, path] of [['app', './']] as const) {
   test(`${name}: CSP meta единственный и предшествует ресурсам`, async ({ page, request }) => {
     const response = await request.get(path)
     expect(response.ok()).toBe(true)
@@ -126,6 +126,6 @@ test('production CSP разрешает приложение и блокируе
   )))
   expect(unexpectedViolations).toEqual([])
 
-  await page.goto('./privacy/')
+  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
   await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
 })

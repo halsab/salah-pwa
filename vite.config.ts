@@ -37,12 +37,6 @@ export default defineConfig({
     // Плотная минификация сохраняет прежний бюджет расширенного интерфейса.
     minify: 'terser',
     terserOptions: { compress: { passes: 2 }, maxWorkers: 2 },
-    rollupOptions: {
-      input: {
-        app: fileURLToPath(new URL('./index.html', import.meta.url)),
-        privacy: fileURLToPath(new URL('./privacy/index.html', import.meta.url)),
-      },
-    },
   },
   // Worker минифицируется отдельно от основного пакета Terser.
   worker: { rolldownOptions: { output: { minify: true } } },

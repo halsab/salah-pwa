@@ -1,4 +1,4 @@
-import { back, choosePlace, expectSchedule, openSource, expect, readSavedSetting, test } from './fixtures'
+import { back, choosePlace, expectSchedule, openSource, setSource, expect, readSavedSetting, test } from './fixtures'
 
 async function controlServiceWorker(page: import('@playwright/test').Page) {
   await page.evaluate(async () => navigator.serviceWorker.ready)
@@ -76,7 +76,6 @@ test('расписание, шрифт, источник и QR доступны 
     expect(await page.evaluate(() => Array.from(document.fonts).some(face => face.family === 'Old Timey Mono' && face.status === 'loaded'))).toBe(true)
     await openSource(page)
     await page.getByRole('button', { name: 'О расписании' }).click()
-    await page.getByText('Подробности', { exact: true }).click()
     await expect(page.getByRole('link', { name: 'Первичный источник · ДУМ РТ' })).toBeVisible()
     await back(page)
     await back(page)
@@ -84,6 +83,29 @@ test('расписание, шрифт, источник и QR доступны 
     const qr = page.getByRole('img', { name: /QR-код/ })
     await expect(qr).toBeVisible()
     await expect.poll(() => qr.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0)
+  } finally { await context.setOffline(false) }
+})
+
+test('privacy, about, источник и методология доступны офлайн в app shell', async ({ page, context }) => {
+  await page.goto('./')
+  await choosePlace(page)
+  await controlServiceWorker(page)
+  await context.setOffline(true)
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+    await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
+    await back(page)
+    await page.getByRole('button', { name: 'О приложении' }).click()
+    await expect(page.getByRole('link', { name: 'Все источники и лицензии' })).toBeVisible()
+    await back(page)
+    await page.getByRole('button', { name: /^Расписание/ }).click()
+    await setSource(page, 'Ручной расчёт')
+    await page.getByRole('button', { name: 'О расписании' }).click()
+    await expect(page.getByRole('region', { name: 'Сведения об источнике' }).getByRole('heading', { level: 1 })).toBeVisible()
+    await page.getByRole('button', { name: 'Как считается время' }).click()
+    await expect(page.getByRole('heading', { level: 1, name: 'Как считается время' })).toBeVisible()
   } finally { await context.setOffline(false) }
 })
 
@@ -161,8 +183,7 @@ test('локальная граница Татарстана выбирает т
     await expectSchedule(page)
     await openSource(page)
     await page.getByRole('button', { name: 'О расписании' }).click()
-    await page.getByText('Подробности', { exact: true }).click()
-    await expect(page.getByRole('region', { name: 'Сведения об источнике' }).getByText('Казань', { exact: true })).toBeVisible()
+    await expect(page.getByRole('region', { name: 'Сведения об источнике' })).toContainText('Пункт таблицы: Казань')
     expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { region: { code: 'RU-TA' } } })
   } finally { await context.setOffline(false) }
 })

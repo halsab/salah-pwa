@@ -8,6 +8,30 @@ import type { AppScreen } from '../../ui/useAppNavigation'
 const defaults = { onBack: vi.fn(), onOpen: vi.fn(), sourceLabel: 'ДУМ РТ', themeFamily: 'classic' as const, onThemeFamilyChange: vi.fn(), getCapability: () => ({ supported: true as const }), onReset: vi.fn(), version: 'v26.4' }
 
 describe('новые настройки', () => {
+  it('показывает privacy и about как полные статьи без вложенных переходов', () => {
+    const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn() }
+    const { rerender } = render(<SettingsScreens {...props} screen="privacy" />)
+    const privacy = screen.getByRole('region', { name: 'Данные и конфиденциальность' })
+    expect(screen.getByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
+    expect(privacy).toHaveTextContent('История перемещений и поисковых запросов не ведётся')
+    expect(privacy).toHaveTextContent('GitHub Pages')
+    expect(screen.queryByRole('link', { name: 'Конфиденциальность' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Удалить данные' })).toBeVisible()
+    rerender(<SettingsScreens {...props} screen="about" />)
+    expect(screen.getByRole('heading', { level: 1, name: 'О приложении' })).toBeVisible()
+    expect(screen.getByText('Версия v26.4.')).toBeVisible()
+    expect(screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' })).toBeVisible()
+    expect(screen.getByRole('link', { name: 'Все источники и лицензии' })).toBeVisible()
+    expect(document.querySelector('details')).toBeNull()
+  })
+  it.each<[SourcePreferences, string]>([
+    [automaticPreferences(), 'Официальная таблица используется, если она доступна для места и даты. Иначе время рассчитывается по региону.'],
+    [{ mode: 'manual', source: { kind: 'official', provider: 'dumRt' } }, 'Используется выбранная официальная таблица без пересчёта. Если для места или даты данных нет, расписание не подменяется расчётом.'],
+    [manualCalculation({ profile: 'karachi', overrides: {} }), 'Время рассчитывается на устройстве по выбранному профилю, координатам и дате.'],
+  ])('поясняет выбранный режим расписания', (preferences, explanation) => {
+    render(<SettingsScreens {...defaults} screen="source" preferences={preferences} onChange={vi.fn()} />)
+    expect(screen.getByText(explanation)).toBeVisible()
+  })
   it('выбирает одно из двух семейств темы прямо в корневом экране', async () => {
     const onThemeFamilyChange = vi.fn()
     render(<SettingsScreens {...defaults} screen="settings" preferences={automaticPreferences()} onChange={vi.fn()} onThemeFamilyChange={onThemeFamilyChange} />)

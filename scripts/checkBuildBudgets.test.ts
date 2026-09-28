@@ -18,10 +18,9 @@ const catalog = generated.index
 const shardPath = `data/cities/${catalog.version}/RU-0.json`
 function validArtifacts(): BuildArtifact[] {
   return [
-    { path: 'assets/app-a1b2c3.js', size: BUILD_BUDGETS.appJavaScript },
+    { path: 'assets/index-a1b2c3.js', size: BUILD_BUDGETS.appJavaScript },
     { path: 'assets/cityCatalog.worker-d4e5f6.js', size: 1 },
-    { path: 'assets/app-a1b2c3.css', size: BUILD_BUDGETS.appCss },
-    { path: 'assets/privacy-a1b2c3.css', size: BUILD_BUDGETS.privacyCss },
+    { path: 'assets/index-a1b2c3.css', size: BUILD_BUDGETS.appCss },
     { path: 'data/cities/index.json', size: BUILD_BUDGETS.cityIndex },
     { path: shardPath, size: BUILD_BUDGETS.cityShard },
     { path: 'data/prayer-times-current.json', size: BUILD_BUDGETS.prayerTimes },
@@ -35,9 +34,8 @@ describe('build budgets', () => {
   })
 
   it.each([
-    ['app JavaScript', 'assets/app-a1b2c3.js', 'appJavaScript'],
-    ['app CSS', 'assets/app-a1b2c3.css', 'appCss'],
-    ['privacy CSS', 'assets/privacy-a1b2c3.css', 'privacyCss'],
+    ['app JavaScript', 'assets/index-a1b2c3.js', 'appJavaScript'],
+    ['app CSS', 'assets/index-a1b2c3.css', 'appCss'],
     ['cities data', 'data/cities/index.json', 'cityIndex'],
     ['prayer data', 'data/prayer-times-current.json', 'prayerTimes'],
     ['prayer manifest', 'data/prayer-times-manifest.json', 'prayerManifest'],
@@ -65,9 +63,8 @@ describe('build budgets', () => {
   })
 
   it.each([
-    ['appJavaScript', 'assets/app-a1b2c3.js'],
-    ['appCss', 'assets/app-a1b2c3.css'],
-    ['privacyCss', 'assets/privacy-a1b2c3.css'],
+    ['appJavaScript', 'assets/index-a1b2c3.js'],
+    ['appCss', 'assets/index-a1b2c3.css'],
     ['cityIndex', 'data/cities/index.json'],
     ['prayerTimes', 'data/prayer-times-current.json'],
     ['prayerManifest', 'data/prayer-times-manifest.json'],
@@ -80,9 +77,8 @@ describe('build budgets', () => {
   })
 
   it.each([
-    ['appJavaScript', 'assets/app-second.js'],
-    ['appCss', 'assets/app-second.css'],
-    ['privacyCss', 'assets/privacy-second.css'],
+    ['appJavaScript', 'assets/index-second.js'],
+    ['appCss', 'assets/index-second.css'],
   ] as const)('отклоняет дублирующий hashed %s artifact', (category, path) => {
     const artifacts = validArtifacts()
     artifacts.push({ path, size: 1 })
@@ -97,9 +93,8 @@ describe('build budgets', () => {
     await mkdir(join(root, 'assets'), { recursive: true })
     await mkdir(join(root, `data/cities/${catalog.version}`), { recursive: true })
     await Promise.all([
-      writeFile(join(root, 'assets/app-hash.js'), 'a'),
-      writeFile(join(root, 'assets/app-hash.css'), 'a'),
-      writeFile(join(root, 'assets/privacy-hash.css'), 'a'),
+      writeFile(join(root, 'assets/index-hash.js'), 'a'),
+      writeFile(join(root, 'assets/index-hash.css'), 'a'),
       writeFile(join(root, 'data/cities/index.json'), JSON.stringify(catalog)),
       writeFile(join(root, shardPath), JSON.stringify(generated.shards['RU-0'])),
       writeFile(join(root, 'data/prayer-times-current.json'), 'a'),

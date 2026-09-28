@@ -24,7 +24,6 @@ test('основной путь работает без ошибок во все
 
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
-  await page.getByRole('link', { name: 'Конфиденциальность' }).click()
   await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
   expect(pageErrors).toEqual([])
 })

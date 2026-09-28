@@ -13,7 +13,6 @@ export const BUILD_BUDGETS = {
   appJavaScript: 460 * 1024,
   totalJavaScript: 480 * 1024,
   appCss: 34 * 1024,
-  privacyCss: 6 * 1024,
   cityIndex: 640 * 1024,
   cityShard: 128 * 1024,
   cityTotal: 12 * 1024 * 1024,
@@ -27,9 +26,8 @@ const SINGLETONS: ReadonlyArray<{
   category: SingletonCategory
   matches: (path: string) => boolean
 }> = [
-  { category: 'appJavaScript', matches: (path) => /^assets\/app-[^/]+\.js$/.test(path) },
-  { category: 'appCss', matches: (path) => /^assets\/app-[^/]+\.css$/.test(path) },
-  { category: 'privacyCss', matches: (path) => /^assets\/privacy-[^/]+\.css$/.test(path) },
+  { category: 'appJavaScript', matches: (path) => /^assets\/index-[^/]+\.js$/.test(path) },
+  { category: 'appCss', matches: (path) => /^assets\/index-[^/]+\.css$/.test(path) },
   { category: 'cityIndex', matches: (path) => path === 'data/cities/index.json' },
   { category: 'prayerTimes', matches: (path) => path === 'data/prayer-times-current.json' },
   { category: 'prayerManifest', matches: (path) => path === 'data/prayer-times-manifest.json' },

@@ -314,8 +314,9 @@ describe('Salah', () => {
     render(<App services={createServices()} version="v26.4" />)
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
     await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))
-    expect(screen.getByText('v26.4')).toBeVisible()
-    await userEvent.click(screen.getByText('Источники и лицензии'))
+    expect(screen.getByText('Версия v26.4.')).toBeVisible()
+    expect(screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' })).toBeVisible()
+    expect(screen.queryByRole('group')).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'SIL Open Font License 1.1' })).toBeVisible()
     expect(screen.getByRole('link', { name: 'GeoNames' })).toBeVisible()
   })
@@ -489,13 +490,12 @@ describe('Salah', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('открывает сведения, подробности и методику отдельными экранами', async () => {
+  it('открывает сведения и методику отдельными экранами', async () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'karachi', overrides: {} }) })) })} />)
     await openSource()
     await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
     expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toBeVisible()
-    await userEvent.click(screen.getByText('Подробности'))
-    expect(screen.getByText('Europe/Moscow')).toBeVisible()
+    expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toHaveTextContent('Europe/Moscow')
     await userEvent.click(screen.getByRole('button', { name: 'Как считается время' }))
     expect(screen.getByRole('heading', { name: 'Расчёт на устройстве' })).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
