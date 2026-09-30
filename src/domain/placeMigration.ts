@@ -45,7 +45,7 @@ export function placeFromChoice(choice: LocationChoice, locations: PrayerLocatio
   return {
     ...coordinates,
     id: coordinates.cityId && selection === 'city' ? `geonames:${coordinates.cityId}` : `saved:${coordinates.timestamp}`,
-    selection, name: coordinates.name ?? 'Моё местоположение',
+    selection, name: coordinates.name ?? '',
     region: null, coverage: 'unavailable',
     // Старая запись не доказывает происхождение зоны; сохраняем её до локального уточнения.
     automaticTimeZone: { id: coordinates.timeZone, source: 'legacy' },

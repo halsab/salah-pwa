@@ -83,7 +83,9 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 }
 
 .app-layout { container-type: inline-size; }
-.home-location { min-width: 44px; height: auto; flex: 0 1 auto; }
+.home-location { min-width: 0; height: var(--button-height); flex: 1 1 auto; max-width: 100%; white-space: nowrap; }
+.home-location-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
+.home-location-time { flex: 0 0 auto; }
 .screen-bottom:has(#home-settings) { flex-wrap: nowrap; }
 .event-countdown { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; color: var(--text-primary); }
 .event-countdown .countdown-label, .event-countdown .countdown-value { line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

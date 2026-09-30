@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createGpsPlace, refineGpsPlace, setPlaceTimeZone, createCityPlace, isFreshGpsPlace } from './place'
+import { createGpsPlace, homePlaceLabel, refineGpsPlace, setPlaceTimeZone, createCityPlace, isFreshGpsPlace, withNearbyCity } from './place'
 import type { CoverageGeometry } from './localGeography'
 const geometry: CoverageGeometry = { uncertaintyMeters: 2000, polygons: [[[[49,55],[50,55],[50,56],[49,56],[49,55]]]] }
 const position = { latitude: 55.5, longitude: 49.5, accuracy: 1000, timestamp: 100 }
@@ -9,7 +9,13 @@ describe('place identity and timezone', () => {
   it('keeps real coordinates, identity and automatic timezone independent of label', () => {
     const place = gps()
     expect(place).toMatchObject({ id: 'gps:1', selection: 'gps', ...position, timeZone: 'Europe/Moscow', coverage: 'inside' })
-    expect(place.name).toBe('Моё местоположение')
+    expect(place.name).toBe('')
+    expect(homePlaceLabel(place)).toBe('55.5000, 49.5000')
+  })
+  it('uses a short locality name on home and keeps coordinates as the GPS fallback', () => {
+    const named = withNearbyCity(gps(), { id: 1, name: 'Казань', countryCode: 'RU', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55.5, longitude: 49.5, population: 1, timeZone: 'Europe/Moscow' })
+    expect(homePlaceLabel(named)).toBe('Казань')
+    expect(homePlaceLabel(null)).toBe('Местоположение не определено')
   })
   it('preserves user override through refinement and restores automatic timezone', () => {
     const place = setPlaceTimeZone(gps(), 'America/New_York')

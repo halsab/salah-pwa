@@ -30,13 +30,13 @@ import {
   type CalculationProfileCapability,
   type CalculationProfileId,
 } from './domain/prayerCalculation'
-import { getDeviceTimeZone } from './domain/locationTime'
+import { getDeviceTimeZone, getZonedTime } from './domain/locationTime'
 import type { Result } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
 import { rememberPlace, restoreRecentPlaces } from './domain/recentPlaces'
-import type { Place } from './domain/place'
+import { homePlaceLabel, type Place } from './domain/place'
 import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
 import { MethodologyDialog } from './features/methodology/MethodologyDialog'
@@ -202,8 +202,7 @@ export function App({
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
-  const initialTodayResolution = place ? resolvePrayerTimeSource(place, services.now(), preferences, datasets, capabilities) : null
-  const calendarTimeZone = initialTodayResolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
+  const calendarTimeZone = place?.timeZone ?? deviceTimeZone
   const {
     selectedDate,
     currentTime,
@@ -276,7 +275,9 @@ export function App({
     setThemeFamily(next)
     persistence.save({ themeFamily: next })
   }
-  const calculatedLocationLabel = compactPlaceLabel(place?.name ?? 'Выберите место')
+  const homeLocationLabel = homePlaceLabel(place)
+  const sourcePlaceLabel = compactPlaceLabel(place?.name || 'Выберите место')
+  const locationTime = place && place.timeZone !== deviceTimeZone ? getZonedTime(currentTime, place.timeZone) : undefined
   const dialogOpen = locationDialogOpen
     || settingsDialogOpen
     || methodologyDialogOpen
@@ -316,7 +317,7 @@ export function App({
             officialMode={officialMode}
             hijriSupported={hijriSupported}
             onOpenReligiousEvent={openReligiousEvent}
-            top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={calculatedLocationLabel} selectedDate={selectedDate}
+            top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={homeLocationLabel} locationTime={locationTime} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
             actions={<button className="pill home-settings-button screen-end" id="home-settings" ref={settingsButtonRef} type="button"
               aria-label="Настройки" title="Настройки" onClick={openSettingsDialog}>
@@ -346,7 +347,7 @@ export function App({
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
         onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
       {navigation.screen === 'source-info' ? schedule && context
-        ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={calculatedLocationLabel}
+        ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={sourcePlaceLabel}
             checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} />
         : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
         : null}

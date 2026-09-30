@@ -98,7 +98,7 @@ describe('one-shot GPS operations', () => {
     await act(async () => { h.coarse.resolve(success(coarseFix)); await pending })
     expect(h.result.current.place).toMatchObject(preciseFix)
     await act(async () => { h.lookup.resolve(success({ ...city, name: 'Казань', latitude: 55.79, longitude: 49.12, timeZone: 'Europe/Samara' })); await Promise.resolve() })
-    expect(h.result.current.place).toMatchObject({ ...preciseFix, timeZone: 'Europe/Moscow', name: 'Рядом: Казань' })
+    expect(h.result.current.place).toMatchObject({ ...preciseFix, timeZone: 'Europe/Moscow', name: 'Казань' })
   })
   it('retains useful coarse when precise fails', async () => {
     const h = setup()

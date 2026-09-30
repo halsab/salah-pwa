@@ -265,7 +265,7 @@ describe('Salah', () => {
 
     render(<App services={services} />)
 
-    expect(await screen.findByRole('button', { name: /Моё местоположение/ })).toBeVisible()
+    expect(await screen.findByRole('button', { name: '55.7420, 52.3992' })).toBeVisible()
     expect(services.getPermission).toHaveBeenCalledTimes(1)
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
@@ -329,13 +329,14 @@ describe('Salah', () => {
     await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('04:53')).toBeVisible()
     expect(screen.getByText('1 сентября')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Стамбул · 13:00' })).toBeVisible()
   })
 
   it('переключает сегодняшний день по московской полуночи, сохраняя выбранную чужую дату', async () => {
     let now = new Date('2026-08-31T20:59:59Z')
     const services = createServices({ now: () => now, getDeviceTimeZone: () => 'America/Los_Angeles' })
     render(<App services={services} />)
-    await screen.findByRole('button', { name: 'Казань' })
+    await screen.findByRole('button', { name: /Казань/ })
     expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('31 августа')
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '9')
@@ -439,7 +440,7 @@ describe('Salah', () => {
     render(<App services={services} />)
     await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
     await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
-    await screen.findByRole('button', { name: 'Моё местоположение' })
+    await screen.findByRole('button', { name: '55.7420, 52.3992' })
     await expectSchedule()
     expect(within(await screen.findByRole('list')).getByText('16:37')).toBeVisible()
     expect(services.getPosition).toHaveBeenCalledTimes(2)
@@ -456,7 +457,7 @@ describe('Salah', () => {
     services.cities.findNearest = vi.fn().mockRejectedValue(new Error('offline'))
     render(<App services={services} />)
     await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
-    await screen.findByRole('button', { name: 'Моё местоположение' })
+    await screen.findByRole('button', { name: '41.0100, 28.9500' })
     await expectSchedule()
     expect(await screen.findByText('Название места определить не удалось. Используем координаты.')).toBeVisible()
     expect(within(await screen.findByRole('list')).getAllByRole('listitem')).toHaveLength(7)

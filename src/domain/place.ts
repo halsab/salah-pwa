@@ -22,7 +22,7 @@ export function createGpsPlace(fix: Fix, deviceZone: string, geometry: CoverageG
   const geography = resolveGpsGeography(fix, deviceZone, geometry)
   return {
     latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, timestamp: fix.timestamp,
-    id, selection: 'gps', name: 'Моё местоположение',
+    id, selection: 'gps', name: '',
     region: geography.coverage === 'inside' ? TATARSTAN : null,
     coverage: geography.coverage, timeZone: geography.timeZone,
     automaticTimeZone: { id: geography.timeZone, source: geography.timeZoneSource },
@@ -66,7 +66,14 @@ export function withNearbyCity(place: Place, city: City | null): Place {
   if (!city) return place
   const distanceKm = haversineDistanceKm(place.latitude, place.longitude, city.latitude, city.longitude)
   if (distanceKm > 25) return place
-  return { ...place, name: `Рядом: ${city.name}`, nearbyCity: { id: city.id, name: formatCityLabel(city), distanceKm } }
+  return { ...place, name: city.name, nearbyCity: { id: city.id, name: formatCityLabel(city), distanceKm } }
+}
+
+export function homePlaceLabel(place: Place | null): string {
+  if (!place || !validPosition(place)) return 'Местоположение не определено'
+  const name = place.name.replace(/^Рядом:\s*/u, '').split(',')[0]?.trim()
+  if (name && name !== 'Моё местоположение') return name
+  return `${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`
 }
 
 export function officialLocationForPlace(place: Place, locations: PrayerLocation[]): PrayerLocation | null {

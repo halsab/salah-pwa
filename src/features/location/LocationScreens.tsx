@@ -32,7 +32,9 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
   const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason) : null
   return <Screen label={initial ? 'Выбор места' : 'Локация'} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
     {initial ? <h1 className="screen-title">Выберите место</h1> : null}
-    {place ? <div className="location-current"><p className="screen-title">{compactPlaceLabel(place.name)}</p>
+    {place ? <div className="location-current"><p className="screen-title">{gpsPlace
+      ? place.nearbyCity ? `Ближайший населённый пункт: ${compactPlaceLabel(place.nearbyCity.name)}` : 'Ближайший населённый пункт не определён'
+      : compactPlaceLabel(place.name)}</p>
       {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy)}</p></>
         : place.region ? <p className="note">{place.region.name}</p> : null}
     </div> : null}

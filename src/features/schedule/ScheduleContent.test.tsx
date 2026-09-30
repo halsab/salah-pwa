@@ -62,6 +62,14 @@ describe('новое расписание', () => {
     expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 2 ч 40 мин')
   })
 
+  it('после полуночи выбирает события новых гражданских суток места', () => {
+    const tomorrow: typeof day = { ...day, date: '2026-05-06', fajrStart: '02:20', fajrJamaat: '03:00', sunrise: '03:50', zenith: '11:41', dhuhr: '12:00', asr: '16:58', maghrib: '19:31', isha: '21:01' }
+    const now = () => new Date('2026-05-06T00:01:00+03:00')
+    render(<ScheduleContent {...base} schedule={tomorrow} schedules={[day, tomorrow]} selectedDate={tomorrow.date} today={tomorrow.date} currentTime={now()} now={now} />)
+    expect(screen.queryByRole('listitem', { current: true })).not.toBeInTheDocument()
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 2 ч 19 мин')
+  })
+
   it('учитывает восход и зенит в расчётном расписании', () => {
     const calculated = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, day.date, 'Europe/Moscow')
     const now = () => new Date(calculated.entries.sunrise.instant + 60_000)

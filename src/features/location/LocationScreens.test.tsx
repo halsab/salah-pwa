@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { failure, success } from '../../domain/result'
-import { createCityPlace, createGpsPlace, createOfficialPlace } from '../../domain/place'
+import { createCityPlace, createGpsPlace, createOfficialPlace, withNearbyCity } from '../../domain/place'
 import type { CitySearchResult } from '../../data/cityCatalog'
 import { LocationScreen, SearchScreen } from './LocationScreens'
 const location = { id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.11 }
@@ -24,6 +24,11 @@ describe('экраны локации', () => {
     expect(screen.getByText('Точность ±2,4 км')).toBeVisible()
     rerender(<LocationScreen place={{ ...gps, accuracy: null }} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     expect(screen.getByText('Точность неизвестна')).toBeVisible()
+  })
+  it('отмечает полное название GPS как ближайший населённый пункт', () => {
+    const gps = withNearbyCity(createGpsPlace({ latitude: 55.79631, longitude: 49.10881, accuracy: 120, timestamp: 0 }, 'Europe/Moscow', null, 'gps:1'), { ...city, name: 'Казань', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55.79, longitude: 49.12 })
+    render(<LocationScreen place={gps} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('Ближайший населённый пункт: Казань, Татарстан, РФ')).toBeVisible()
   })
   it.each([
     [{ status: 'locating' as const }, 'Определяем местоположение…'],
