@@ -1,4 +1,4 @@
-import { chooseDate, choosePlace, expectSchedule, expect, test } from './fixtures'
+import { chooseDate, choosePlace, expectSchedule, expect, readSavedSetting, test } from './fixtures'
 
 test('основной путь работает без ошибок во всех браузерных профилях', async ({ page }) => {
   const pageErrors: string[] = []
@@ -62,7 +62,8 @@ test('поиск города в Worker показывает регион и с�
   await expect(city).toHaveText(/Стамбул, Турция/)
   await city.click()
   await expectSchedule(page, 7)
-  await expect(page.getByRole('button', { name: /Стамбул, Стамбул, Турция/ })).toBeVisible()
+  await expect(page.locator('#home-location')).toHaveAccessibleName(/^Стамбул(?: · \d{2}:\d{2})?$/)
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { name: 'Стамбул, Стамбул, Турция' } })
 })
 
 test('поиск остаётся доступен в уменьшенной видимой области, календарь возвращает фокус', async ({ page }, testInfo) => {

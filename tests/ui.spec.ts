@@ -137,26 +137,40 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 390, height: 844 }
   })
 }
 
-test('длинное название места переносится целиком, не перекрывая дату', async ({ page }) => {
-  for (const width of [320, 390]) {
-    await page.setViewportSize({ width, height: 844 })
-    await page.goto('./')
-    await choosePlace(page)
-    const location = page.locator('#home-location')
-    const label = 'Набережные Челны — очень длинное название выбранного местоположения'
-    await location.evaluate((element, text) => { element.textContent = text }, label)
-    await expect(location).toHaveText(label)
-    const metrics = await location.evaluate(element => {
-      const style = getComputedStyle(element)
-      const contentHeight = element.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
-      return { height: element.getBoundingClientRect().height, lines: contentHeight / parseFloat(style.lineHeight), clipped: element.scrollHeight > element.clientHeight }
-    })
-    expect(metrics.lines).toBeGreaterThan(1.5)
-    expect(metrics.height).toBeGreaterThan(44)
-    expect(metrics.clipped).toBe(false)
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
-    await expect(page.locator('#home-date')).toBeVisible()
-  }
+test.describe('узкий экран и другое местное время', () => {
+  test.use({ timezoneId: 'UTC' })
+
+  test('длинное название сокращается, а время и дата остаются видимыми', async ({ page }) => {
+    for (const width of [320, 390]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto('./')
+      await choosePlace(page)
+      const location = page.locator('#home-location')
+      const name = location.locator('.home-location-name')
+      const time = location.locator('.home-location-time')
+      const label = 'Набережные Челны — очень длинное название выбранного местоположения'
+      await name.evaluate((element, text) => { element.textContent = text }, label)
+      await expect(name).toHaveText(label)
+      await expect(time).toHaveText('· 12:30')
+      await expect(location).toHaveCSS('height', '44px')
+      await expect(name).toHaveCSS('text-overflow', 'ellipsis')
+      const metrics = await location.evaluate(element => {
+        const name = element.querySelector<HTMLElement>('.home-location-name')
+        const time = element.querySelector<HTMLElement>('.home-location-time')
+        if (!name || !time) throw new Error('Нет названия места или местного времени')
+        const buttonBounds = element.getBoundingClientRect()
+        const timeBounds = time.getBoundingClientRect()
+        return {
+          nameOverflows: name.scrollWidth > name.clientWidth,
+          timeFits: time.scrollWidth <= time.clientWidth && timeBounds.right <= buttonBounds.right,
+          buttonFits: element.scrollWidth <= element.clientWidth,
+        }
+      })
+      expect(metrics).toEqual({ nameOverflows: true, timeFits: true, buttonFits: true })
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
+      await expect(page.locator('#home-date')).toBeVisible()
+    }
+  })
 })
 
 test('обычные однострочные controls равны BackButton, а экран без footer прокручивается до края', async ({ page }) => {

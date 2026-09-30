@@ -83,8 +83,9 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   await context.setGeolocation({ latitude, longitude, accuracy: 15 })
   await page.goto('./')
   await page.getByRole('button', { name: 'По геопозиции' }).click()
-  await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
+  await expect(page.locator('#home-location')).toBeVisible()
   await expectSchedule(page)
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { selection: 'gps', latitude, longitude, accuracy: 15 } })
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
     const request = indexedDB.open('salah')
     request.onerror = () => reject(request.error ?? new Error('Не удалось открыть IndexedDB'))
@@ -106,7 +107,7 @@ test('GPS and automatic startup keep coordinates out of every request and never 
   let starts = 0
   page.on('request', request => { if (request.url().endsWith('/data/tatarstan-boundary.json')) starts += 1 })
   await page.reload()
-  await expect(page.getByRole('button', { name: /Моё местоположение|Рядом:/ })).toBeVisible()
+  await expect(page.locator('#home-location')).toBeVisible()
   await expect.poll(() => starts).toBeGreaterThan(0)
   expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { accuracy: 15 } })
   expect(requests.filter(request => !request.url.startsWith('http://127.0.0.1:4175/'))).toEqual([])
