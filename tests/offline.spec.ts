@@ -138,7 +138,7 @@ test('GPS вне Татарстана рассчитывается без спр
   await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
   await page.goto('./')
   await page.getByRole('button', { name: 'По геопозиции' }).click()
-  await expect(page.locator('#home-location')).toContainText(/Моё местоположение/i)
+  await expect(page.locator('#home-location')).toContainText(/55\.7558, 37\.6173|Москва/)
   await expectSchedule(page, 7)
   expect(cities).toBe(0)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ mode: 'calculated', source: 'automatic', coordinates: { latitude: 55.7558, longitude: 37.6173 } })
@@ -179,7 +179,7 @@ test('локальная граница Татарстана выбирает т
   try {
     await page.locator('#home-location').click()
     await page.getByRole('button', { name: 'По геопозиции' }).click()
-    await expect(page.locator('#home-location')).toContainText(/Моё местоположение|Рядом:/)
+    await expect(page.locator('#home-location')).toContainText(/55\.7961, 49\.1064/)
     await expectSchedule(page)
     await openSource(page)
     await page.getByRole('button', { name: 'О расписании' }).click()

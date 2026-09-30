@@ -45,7 +45,8 @@ test('старт и обзор не загружают пакеты; Киров 
   try {
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expectSchedule(page, 7)
-    await page.getByRole('button', { name: /Киров, Кировская/ }).click()
+    await expect(page.locator('#home-location')).toHaveAccessibleName(/^Киров(?: · \d{2}:\d{2})?$/)
+    await page.locator('#home-location').click()
     await page.getByRole('button', { name: 'Найти город' }).click()
     await page.getByRole('searchbox').fill('Киров')
     await expect(large).toBeVisible()
