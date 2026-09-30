@@ -86,7 +86,7 @@ test('production CSP разрешает приложение и блокируе
   await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'По геопозиции' }).click()
-  await expect(page.locator('#home-location')).toContainText(/Моё местоположение|Рядом: Москва/)
+  await expect(page.locator('#home-location')).toContainText(/55\.7558, 37\.6173|Москва/)
   expect(externalRequests).toEqual([])
 
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
