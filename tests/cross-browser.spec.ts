@@ -62,7 +62,7 @@ test('поиск города в Worker показывает регион и с�
   await expect(city).toHaveText(/Стамбул, Турция/)
   await city.click()
   await expectSchedule(page, 7)
-  await expect(page.locator('#home-location')).toHaveAccessibleName(/^Стамбул(?: · \d{2}:\d{2})?$/)
+  await expect(page.locator('#home-location')).toHaveAccessibleName(/^Стамбул(?: \d{2}:\d{2})?$/)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { name: 'Стамбул, Стамбул, Турция' } })
 })
 

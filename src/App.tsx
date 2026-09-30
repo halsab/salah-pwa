@@ -30,7 +30,7 @@ import {
   type CalculationProfileCapability,
   type CalculationProfileId,
 } from './domain/prayerCalculation'
-import { getDeviceTimeZone, getZonedTime } from './domain/locationTime'
+import { getDeviceTimeZone, getUtcOffset, getZonedTime } from './domain/locationTime'
 import type { Result } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
@@ -277,7 +277,9 @@ export function App({
   }
   const homeLocationLabel = homePlaceLabel(place)
   const sourcePlaceLabel = compactPlaceLabel(place?.name || 'Выберите место')
-  const locationTime = place && place.timeZone !== deviceTimeZone ? getZonedTime(currentTime, place.timeZone) : undefined
+  const locationTime = place && getUtcOffset(currentTime, place.timeZone) !== getUtcOffset(currentTime, deviceTimeZone)
+    ? getZonedTime(currentTime, place.timeZone)
+    : undefined
   const dialogOpen = locationDialogOpen
     || settingsDialogOpen
     || methodologyDialogOpen

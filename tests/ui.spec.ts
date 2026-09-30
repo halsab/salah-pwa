@@ -141,17 +141,30 @@ test.describe('узкий экран и другое местное время',
   test.use({ timezoneId: 'UTC' })
 
   test('длинное название сокращается, а время и дата остаются видимыми', async ({ page }) => {
-    for (const width of [320, 390]) {
+    for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 844 })
       await page.goto('./')
       await choosePlace(page)
       const location = page.locator('#home-location')
       const name = location.locator('.home-location-name')
       const time = location.locator('.home-location-time')
+      await expect(time).toHaveText('12:30')
+      const shortWidth = await location.evaluate(element => {
+        const name = element.querySelector<HTMLElement>('.home-location-name')
+        const time = element.querySelector<HTMLElement>('.home-location-time')
+        if (!name || !time) throw new Error('Нет названия места или местного времени')
+        const style = getComputedStyle(element)
+        return {
+          actual: element.getBoundingClientRect().width,
+          content: name.getBoundingClientRect().width + time.getBoundingClientRect().width
+            + parseFloat(style.columnGap) + parseFloat(style.paddingLeft) + parseFloat(style.paddingRight),
+        }
+      })
+      expect(shortWidth.actual).toBeCloseTo(shortWidth.content, 0)
       const label = 'Набережные Челны — очень длинное название выбранного местоположения'
       await name.evaluate((element, text) => { element.textContent = text }, label)
       await expect(name).toHaveText(label)
-      await expect(time).toHaveText('· 12:30')
+      await expect(time).toHaveText('12:30')
       await expect(location).toHaveCSS('height', '44px')
       await expect(name).toHaveCSS('text-overflow', 'ellipsis')
       const metrics = await location.evaluate(element => {
@@ -164,9 +177,11 @@ test.describe('узкий экран и другое местное время',
           nameOverflows: name.scrollWidth > name.clientWidth,
           timeFits: time.scrollWidth <= time.clientWidth && timeBounds.right <= buttonBounds.right,
           buttonFits: element.scrollWidth <= element.clientWidth,
+          buttonWidth: buttonBounds.width,
         }
       })
-      expect(metrics).toEqual({ nameOverflows: true, timeFits: true, buttonFits: true })
+      expect(metrics).toMatchObject({ nameOverflows: true, timeFits: true, buttonFits: true })
+      expect(metrics.buttonWidth).toBeLessThan(400)
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
       await expect(page.locator('#home-date')).toBeVisible()
     }

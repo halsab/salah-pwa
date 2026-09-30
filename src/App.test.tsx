@@ -329,7 +329,32 @@ describe('Salah', () => {
     await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('04:53')).toBeVisible()
     expect(screen.getByText('1 сентября')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Стамбул · 13:00' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Стамбул 13:00' })).toBeVisible()
+  })
+
+  it.each([
+    ['Мекка', 'Asia/Riyadh', 21.4225, 39.8262, 'Мекка'],
+    ['Лиссабон', 'Europe/Lisbon', 38.7223, -9.1393, 'Лиссабон 11:00'],
+  ] as const)('показывает дополнительное время только при другом UTC-offset: %s', async (name, timeZone, latitude, longitude, label) => {
+    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: {
+      mode: 'calculated', source: 'manual', coordinates: { latitude, longitude, timeZone, accuracy: null, timestamp: 1, name, source: 'preset' },
+    } })) })} />)
+    expect(await screen.findByRole('button', { name: label })).toBeVisible()
+  })
+
+  it('скрывает дополнительное время, когда DST уравнивает текущие UTC-offset', async () => {
+    let now = new Date('2026-03-29T00:59:00.000Z')
+    const services = createServices({
+      now: () => now,
+      getDeviceTimeZone: () => 'Europe/Berlin',
+      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: {
+        mode: 'calculated', source: 'manual', coordinates: { latitude: -26.2041, longitude: 28.0473, timeZone: 'Africa/Johannesburg', accuracy: null, timestamp: 1, name: 'Йоханнесбург', source: 'preset' },
+      } })),
+    })
+    render(<App services={services} />)
+    expect(await screen.findByRole('button', { name: 'Йоханнесбург 02:59' })).toBeVisible()
+    act(() => { now = new Date('2026-03-29T01:00:00.000Z'); window.dispatchEvent(new Event('pageshow')) })
+    expect(await screen.findByRole('button', { name: 'Йоханнесбург' })).toBeVisible()
   })
 
   it('переключает сегодняшний день по московской полуночи, сохраняя выбранную чужую дату', async () => {
