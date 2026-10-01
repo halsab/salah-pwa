@@ -7,6 +7,7 @@ import { notifyJellyThemeChange } from './surface'
 interface FakeContextCalls {
   fill: number
   clear: number
+  colors: string[]
 }
 
 const originalDescriptors = {
@@ -15,7 +16,7 @@ const originalDescriptors = {
 }
 
 function installContext(): FakeContextCalls {
-  const calls: FakeContextCalls = { fill: 0, clear: 0 }
+  const calls: FakeContextCalls = { fill: 0, clear: 0, colors: [] }
   const ctx = {
     clearRect: () => { calls.clear += 1 },
     save: () => undefined,
@@ -25,7 +26,7 @@ function installContext(): FakeContextCalls {
     moveTo: () => undefined,
     bezierCurveTo: () => undefined,
     closePath: () => undefined,
-    fill: () => { calls.fill += 1 },
+    fill: () => { calls.fill += 1; calls.colors.push(ctx.fillStyle as string) },
     setTransform: () => undefined,
     fillStyle: '',
     globalAlpha: 1,
@@ -69,6 +70,8 @@ it('рисует поверхность и запускает физику пр�
   await vi.waitFor(() => { expect(calls.fill).toBeGreaterThan(before) })
   button.dispatchEvent(pointer('pointerup', { pointerId: 1, pointerType: 'touch', clientX: 10, clientY: 4 }))
   expect(errors).not.toHaveBeenCalled()
+  // Нажатие показывает только деформацию: цвет поверхности не меняется ни в одной теме.
+  expect(new Set(calls.colors).size).toBe(1)
 })
 
 it('клавиатурная активация даёт импульс и отпускание', async () => {

@@ -13,11 +13,6 @@ import { JellyBody, traceSmoothPath } from './softBody'
  */
 export const JELLY_SURFACE_PAD = 16
 
-// Нажатие — мягкое углубление: поверх secondary-фона слой background.primary
-// с малой альфой. В тёмных палитрах это затемнение, в светлых — тоже, потому
-// что primary светлых сезонов темнее tertiary.
-const PRESS_ALPHA = 0.18
-
 let themeEpoch = 0
 const liveSurfaces = new Set<JellySurface>()
 
@@ -34,10 +29,8 @@ export class JellySurface implements JellyComponent {
   private disabled: boolean
   private reduced: boolean
   private fill = '#383838'
-  private pressFill = '#000000'
   private colorsEpoch = -1
   private pointerId: number | null = null
-  private pressed = false
   private keyboardActive = false
   private suppressClick = false
   private cssW = 0
@@ -174,7 +167,6 @@ export class JellySurface implements JellyComponent {
 
     const styles = getComputedStyle(document.documentElement)
     this.fill = styles.getPropertyValue('--background-tertiary').trim() || '#383838'
-    this.pressFill = styles.getPropertyValue('--background-primary').trim() || '#000000'
     this.colorsEpoch = themeEpoch
   }
 
@@ -197,13 +189,6 @@ export class JellySurface implements JellyComponent {
     traceSmoothPath(this.ctx, body.getSurfacePoints())
     this.ctx.fillStyle = this.fill
     this.ctx.fill()
-
-    if (this.pressed || this.keyboardActive) {
-      this.ctx.globalAlpha = PRESS_ALPHA
-      this.ctx.fillStyle = this.pressFill
-      this.ctx.fill()
-    }
-
     this.ctx.restore()
   }
 
@@ -245,7 +230,6 @@ export class JellySurface implements JellyComponent {
     const local = this.toLocal(event.clientX, event.clientY)
 
     this.body.pressAtLocal(local.x, local.y, JELLY_PRESETS[this.preset].strength)
-    this.pressed = true
     this.wake()
   }
 
@@ -291,7 +275,6 @@ export class JellySurface implements JellyComponent {
 
   private endPointer(): void {
     this.pointerId = null
-    this.pressed = false
     this.body?.release()
     this.wake()
   }
@@ -333,7 +316,6 @@ export class JellySurface implements JellyComponent {
   private onBlur = (): void => {
     this.keyboardActive = false
     this.pointerId = null
-    this.pressed = false
     this.body?.release()
     this.wake()
   }
