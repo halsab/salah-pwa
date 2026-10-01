@@ -15,6 +15,13 @@ registerSW({
 const root = document.getElementById('root')
 if (!root) throw new Error('Не найден корневой элемент приложения')
 
+// Фокусное кольцо контролов показываем только после клавиатурного ввода.
+// WebKit после тапа оставляет светлый outline на select и строках с ним.
+const inputRoot = document.documentElement
+inputRoot.dataset.input = 'keyboard'
+window.addEventListener('keydown', () => { inputRoot.dataset.input = 'keyboard' }, true)
+window.addEventListener('pointerdown', () => { inputRoot.dataset.input = 'pointer' }, true)
+
 createRoot(root).render(
   <StrictMode>
     <App />

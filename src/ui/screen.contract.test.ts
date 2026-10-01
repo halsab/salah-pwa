@@ -71,4 +71,12 @@ describe('контракт стандартизации кнопок и стро
       expect(screenCssRaw).not.toContain(banned)
     }
   })
+
+  it('кольцо фокуса включается только после клавиатурного ввода, tap-highlight снят у action', () => {
+    expect(screenCssRaw).toContain("html[data-input='keyboard'] .pill:focus-visible")
+    expect(screenCssRaw).toContain("html[data-input='keyboard'] .select-field:focus-visible")
+    expect(screenCssRaw).toContain("html[data-input='pointer'] .select-field { outline: none; }")
+    expect(screenCssRaw).toContain("html[data-input='pointer'] .date-field:has(select:focus-visible)")
+    expect(screenCssRaw).toContain('-webkit-tap-highlight-color: transparent')
+  })
 })

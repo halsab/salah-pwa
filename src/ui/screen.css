@@ -61,7 +61,14 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .pill { display: inline-flex; align-items: center; justify-content: center; gap: 12px; cursor: pointer; white-space: normal; overflow-wrap: anywhere; flex-shrink: 0; max-width: 100%; padding-block: 10px; }
 .pill:active { background: var(--text-primary); color: var(--background-secondary); }
 .pill:disabled { background: transparent; color: var(--text-secondary); opacity: 1; cursor: default; }
-.pill:focus-visible, .text-field:focus-visible, .select-field:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+/* Текстовое поле показывает кольцо и по тапу: фокус сигнализирует о вводе. */
+.text-field:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+/* У кнопок и select кольцо только после клавиатуры: WebKit иначе оставляет
+   светлый outline на выбранном select после тапа. */
+html[data-input='keyboard'] .pill:focus-visible,
+html[data-input='keyboard'] .select-field:focus-visible,
+html[data-input='keyboard'] .religious-event-banner:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+html[data-input='pointer'] .select-field { outline: none; }
 /* pill--action / pill--auxiliary используют базовую геометрию .pill (компактное действие). */
 /* Основное действие сценария: полная ширина, текст по центру. */
 .pill--primary { width: 100%; }
@@ -126,7 +133,6 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 }
 button.religious-event-banner { appearance: none; cursor: pointer; }
 button.religious-event-banner:active { background: var(--text-primary); color: var(--background-secondary); }
-button.religious-event-banner:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .religious-event-banner-title { font-size: 16px; line-height: 1.2; }
 .religious-event-banner-secondary { font-size: 13px; line-height: 1.2; color: var(--text-secondary); }
 .religious-events-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -182,6 +188,7 @@ button.religious-event-banner:focus-visible { outline: 2px solid var(--text-prim
 .date-field > .note, .theme-field > .note { flex: 0 1 auto; max-width: 100%; margin-left: auto; }
 .date-field select, .theme-field select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; font: var(--font-body); }
 .date-field:has(select:focus-visible), .theme-field:has(select:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+html[data-input='pointer'] .date-field:has(select:focus-visible), html[data-input='pointer'] .theme-field:has(select:focus-visible) { outline: none; }
 
 /*
  * Jelly-поверхность action-компонентов Salah. Canvas рисует ту же пилюлю,
@@ -189,7 +196,7 @@ button.religious-event-banner:focus-visible { outline: 2px solid var(--text-prim
  * В покое форма и цвет совпадают с текущей кнопкой, поэтому визуальный язык
  * не меняется, а при нажатии появляется мягкий отклик.
  */
-.jelly-action { position: relative; isolation: isolate; background: transparent; }
+.jelly-action { position: relative; isolation: isolate; background: transparent; -webkit-tap-highlight-color: transparent; }
 .jelly-action-canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: -1; pointer-events: none; }
 /* Физика сама даёт понятный press-feedback, поэтому резкая инверсия ослаблена. */
 button.jelly-action:active { background: transparent; color: var(--text-primary); }
