@@ -29,6 +29,14 @@ describe('новое расписание', () => {
     expect(screen.queryByText('Первые 10 дней Зуль-хиджи')).not.toBeInTheDocument()
   })
 
+  it('оформляет footer главной общим toolbar: ведущий слот слева, icon-only действие справа', () => {
+    const actions = <button id="home-settings" type="button">Настройки</button>
+    render(<ScheduleContent {...base} actions={actions} />)
+    const footer = screen.getByRole('button', { name: 'Настройки' }).closest('.screen-footer')
+    expect(footer).toHaveClass('screen-footer--between')
+    expect(footer?.querySelector('.screen-footer-lead')).not.toBeNull()
+  })
+
   it.each([
     ['00:10', 'Фаджр (конец сухура)', 'До Фаджра в мечети, осталось 2 ч 12 мин'],
     ['04:00', 'Восход', 'До зенита, осталось 7 ч 41 мин'],

@@ -19,6 +19,9 @@ it('показывает хронологический список с display 
   expect(within(region).queryByRole('heading')).not.toBeInTheDocument()
   const rows = within(region).getAllByRole('listitem')
   expect(rows[0]).toHaveTextContent('Исра и Ми‘радж')
+  const firstRow = within(rows[0] as HTMLElement).getByRole('button')
+  expect(firstRow).toHaveClass('pill-row', 'pill-row--stacked')
+  expect(within(firstRow).getByText('Исра и Ми‘радж')).toHaveClass('action-row-title')
   const rowIds = rows.map(row => within(row).getByRole('button').id)
   expect(rowIds).toEqual([...rowIds].sort())
   expect(region).toHaveTextContent('Начало Рамадана')
@@ -45,6 +48,7 @@ it('оставляет occurrence без статьи неинтерактивн
   }
   render(<ul><ReligiousEventOccurrenceRow occurrence={occurrence} onOpenEvent={() => {}} /></ul>)
   expect(screen.getByRole('listitem')).toHaveTextContent('День Ашура')
+  expect(screen.getByRole('listitem').firstElementChild).toHaveClass('pill-row--stacked')
   expect(screen.queryByRole('button')).not.toBeInTheDocument()
 })
 

@@ -4,6 +4,7 @@ import {
   type CalendarDate, type CalendarPreferences,
 } from '../../domain/calendar'
 import { BackButton, Screen } from '../../ui/Screen'
+import { ActionRow, Button, ScreenFooter } from '../../ui/controls'
 
 interface SelectOption { value: string; label: string; disabled?: boolean }
 
@@ -37,10 +38,10 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
   const updateDate = (patch: Partial<CalendarDate>) => onDateChange(civilDateFromCalendar({ ...date, ...patch }, calendar, correction))
 
   return <Screen label="Установка даты" top={<BackButton onClick={onBack} />} contentClassName="screen-center"
-    bottom={selectedDate !== today ? <button className="pill" type="button" onClick={() => {
+    bottom={selectedDate !== today ? <ScreenFooter><Button variant="primary" onClick={() => {
       onDateChange(today)
       dayRef.current?.focus()
-    }}>Сегодня</button> : null}>
+    }}>Сегодня</Button></ScreenFooter> : null}>
     <div className="screen-stack">
       <SelectRow label="Календарь" value={calendar} options={[
         { value: 'gregorian', label: 'Григорианский' },
@@ -57,9 +58,7 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
         const correction = Number(value)
         if (correction === -1 || correction === 0 || correction === 1) onPreferencesChange({ ...preferences, correction })
       }} /> : null}
-      <button id="date-religious-events" className="pill pill-row" type="button" disabled={!hijriSupported} onClick={onOpenReligiousEvents}>
-        Праздники и события
-      </button>
+      <ActionRow id="date-religious-events" title="Праздники и события" disabled={!hijriSupported} onClick={onOpenReligiousEvents} />
       {!hijriSupported ? <p className="note" role="status">Этот браузер не поддерживает календарь хиджры.</p> : null}
       {notice}
     </div>

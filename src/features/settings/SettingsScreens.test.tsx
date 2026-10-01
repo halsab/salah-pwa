@@ -8,6 +8,21 @@ import type { AppScreen } from '../../ui/useAppNavigation'
 const defaults = { onBack: vi.fn(), onOpen: vi.fn(), sourceLabel: 'ДУМ РТ', themeFamily: 'classic' as const, onThemeFamilyChange: vi.fn(), getCapability: () => ({ supported: true as const }), onReset: vi.fn(), version: 'v26.4' }
 
 describe('новые настройки', () => {
+  it('оформляет footer вспомогательным правым действием, а удаление — полноширинным', () => {
+    const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn() }
+    const { rerender } = render(<SettingsScreens {...props} screen="settings" />)
+    const share = screen.getByRole('button', { name: 'Поделиться' })
+    expect(share).toHaveClass('pill--auxiliary')
+    expect(share.closest('.screen-footer')).toHaveClass('screen-footer--end')
+    rerender(<SettingsScreens {...props} screen="source" />)
+    const about = screen.getByRole('button', { name: 'О расписании' })
+    expect(about).toHaveClass('pill--auxiliary')
+    expect(about.closest('.screen-footer')).toHaveClass('screen-footer--end')
+    rerender(<SettingsScreens {...props} screen="privacy" />)
+    const reset = screen.getByRole('button', { name: 'Удалить данные' })
+    expect(reset).toHaveClass('pill--primary')
+    expect(reset.closest('.screen-footer')).toHaveClass('screen-footer--stretch')
+  })
   it('показывает privacy и about как полные статьи без вложенных переходов', () => {
     const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn() }
     const { rerender } = render(<SettingsScreens {...props} screen="privacy" />)

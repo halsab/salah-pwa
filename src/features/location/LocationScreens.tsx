@@ -5,6 +5,7 @@ import { compactPlaceLabel, getCountryLabel } from '../../domain/countryLabels'
 import type { Place } from '../../domain/place'
 import type { PrayerLocation } from '../../domain/types'
 import { BackButton, Screen } from '../../ui/Screen'
+import { ActionRow, Button } from '../../ui/controls'
 import type { CityCatalogStatus } from './useCityCatalog'
 import { formatAccuracy, formatCoordinates, geolocationFailureMessage, nameLookupMessage, type GpsUiState, type NameLookupState } from './locationState'
 
@@ -39,15 +40,15 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
         : place.region ? <p className="note">{place.region.name}</p> : null}
     </div> : null}
     <div className="screen-stack">
-      <button id="location-search" className="pill pill-wide search-open" type="button" onClick={onSearch}>Найти город</button>
-      <button className="pill pill-wide" type="button" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? 'Повторить' : 'По геопозиции'}</button>
+      <Button variant="field" id="location-search" onClick={onSearch}>Найти город</Button>
+      <Button variant="primary" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? 'Повторить' : 'По геопозиции'}</Button>
       {initial ? <p className="note">Браузер запросит доступ к геопозиции. При необходимости город можно выбрать вручную.</p> : null}
-      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <button className="pill pill-wide" type="button" onClick={onAcceptGps}>Использовать эту точку</button> : null}
+      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <Button variant="primary" onClick={onAcceptGps}>Использовать эту точку</Button> : null}
       {status ? <p className="note" role="status" aria-live="polite">{status}</p> : null}
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
     {recent.length ? <section className="screen-space" aria-label="Недавние города"><p className="screen-heading">Недавние</p><div className="screen-stack screen-space">
-      {recent.map(item => <button className="pill pill-row" key={item.id} type="button" onClick={() => onSelectRecent(item)}>{compactPlaceLabel(item.name)}</button>)}
+      {recent.map(item => <ActionRow key={item.id} title={compactPlaceLabel(item.name)} onClick={() => onSelectRecent(item)} />)}
     </div></section> : null}
     {notice}
   </Screen>
@@ -99,18 +100,19 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
     <input className="text-field" data-screen-focus type="search" aria-label="Поиск населённого пункта" placeholder="Найти город" value={text}
       onChange={event => { setText(event.target.value); if (event.target.value.trim() !== query) setCompletion(null) }} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
     <ul className="city-results" aria-label="Результаты поиска" aria-busy={pending}>
-      {official.map(item => <li key={item.id}><button className="pill city-result" type="button" onClick={() => onSelectOfficial(item.id)}>
-        <span>{item.name}</span><span className="note">Татарстан · таблица ДУМ РТ</span>
-      </button></li>)}
+      {official.map(item => <li key={item.id}><ActionRow className="city-result" title={item.name}
+        secondary={<span className="note">Татарстан · таблица ДУМ РТ</span>} onClick={() => onSelectOfficial(item.id)} />
+      </li>)}
       {cities.map(city => {
         const sameLabel = cities.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))
-        return <li key={city.id}><button className="pill city-result" aria-label={formatCityLabel(city, sameLabel)} type="button" onClick={() => onSelectCity(city)}>
-          <span>{city.name}</span><span className="note">{formatCityRegion(city)}, {getCountryLabel(city.countryCode)}{sameLabel ? ` · ${city.id}` : ''}</span>
-        </button></li>
+        return <li key={city.id}><ActionRow className="city-result" aria-label={formatCityLabel(city, sameLabel)} title={city.name}
+          secondary={<span className="note">{formatCityRegion(city)}, {getCountryLabel(city.countryCode)}{sameLabel ? ` · ${city.id}` : ''}</span>}
+          onClick={() => onSelectCity(city)} />
+        </li>
       })}
     </ul>
     {status ? <p className="note screen-space" role="status">{status}</p> : null}
-    {canRetry ? <button className="pill screen-space" type="button" onClick={retrySearch}>Повторить</button> : null}
+    {canRetry ? <Button className="screen-space" onClick={retrySearch}>Повторить</Button> : null}
     {ready?.data?.previousVersion ? <p className="note screen-space">Показан сохранённый каталог</p> : null}
     {notice}
   </Screen>

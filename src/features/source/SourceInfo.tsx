@@ -6,6 +6,7 @@ import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleE
 import { formatCompactDateLabel, formatDateLabel } from '../../domain/date'
 import { ASR_METHOD_LABELS, EVENT_LABELS, HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
+import { Button, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
 import { markdownLink, markdownText } from '../../ui/markdownContent'
 import type { CalculatedPrayerKey } from '../../domain/types'
@@ -67,7 +68,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   ].filter(Boolean).join('\n\n')
 
   return <Screen label="Сведения об источнике" top={<BackButton onClick={onClose} />}
-    bottom={!official && onOpenMethodology ? <button id="source-methodology" className="pill pill-wide" type="button" onClick={onOpenMethodology}>Как считается время</button> : undefined}>
+    bottom={!official && onOpenMethodology ? <ScreenFooter><Button variant="primary" id="source-methodology" onClick={onOpenMethodology}>Как считается время</Button></ScreenFooter> : undefined}>
     <MarkdownArticle content={article} />
   </Screen>
 }

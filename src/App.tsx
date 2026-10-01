@@ -59,6 +59,7 @@ import {
 import type { LocationChoice } from './storage/database'
 import { AppShell } from './ui/AppShell'
 import { AppHeader } from './ui/AppHeader'
+import { Button, IconButton, ScreenFooter } from './ui/controls'
 import { SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
 import { BackButton, Screen } from './ui/Screen'
@@ -255,9 +256,9 @@ export function App({
       <AppShell>
         <Screen label="Ошибка загрузки" contentClassName="screen-center">
           <p role="alert">{error}</p>
-          <button className="pill" type="button" onClick={() => setRetryCount((count) => count + 1)}>
+          <Button onClick={() => setRetryCount((count) => count + 1)}>
             Попробовать снова
-          </button>
+          </Button>
         </Screen>
       </AppShell>
     )
@@ -292,7 +293,7 @@ export function App({
   const persistenceNotice = persistence.status === 'failed' ? (
         <div className="screen-status" role="status">
           <span>Не удалось сохранить изменения</span>
-          <button type="button" className="pill" onClick={persistence.retry}>Повторить</button>
+          <Button onClick={persistence.retry}>Повторить</Button>
         </div>
       ) : null
   const nearbyCityNotice = place?.selection === 'gps' ? nameLookupMessage(nameLookupState) : null
@@ -305,7 +306,7 @@ export function App({
           {!place ? <LocationScreen initial place={null} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
             onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
             gpsState={gpsState} nameLookupState={nameLookupState} onAcceptGps={acceptGps}
-            notice={persistenceNotice} bottom={<button id="home-settings" className="pill screen-end" type="button" onClick={openSettingsDialog}>Настройки</button>} /> : <ScheduleContent
+            notice={persistenceNotice} bottom={<ScreenFooter align="end"><Button variant="auxiliary" id="home-settings" onClick={openSettingsDialog}>Настройки</Button></ScreenFooter>} /> : <ScheduleContent
             schedule={schedule}
             schedules={schedules}
             scheduleLoading={scheduleLoading}
@@ -321,13 +322,12 @@ export function App({
             onOpenReligiousEvent={openReligiousEvent}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={homeLocationLabel} locationTime={locationTime} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
-            actions={<button className="pill home-settings-button screen-end" id="home-settings" ref={settingsButtonRef} type="button"
-              aria-label="Настройки" title="Настройки" onClick={openSettingsDialog}>
+            actions={<IconButton id="home-settings" ref={settingsButtonRef} label="Настройки" title="Настройки" onClick={openSettingsDialog}>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 3.75 19.15 7.9v8.2L12 20.25 4.85 16.1V7.9L12 3.75Z" stroke="currentColor" strokeWidth="1.55" strokeLinejoin="round" />
                 <circle cx="12" cy="12" r="1.6" fill="currentColor" />
               </svg>
-            </button>}
+            </IconButton>}
             notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}
               {!locationNotice && nearbyCityNotice ? <p className="note" role="status">{nearbyCityNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}

@@ -4,6 +4,7 @@ import { resolveReligiousBanner, type ReligiousEventId } from '../../domain/reli
 import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
 import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
 import { Screen } from '../../ui/Screen'
+import { Button, ScreenFooter } from '../../ui/controls'
 import { ReligiousEventBanner } from '../religiousEvents/ReligiousEventBanner'
 import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
@@ -82,12 +83,12 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   })
   const countdown = next ? <ScheduleCountdown key={`${next.scheduleDate}:${next.key}:${next.instant}`} countdownLabel={COUNTDOWN[next.key]}
     targetInstant={next.instant} now={now} onElapsed={onElapsed} /> : null
-  const footer = <>
-    {selectedDate !== today ? <button className="pill" type="button" onClick={() => onChangeDate(today)}>Сегодня</button> : countdown}
+  const footer = <ScreenFooter align="between">
+    <span className="screen-footer-lead">{selectedDate !== today ? <Button onClick={() => onChangeDate(today)}>Сегодня</Button> : countdown}</span>
     {actions}
-  </>
+  </ScreenFooter>
   return <Screen label="Главная" top={top} bottom={footer} busy={scheduleLoading} contentClassName={ready ? 'home-content' : 'screen-center'}>
-    {scheduleError ? <div className="screen-stack"><p className="screen-copy" role="alert">{scheduleError}</p><button type="button" className="pill" onClick={onRetrySchedule}>Повторить</button></div>
+    {scheduleError ? <div className="screen-stack"><p className="screen-copy" role="alert">{scheduleError}</p><Button onClick={onRetrySchedule}>Повторить</Button></div>
       : scheduleLoading ? <p className="note" role="status">Загружаем расписание…</p>
         : !schedule ? <p className="screen-copy">Нет расписания на эту дату</p>
           : <>

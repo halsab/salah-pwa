@@ -62,8 +62,28 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .pill:active { background: var(--text-primary); color: var(--background-secondary); }
 .pill:disabled { background: transparent; color: var(--text-secondary); opacity: 1; cursor: default; }
 .pill:focus-visible, .text-field:focus-visible, .select-field:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
-.pill-wide { width: 100%; }
+/* pill--action / pill--auxiliary используют базовую геометрию .pill (компактное действие). */
+/* Основное действие сценария: полная ширина, текст по центру. */
+.pill--primary { width: 100%; }
+/* Field-like trigger ведёт себя как поле до открытия отдельного flow. */
+.pill--field { width: 100%; justify-content: flex-start; text-align: left; color: var(--text-secondary); }
+/* Строка списка: полная ширина, заголовок слева, значение справа. */
 .pill-row { width: 100%; justify-content: space-between; text-align: left; }
+/* Двухстрочная строка списка: обе строки вертикально и слева. */
+.pill-row--stacked { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; white-space: normal; }
+.action-row-title { font-size: 1rem; line-height: 1.2; }
+.action-row-secondary { font-size: 0.8125rem; line-height: 1.2; color: var(--text-secondary); }
+button.pill-row--stacked:active .action-row-secondary { color: inherit; }
+/* Icon-only action: строго 44×44 px с glyph по центру. */
+.icon-button { width: var(--button-height); min-width: var(--button-height); height: var(--button-height); padding: 0; flex: 0 0 var(--button-height); }
+.icon-button svg { width: 24px; height: 24px; display: block; }
+/* Общий layout нижних действий. */
+.screen-footer { width: 100%; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.screen-footer--stretch { flex-wrap: wrap; }
+.screen-footer--stretch > * { flex: 1 1 100%; }
+.screen-footer--end { justify-content: flex-end; }
+.screen-footer--between { justify-content: space-between; flex-wrap: nowrap; }
+.screen-footer-lead { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
 .text-field, .select-field { font: var(--font-body); display: block; width: 100%; }
 .text-field::placeholder { color: var(--text-secondary); opacity: 1; }
 .text-field[type='search']::-webkit-search-cancel-button { display: none; }
@@ -75,9 +95,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .screen-heading { font: var(--font-footnote); color: var(--text-secondary); }
 .screen-title { font: var(--font-title); overflow-wrap: anywhere; }
 .screen-copy { font: var(--font-body); }
-.screen-end { margin-left: auto; }
-.screen-status { font: var(--font-footnote); display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
-.screen-status .pill { margin-left: auto; }
+.screen-status { font: var(--font-footnote); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
 @media (prefers-reduced-motion: reduce) {
   .app-layout *, .app-layout *::before, .app-layout *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
@@ -86,13 +104,10 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .home-location { min-width: 44px; height: var(--button-height); flex: 0 1 auto; max-width: min(100%, 24rem); gap: 6px; white-space: nowrap; }
 .home-location-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
 .home-location-time { flex: 0 0 auto; }
-.screen-bottom:has(#home-settings) { flex-wrap: nowrap; }
 .event-countdown { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; color: var(--text-primary); }
 .event-countdown .countdown-label, .event-countdown .countdown-value { line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-countdown .countdown-label { font: var(--font-emphasis); line-height: 1.05; color: var(--text-secondary); }
 .event-countdown .countdown-value { font: var(--font-title); line-height: 1.05; color: var(--accent-countdown); font-weight: 400; font-variant-numeric: tabular-nums; }
-.home-settings-button { width: var(--button-height); min-width: var(--button-height); height: var(--button-height); padding: 0; flex: 0 0 var(--button-height); }
-.home-settings-button svg { width: 24px; height: 24px; display: block; }
 .event-list { list-style: none; padding: 12px 0 0; margin: 0; }
 .religious-event-banner {
   font: var(--font-body);
@@ -118,25 +133,6 @@ button.religious-event-banner:focus-visible { outline: 2px solid var(--text-prim
 button.religious-event-banner:active .religious-event-banner-secondary { color: inherit; }
 .religious-events-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .religious-events-list > li { min-width: 0; }
-.religious-event-list-row {
-  font: var(--font-body);
-  width: 100%;
-  min-height: var(--button-height);
-  padding: 10px 16px;
-  display: grid;
-  place-content: center;
-  gap: 2px;
-  border: 0;
-  border-radius: var(--button-radius);
-  background: var(--background-tertiary);
-  color: var(--text-primary);
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-button.religious-event-list-row { appearance: none; cursor: pointer; }
-button.religious-event-list-row:active { background: var(--text-primary); color: var(--background-secondary); }
-button.religious-event-list-row:active .religious-event-banner-secondary { color: inherit; }
-button.religious-event-list-row:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .event-row { font: var(--font-emphasis); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; padding-inline: 4px; color: var(--text-primary); }
 .event-row time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .event-name { min-width: 0; overflow-wrap: anywhere; }
@@ -153,13 +149,13 @@ button.religious-event-list-row:focus-visible { outline: 2px solid var(--text-pr
 .home-content > .screen-status, .home-content > .note { margin-top: 16px; }
 .location-current { display: grid; gap: 4px; margin-bottom: 16px; }
 .location-coordinates { font-variant-numeric: tabular-nums; }
-.search-open { font: var(--font-body); justify-content: flex-start; color: var(--text-secondary); }
 .city-results { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 16px; }
-.city-result { font: var(--font-body); width: 100%; height: auto; min-height: var(--button-height); padding: 10px 16px; border-radius: 16px; align-items: flex-start; flex-direction: column; gap: 4px; text-align: left; white-space: normal; }
+/* Row-card результата поиска: та же левая семантика строки, отдельный радиус. */
+.city-result { border-radius: 16px; gap: 4px; }
 .city-result > span { max-width: 100%; overflow-wrap: anywhere; }
 .settings-menu { display: flex; align-items: safe center; }
 .settings-menu > .screen-stack { width: 100%; }
-.pill-row .note { min-width: 0; text-align: right; overflow-wrap: anywhere; }
+.pill-row:not(.pill-row--stacked) .note { min-width: 0; text-align: right; overflow-wrap: anywhere; }
 .screen-field > span { font: var(--font-footnote); display: block; color: var(--text-secondary); margin-bottom: 8px; }
 .share-screen { display: flex; flex-direction: column; gap: 16px; text-align: center; }
 .app-share-qr { width: 270px; height: auto; max-width: 100%; display: block; margin-inline: auto; flex-shrink: 0; }

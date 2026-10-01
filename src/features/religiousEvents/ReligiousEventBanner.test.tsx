@@ -6,11 +6,13 @@ import { ReligiousEventBanner } from './ReligiousEventBanner'
 
 const state = { eventId: 'arafa', title: 'День Арафа', secondaryText: 'завтра', contentId: 'arafa' } as const
 
-it('рендерит content banner кнопкой со стабильным id', async () => {
+it('рендерит content banner кнопкой со стабильным id и остаётся центрированным блоком', async () => {
   const onOpen = vi.fn()
   render(<ReligiousEventBanner state={state} onOpen={onOpen} />)
   const button = screen.getByRole('button', { name: 'День Арафа завтра' })
   expect(button).toHaveAttribute('id', 'religious-event-banner')
+  expect(button).toHaveClass('religious-event-banner')
+  expect(button).not.toHaveClass('pill-row--stacked')
   await userEvent.click(button)
   expect(onOpen).toHaveBeenCalledWith('arafa')
 })

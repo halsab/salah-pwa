@@ -11,6 +11,7 @@ import {
   type ReligiousEventOccurrence,
 } from '../../domain/religiousEvents'
 import { BackButton, Screen } from '../../ui/Screen'
+import { ActionRow } from '../../ui/controls'
 import { formatReligiousEventOccurrenceDate } from './religiousEventDate'
 
 export function ReligiousEventOccurrenceRow({ occurrence, onOpenEvent }: {
@@ -19,14 +20,11 @@ export function ReligiousEventOccurrenceRow({ occurrence, onOpenEvent }: {
 }) {
   const id = `religious-event-${occurrence.civilDate}-${occurrence.eventId}`
   const contentId = occurrence.contentId
-  const content = <>
-    <span className="religious-event-banner-title">{occurrence.title}</span>
-    <span className="religious-event-banner-secondary">{formatReligiousEventOccurrenceDate(occurrence)}</span>
-  </>
+  const date = <span className="action-row-secondary">{formatReligiousEventOccurrenceDate(occurrence)}</span>
   return <li>
     {contentId
-      ? <button id={id} className="religious-event-list-row" type="button" onClick={() => onOpenEvent(contentId)}>{content}</button>
-      : <div id={id} className="religious-event-list-row">{content}</div>}
+      ? <ActionRow id={id} className="religious-event-list-row" title={occurrence.title} secondary={date} onClick={() => onOpenEvent(contentId)} />
+      : <div id={id} className="pill pill-row pill-row--stacked religious-event-list-row"><span className="action-row-title">{occurrence.title}</span>{date}</div>}
   </li>
 }
 

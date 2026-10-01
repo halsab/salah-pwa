@@ -148,5 +148,16 @@ describe('экраны локации', () => {
     await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(screen.queryByText('Для полного поиска нужен интернет')).not.toBeInTheDocument())
   })
+  it('оформляет триггер поиска как field-like, а гео-действие полноширинным', () => {
+    render(<LocationScreen initial place={null} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByRole('button', { name: 'Найти город' })).toHaveClass('pill--field')
+    expect(screen.getByRole('button', { name: 'По геопозиции' })).toHaveClass('pill--primary')
+  })
+  it('выравнивает результаты поиска как двухстрочные строки слева', async () => {
+    render(<SearchScreen {...searchProps} />)
+    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
+    const result = await screen.findByRole('button', { name: 'Москва, Москва, Россия' })
+    expect(result).toHaveClass('pill-row', 'pill-row--stacked')
+  })
 
 })
