@@ -221,10 +221,12 @@ export class JellySurface implements JellyComponent {
 
     this.pointerId = event.pointerId
 
-    try {
-      this.button.setPointerCapture(event.pointerId)
-    } catch {
-      // Захват может не состояться, если указатель уже ушёл; нажатие всё равно работает.
+    if (event.pointerType !== 'touch') {
+      try {
+        this.button.setPointerCapture(event.pointerId)
+      } catch {
+        // Захват может не состояться, если указатель уже ушёл; нажатие всё равно работает.
+      }
     }
 
     const local = this.toLocal(event.clientX, event.clientY)

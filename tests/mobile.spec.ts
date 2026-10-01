@@ -103,6 +103,43 @@ test('список праздников и статья работают на у
   await expect(list.getByRole('button', { name: /Начало Рамадана/ })).toBeFocused()
 })
 
+test('экранный контент скроллится только по вертикали с Jelly-кнопками', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 560 })
+  await page.goto('./')
+  await choosePlace(page)
+
+  const content = page.locator('.screen-content')
+  const expectVerticalOnly = async () => {
+    const sizes = await content.evaluate((node) => ({
+      width: node.clientWidth,
+      scrollWidth: node.scrollWidth,
+      height: node.clientHeight,
+      scrollHeight: node.scrollHeight,
+    }))
+    expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.width)
+    return sizes
+  }
+
+  await page.locator('#home-date').click()
+  await expectVerticalOnly()
+  await page.getByRole('button', { name: 'Праздники и события' }).click()
+  const events = await expectVerticalOnly()
+  expect(events.scrollHeight).toBeGreaterThan(events.height)
+  await page.getByRole('button', { name: 'Назад', exact: true }).click()
+  await page.getByRole('button', { name: 'Назад', exact: true }).click()
+  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
+  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
+
+  const privacy = await expectVerticalOnly()
+  expect(privacy.scrollHeight).toBeGreaterThan(privacy.height)
+  expect(await content.evaluate((node) => getComputedStyle(node).overflowY)).toBe('auto')
+  expect(await content.evaluate((node) => {
+    node.scrollTop = 100
+    return node.scrollTop
+  })).toBeGreaterThan(0)
+  await expect(page.locator('.screen-top .jelly-action').first()).toHaveCSS('touch-action', 'pan-y')
+})
+
 test('увеличение текста вдвое сохраняет список и действия', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('./')

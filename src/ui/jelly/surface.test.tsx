@@ -153,6 +153,22 @@ it('отпускание за пределами кнопки подавляет
   expect(click.defaultPrevented).toBe(true)
 })
 
+it('оставляет нативную прокрутку touch свободной и захватывает mouse', () => {
+  installContext()
+  installSize()
+  render(<ActionButton>Действие</ActionButton>)
+  const button = screen.getByRole('button', { name: 'Действие' })
+  const capture = vi.fn()
+  Object.defineProperty(button, 'setPointerCapture', { configurable: true, value: capture })
+
+  button.dispatchEvent(pointer('pointerdown', { pointerId: 5, pointerType: 'touch', clientX: 0, clientY: 0 }))
+  expect(capture).not.toHaveBeenCalled()
+  button.dispatchEvent(pointer('pointerup', { pointerId: 5, pointerType: 'touch', clientX: 0, clientY: 0 }))
+
+  button.dispatchEvent(pointer('pointerdown', { pointerId: 6, pointerType: 'mouse', button: 0, clientX: 0, clientY: 0 }))
+  expect(capture).toHaveBeenCalledWith(6)
+})
+
 it('без 2d-контекста кнопка получает статический fallback', () => {
   installSize()
 

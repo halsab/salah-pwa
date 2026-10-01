@@ -35,7 +35,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   .app-screen { border-radius: 0; }
 }
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
-.screen-content { flex: 1; min-height: 0; overflow: auto; scrollbar-width: none; }
+.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
 .screen-content--edge-bottom { margin-bottom: calc(0px - var(--screen-bottom-inset)); padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
@@ -196,7 +196,7 @@ html[data-input='pointer'] .date-field:has(select:focus-visible), html[data-inpu
  * В покое форма и цвет совпадают с текущей кнопкой, поэтому визуальный язык
  * не меняется, а при нажатии появляется мягкий отклик.
  */
-.jelly-action { position: relative; isolation: isolate; background: transparent; -webkit-tap-highlight-color: transparent; }
+.jelly-action { position: relative; isolation: isolate; contain: layout; background: transparent; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
 .jelly-action-canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: -1; pointer-events: none; }
 /* Физика сама даёт понятный press-feedback, поэтому резкая инверсия ослаблена. */
 button.jelly-action:active { background: transparent; color: var(--text-primary); }
