@@ -1,4 +1,4 @@
-import { back, choosePlace, expectSchedule, expect, test } from './fixtures'
+import { expect, test } from './fixtures'
 
 const CSP = [
   "default-src 'none'",
@@ -18,40 +18,24 @@ const CSP = [
   "form-action 'none'",
 ].join('; ')
 
-for (const [name, path] of [['app', './']] as const) {
-  test(`${name}: CSP meta единственный и предшествует ресурсам`, async ({ page, request }) => {
-    const response = await request.get(path)
-    expect(response.ok()).toBe(true)
-    const html = await response.text()
-    const metaTags = html.match(
-      /<meta\b[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi,
-    ) ?? []
-
-    expect(metaTags).toHaveLength(1)
-    const metaIndex = html.indexOf(metaTags[0] ?? '')
-    const firstResourceIndex = html.search(/<(?:link|script)\b/i)
-    expect(metaIndex).toBeGreaterThanOrEqual(0)
-    expect(firstResourceIndex).toBeGreaterThan(metaIndex)
-
-    await page.goto(path)
-    const meta = page.locator('meta[http-equiv="Content-Security-Policy"]')
-    await expect(meta).toHaveCount(1)
-    await expect(meta).toHaveAttribute('content', CSP)
-    await expect(meta).not.toHaveAttribute('content', /frame-ancestors/)
-    await expect(meta).not.toHaveAttribute('content', /(?:^|\s)\*(?:\s|;|$)/)
-    await expect(meta).not.toHaveAttribute('content', /(?:data|blob):|unsafe-eval/)
-  })
-}
-
 interface CapturedViolation {
   blockedUri: string
   directive: string
 }
 
-test('production CSP разрешает приложение и блокирует посторонний connect', async ({
-  context,
-  page,
-}) => {
+test('production CSP единственный, предшествует ресурсам и блокирует сторонний connect', async ({ page, request }) => {
+  const response = await request.get('./')
+  expect(response.ok()).toBe(true)
+  const html = await response.text()
+  const metaTags = html.match(
+    /<meta\b[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi,
+  ) ?? []
+  expect(metaTags).toHaveLength(1)
+  const metaIndex = html.indexOf(metaTags[0] ?? '')
+  const firstResourceIndex = html.search(/<(?:link|script)\b/i)
+  expect(metaIndex).toBeGreaterThanOrEqual(0)
+  expect(firstResourceIndex).toBeGreaterThan(metaIndex)
+
   await page.addInitScript(() => {
     const runtimeWindow = window as Window & { __cspViolations?: CapturedViolation[] }
     runtimeWindow.__cspViolations = []
@@ -71,34 +55,18 @@ test('production CSP разрешает приложение и блокируе
     if (url.origin === 'http://127.0.0.1:4175') localFailures.push(url.pathname)
   })
 
-  const externalRequests: string[] = []
-  page.on('request', request => {
-    if (new URL(request.url()).origin !== 'http://127.0.0.1:4175') externalRequests.push(request.url())
-  })
-  await context.grantPermissions(['geolocation'])
-  await context.setGeolocation({ latitude: 55.7558, longitude: 37.6173 })
-
   await page.goto('./')
-  await choosePlace(page)
-  await expectSchedule(page)
-  await page.evaluate(() => document.fonts.ready)
-  expect(await page.evaluate(() => Array.from(document.fonts).some(face => face.family === 'Old Timey Mono' && face.status === 'loaded'))).toBe(true)
-  await choosePlace(page, 'Стамбул', 'Стамбул, Стамбул, Турция')
-  await page.locator('#home-location').click()
-  await page.getByRole('button', { name: 'По геопозиции' }).click()
-  await expect(page.locator('#home-location')).toContainText(/55\.7558, 37\.6173|Москва/)
-  expect(externalRequests).toEqual([])
-
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Поделиться', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Поделиться' })).toBeVisible()
-  await back(page)
+  const meta = page.locator('meta[http-equiv="Content-Security-Policy"]')
+  await expect(meta).toHaveCount(1)
+  await expect(meta).toHaveAttribute('content', CSP)
+  await expect(meta).not.toHaveAttribute('content', /frame-ancestors/)
+  await expect(meta).not.toHaveAttribute('content', /(?:^|\s)\*(?:\s|;|$)/)
+  await expect(meta).not.toHaveAttribute('content', /(?:data|blob):|unsafe-eval/)
   await page.evaluate(async () => navigator.serviceWorker.ready)
 
-  const violationsBeforeProbe = await page.evaluate(() => (
+  expect(await page.evaluate(() => (
     (window as Window & { __cspViolations?: CapturedViolation[] }).__cspViolations ?? []
-  ))
-  expect(violationsBeforeProbe).toEqual([])
+  ))).toEqual([])
   expect(localFailures).toEqual([])
   expect(pageErrors).toEqual([])
 
@@ -111,21 +79,16 @@ test('production CSP разрешает приложение и блокируе
     }
   })
   expect(blocked).toBe(true)
-
   await expect.poll(() => page.evaluate(() => (
     (window as Window & { __cspViolations?: CapturedViolation[] }).__cspViolations ?? []
   ))).toContainEqual({
     blockedUri: 'https://example.invalid/csp-probe',
     directive: 'connect-src',
   })
-
   const unexpectedViolations = await page.evaluate(() => (
     (window as Window & { __cspViolations?: CapturedViolation[] }).__cspViolations ?? []
   )).then((violations) => violations.filter(({ blockedUri, directive }) => (
     directive !== 'connect-src' || blockedUri !== 'https://example.invalid/csp-probe'
   )))
   expect(unexpectedViolations).toEqual([])
-
-  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
-  await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
 })

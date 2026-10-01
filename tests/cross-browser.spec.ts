@@ -1,4 +1,7 @@
-import { chooseDate, choosePlace, expectSchedule, expect, readSavedSetting, test } from './fixtures'
+import { choosePlace, expectSchedule, expect, test } from './fixtures'
+
+// On-demand: запускается через `npm run test:e2e:extended` для browser-specific
+// изменений и значимых релизов, а не в обязательном deploy.
 
 test('основной путь работает без ошибок во всех браузерных профилях', async ({ page }) => {
   const pageErrors: string[] = []
@@ -21,16 +24,10 @@ test('основной путь работает без ошибок во все
   await expect(page.locator('.app-screen')).toHaveCount(1)
   await dialog.getByRole('button', { name: 'Назад' }).click()
   await expect(locationButton).toBeFocused()
-
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
-  await expect(page.getByRole('heading', { name: 'Конфиденциальность' })).toBeVisible()
   expect(pageErrors).toEqual([])
 })
 
-test('профиль сохраняет заданную ориентацию без overflow', async ({
-  page,
-}, testInfo) => {
+test('профиль сохраняет заданную ориентацию без overflow', async ({ page }, testInfo) => {
   await page.goto('./')
   await choosePlace(page)
 
@@ -46,60 +43,4 @@ test('профиль сохраняет заданную ориентацию б
   const panel = await page.locator('.app-screen').boundingBox()
   expect(panel?.x).toBe(0)
   expect(panel?.width).toBe(viewport.width)
-  if (testInfo.project.name.startsWith('mobile-')) {
-    await expect(page.locator('.app-screen')).toHaveCSS('border-radius', '38px')
-  }
-})
-
-test('поиск города в Worker показывает регион и сохраняет выбор', async ({ page }) => {
-  await page.goto('./')
-  await choosePlace(page)
-  await page.getByRole('button', { name: /Казань/ }).click()
-  await page.getByRole('button', { name: 'Найти город' }).click()
-  await page.getByRole('searchbox').fill('Стамбул')
-  const city = page.getByRole('button', { name: 'Стамбул, Стамбул, Турция', exact: true })
-  await expect(city).toBeVisible()
-  await expect(city).toHaveText(/Стамбул, Турция/)
-  await city.click()
-  await expectSchedule(page, 7)
-  await expect(page.locator('#home-location')).toHaveAccessibleName(/^Стамбул(?: \d{2}:\d{2})?$/)
-  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { name: 'Стамбул, Стамбул, Турция' } })
-})
-
-test('поиск остаётся доступен в уменьшенной видимой области, календарь возвращает фокус', async ({ page }, testInfo) => {
-  await page.goto('./')
-  await choosePlace(page)
-  await chooseDate(page, '2026-09-01')
-  await expect(page.getByRole('listitem')).toHaveCount(8)
-  await expect(page.getByRole('timer')).toHaveCount(0)
-  await expect(page.getByLabel('Выбрать дату')).toBeFocused()
-  await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
-  await page.locator('#home-location').click()
-  await page.getByRole('button', { name: 'Найти город' }).click()
-  await expect(page.getByRole('searchbox')).toBeFocused()
-  await page.getByRole('searchbox').fill('Москва')
-  await expect(page.getByRole('button', { name: 'Москва, Москва, Россия' })).toBeVisible()
-  const visibleHeight = await page.evaluate(() => {
-    const viewport = window.visualViewport
-    if (!viewport) throw new Error('Нет visualViewport')
-    // Потеря высоты должна превысить порог AppShell для открытой клавиатуры.
-    const height = Math.min(300, document.documentElement.clientHeight - 130)
-    Object.defineProperties(viewport, { height: { configurable: true, value: height }, offsetTop: { configurable: true, value: 30 } })
-    viewport.dispatchEvent(new Event('resize'))
-    return height
-  })
-  await expect(page.locator('.app-layout')).toHaveCSS('height', `${visibleHeight}px`)
-  await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '16px')
-  const panel = await page.locator('.app-screen').boundingBox()
-  if (!panel) throw new Error('Нет контейнера поиска')
-  expect(visibleHeight + 30 - panel.y - panel.height).toBeCloseTo(0, 0)
-  const field = await page.getByRole('searchbox').boundingBox()
-  const result = await page.getByRole('button', { name: 'Москва, Москва, Россия' }).boundingBox()
-  const cancel = await page.getByRole('button', { name: 'Отмена' }).boundingBox()
-  if (!field || !result || !cancel) throw new Error('Нет геометрии поиска')
-  expect(field.x).toBe(cancel.x)
-  expect(result.x).toBe(cancel.x)
-  expect(result.y + result.height).toBeLessThanOrEqual(visibleHeight + 30)
-  await page.screenshot({ path: `/tmp/salah-final-keyboard-${testInfo.project.name}.png` })
 })

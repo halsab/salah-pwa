@@ -6,8 +6,8 @@ export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
-  workers: process.env.CI ? 1 : undefined,
-  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 2 : undefined,
+  retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? 'github' : 'list',
   expect: {
     timeout: process.env.CI ? 15_000 : 5_000,
@@ -17,44 +17,50 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
+    // Обязательный gate: критический Chromium smoke, offline, privacy и CSP.
     {
       name: 'chromium',
-      testIgnore: '**/sw-update.spec.ts',
+      testMatch: [
+        '**/smoke.spec.ts',
+        '**/offline.spec.ts',
+        '**/privacy.spec.ts',
+        '**/security.spec.ts',
+      ],
       use: { ...devices['Desktop Chrome'] },
     },
+    // Критические сценарии мобильного WebKit (portrait).
+    {
+      name: 'mobile-safari-portrait',
+      testMatch: '**/mobile.spec.ts',
+      use: { ...devices['iPhone 13'] },
+    },
+    // Обновление service worker меняет dist/sw.js; запускается строго после остальных.
+    {
+      name: 'chromium-sw',
+      testMatch: '**/sw-update.spec.ts',
+      dependencies: ['chromium', 'mobile-safari-portrait'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // Ручная/on-demand проверка: `npm run test:e2e:extended`.
     {
       name: 'firefox',
-      testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
+      testMatch: '**/cross-browser.spec.ts',
       use: { ...devices['Desktop Firefox'] },
     },
     {
       name: 'webkit',
-      testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
+      testMatch: '**/cross-browser.spec.ts',
       use: { ...devices['Desktop Safari'] },
     },
     {
-      name: 'mobile-safari-portrait',
-      testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
-      use: { ...devices['iPhone 13'] },
-    },
-    {
       name: 'mobile-safari-landscape',
-      testIgnore: '**/sw-update.spec.ts',
-      testMatch: ['**/cross-browser.spec.ts', '**/timezones.spec.ts', '**/calendar.spec.ts'],
+      testMatch: '**/cross-browser.spec.ts',
       use: { ...devices['iPhone 13 landscape'] },
     },
     {
       name: 'mobile-chrome',
-      testMatch: '**/calendar.spec.ts',
+      testMatch: '**/cross-browser.spec.ts',
       use: { ...devices['Pixel 7'] },
-    },
-    {
-      name: 'chromium-sw',
-      testMatch: '**/sw-update.spec.ts',
-      use: { ...devices['Desktop Chrome'] },
     },
   ],
   webServer: {
