@@ -5,7 +5,7 @@ import { compactPlaceLabel, getCountryLabel } from '../../domain/countryLabels'
 import type { Place } from '../../domain/place'
 import type { PrayerLocation } from '../../domain/types'
 import { BackButton, Screen } from '../../ui/Screen'
-import { ActionRow, Button } from '../../ui/controls'
+import { ActionRow, ActionButton } from '../../ui/controls'
 import type { CityCatalogStatus } from './useCityCatalog'
 import { formatAccuracy, formatCoordinates, geolocationFailureMessage, nameLookupMessage, type GpsUiState, type NameLookupState } from './locationState'
 
@@ -40,10 +40,10 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
         : place.region ? <p className="note">{place.region.name}</p> : null}
     </div> : null}
     <div className="screen-stack">
-      <Button variant="field" id="location-search" onClick={onSearch}>Найти город</Button>
-      <Button variant="primary" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? 'Повторить' : 'По геопозиции'}</Button>
+      <ActionButton variant="field" id="location-search" onClick={onSearch}>Найти город</ActionButton>
+      <ActionButton variant="primary" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? 'Повторить' : 'По геопозиции'}</ActionButton>
       {initial ? <p className="note">Браузер запросит доступ к геопозиции. При необходимости город можно выбрать вручную.</p> : null}
-      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <Button variant="primary" onClick={onAcceptGps}>Использовать эту точку</Button> : null}
+      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <ActionButton variant="primary" onClick={onAcceptGps}>Использовать эту точку</ActionButton> : null}
       {status ? <p className="note" role="status" aria-live="polite">{status}</p> : null}
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
@@ -112,7 +112,7 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
       })}
     </ul>
     {status ? <p className="note screen-space" role="status">{status}</p> : null}
-    {canRetry ? <Button className="screen-space" onClick={retrySearch}>Повторить</Button> : null}
+    {canRetry ? <ActionButton className="screen-space" onClick={retrySearch}>Повторить</ActionButton> : null}
     {ready?.data?.previousVersion ? <p className="note screen-space">Показан сохранённый каталог</p> : null}
     {notice}
   </Screen>

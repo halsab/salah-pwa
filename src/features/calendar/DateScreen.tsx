@@ -4,7 +4,7 @@ import {
   type CalendarDate, type CalendarPreferences,
 } from '../../domain/calendar'
 import { BackButton, Screen } from '../../ui/Screen'
-import { ActionRow, Button, ScreenFooter } from '../../ui/controls'
+import { ActionRow, ActionButton, ScreenFooter } from '../../ui/controls'
 
 interface SelectOption { value: string; label: string; disabled?: boolean }
 
@@ -38,10 +38,10 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
   const updateDate = (patch: Partial<CalendarDate>) => onDateChange(civilDateFromCalendar({ ...date, ...patch }, calendar, correction))
 
   return <Screen label="Установка даты" top={<BackButton onClick={onBack} />} contentClassName="screen-center"
-    bottom={selectedDate !== today ? <ScreenFooter><Button variant="primary" onClick={() => {
+    bottom={selectedDate !== today ? <ScreenFooter><ActionButton variant="primary" onClick={() => {
       onDateChange(today)
       dayRef.current?.focus()
-    }}>Сегодня</Button></ScreenFooter> : null}>
+    }}>Сегодня</ActionButton></ScreenFooter> : null}>
     <div className="screen-stack">
       <SelectRow label="Календарь" value={calendar} options={[
         { value: 'gregorian', label: 'Григорианский' },

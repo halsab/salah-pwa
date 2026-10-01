@@ -1,4 +1,5 @@
 import { getSeason, getThemeTone, type DaylightWindow, type Season, type ThemeFamily, type ThemeTone } from '../domain/theme'
+import { notifyJellyThemeChange } from './jelly/surface'
 
 export interface ThemePalette {
   backgroundPrimary: string
@@ -70,6 +71,8 @@ const paletteProperties = {
   accentCountdown: '--accent-countdown',
 } as const
 
+let appliedJellySignature = ''
+
 export function applyTheme(theme: ReturnType<typeof resolveTheme>): () => void {
   const root = document.documentElement
   for (const [key, property] of Object.entries(paletteProperties) as [keyof ThemePalette, string][]) {
@@ -79,6 +82,14 @@ export function applyTheme(theme: ReturnType<typeof resolveTheme>): () => void {
   root.dataset.theme = theme.family
   root.dataset.themeTone = theme.tone
   root.dataset.season = theme.season
+
+  // Jelly-поверхности читают цвета из токенов: обновляем их только при смене
+  // палитры, а не на каждом минутном тике времени.
+  const jellySignature = `${theme.palette.backgroundPrimary}|${theme.palette.backgroundTertiary}`
+  if (jellySignature !== appliedJellySignature) {
+    appliedJellySignature = jellySignature
+    notifyJellyThemeChange()
+  }
   const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
   const previousThemeColor = themeColor?.content
   if (themeColor) themeColor.content = theme.palette.backgroundPrimary

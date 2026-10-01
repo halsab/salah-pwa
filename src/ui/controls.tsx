@@ -1,4 +1,9 @@
-import type { ComponentProps, ReactNode } from 'react'
+import { useCallback, type ComponentProps, type ReactNode, type RefCallback } from 'react'
+
+import { useJellySurface } from './jelly/useJellySurface'
+import type { JellyPreset } from './jelly/presets'
+
+export type { JellyPreset } from './jelly/presets'
 
 /**
  * Семантические роли интерактивных контролов поверх визуального foundation `.pill`.
@@ -6,16 +11,48 @@ import type { ComponentProps, ReactNode } from 'react'
  */
 export type ButtonVariant = 'action' | 'primary' | 'auxiliary' | 'field'
 
-type ButtonProps = ComponentProps<'button'> & { variant?: ButtonVariant }
-
-export function Button({ variant = 'action', className, type = 'button', ...rest }: ButtonProps) {
-  return <button type={type} className={`pill pill--${variant}${className ? ` ${className}` : ''}`} {...rest} />
+type JellyButtonProps = ComponentProps<'button'> & {
+  /** Пресет физического отклика; по умолчанию standard. */
+  preset?: JellyPreset
+  baseClassName: string
 }
 
-type IconButtonProps = ComponentProps<'button'> & { label: string }
+/**
+ * Внутренний слой: нативный button в light DOM остаётся единственным носителем
+ * семантики, а canvas за содержимым рисует ту же поверхность и деформируется.
+ * Feature-код не должен использовать этот компонент напрямую.
+ */
+function JellyButton({ preset = 'standard', baseClassName, className, type = 'button', disabled, ref, children, ...rest }: JellyButtonProps) {
+  const { buttonRef, canvasRef } = useJellySurface(preset, disabled)
+  const mergedRef = useCallback<RefCallback<HTMLButtonElement>>((node) => {
+    buttonRef.current = node
 
-export function IconButton({ label, className, type = 'button', ...rest }: IconButtonProps) {
-  return <button type={type} aria-label={label} className={`pill icon-button${className ? ` ${className}` : ''}`} {...rest} />
+    if (typeof ref === 'function') {
+      ref(node)
+    } else if (ref) {
+      ref.current = node
+    }
+  }, [buttonRef, ref])
+
+  return <button ref={mergedRef} type={type} disabled={disabled} data-jelly-preset={preset}
+    className={`${baseClassName} jelly-action${className ? ` ${className}` : ''}`} {...rest}>
+    <canvas ref={canvasRef} className="jelly-action-canvas" aria-hidden="true" />
+    {children}
+  </button>
+}
+
+type ActionButtonProps = ComponentProps<'button'> & { variant?: ButtonVariant; preset?: JellyPreset }
+
+/** Обычное самостоятельное действие Salah. */
+export function ActionButton({ variant = 'action', preset = 'standard', ...rest }: ActionButtonProps) {
+  return <JellyButton baseClassName={`pill pill--${variant}`} preset={preset} {...rest} />
+}
+
+type IconActionButtonProps = ComponentProps<'button'> & { label: string; preset?: JellyPreset }
+
+/** Компактное icon-only действие 44×44 px. */
+export function IconActionButton({ label, preset = 'expressive', ...rest }: IconActionButtonProps) {
+  return <JellyButton baseClassName="pill icon-button" preset={preset} aria-label={label} {...rest} />
 }
 
 type ActionRowProps = Omit<ComponentProps<'button'>, 'title'> & {
@@ -24,15 +61,18 @@ type ActionRowProps = Omit<ComponentProps<'button'>, 'title'> & {
   value?: ReactNode
   /** Вторая строка, из-за которой строка становится вертикальной и полностью левой. */
   secondary?: ReactNode
+  preset?: JellyPreset
 }
 
-export function ActionRow({ title, value, secondary, className, type = 'button', ...rest }: ActionRowProps) {
+/** Полноширинная интерактивная строка списка или настройки. */
+export function ActionRow({ title, value, secondary, preset = 'subtle', ...rest }: ActionRowProps) {
   const stacked = secondary !== undefined
-  return <button type={type} className={`pill pill-row${stacked ? ' pill-row--stacked' : ''}${className ? ` ${className}` : ''}`} {...rest}>
+
+  return <JellyButton baseClassName={`pill pill-row${stacked ? ' pill-row--stacked' : ''}`} preset={preset} {...rest}>
     {stacked
       ? <><span className="action-row-title">{title}</span>{secondary}</>
       : <><span>{title}</span>{value !== undefined ? <span className="note">{value}</span> : null}</>}
-  </button>
+  </JellyButton>
 }
 
 /**

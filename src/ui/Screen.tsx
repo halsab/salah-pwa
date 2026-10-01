@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { ActionButton } from './controls'
 
 export function Screen({ label, top, bottom, children, contentClassName = '', busy = false }: {
   label: string
@@ -16,5 +17,5 @@ export function Screen({ label, top, bottom, children, contentClassName = '', bu
 }
 
 export function BackButton({ onClick, label = 'Назад' }: { onClick: () => void; label?: string }) {
-  return <button type="button" className="pill pill--action" data-screen-focus onClick={onClick}>{label}</button>
+  return <ActionButton data-screen-focus onClick={onClick}>{label}</ActionButton>
 }

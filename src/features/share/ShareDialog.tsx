@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { APP_SHARE_URL } from '../../platform/appLink'
 import { BackButton, Screen } from '../../ui/Screen'
-import { Button, ScreenFooter } from '../../ui/controls'
+import { ActionButton, ScreenFooter } from '../../ui/controls'
 
 interface ShareDialogProps { open: boolean; onClose: () => void }
 
@@ -30,7 +30,7 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
     }
   }
   return <Screen label="Поделиться" top={<BackButton onClick={onClose} />} contentClassName="share-screen"
-    bottom={<ScreenFooter><Button variant="primary" onClick={() => void copyLink()}>{copyStatus === 'success' ? 'Скопировано' : 'Скопировать ссылку'}</Button></ScreenFooter>}>
+    bottom={<ScreenFooter><ActionButton variant="primary" onClick={() => void copyLink()}>{copyStatus === 'success' ? 'Скопировано' : 'Скопировать ссылку'}</ActionButton></ScreenFooter>}>
     <img className="app-share-qr" src={`${import.meta.env.BASE_URL}share-qr.svg`} width="270" height="270" alt="QR-код ссылки на приложение" />
     <div><label className="note share-label" htmlFor="share-url">Ссылка на приложение</label>
       <textarea ref={linkRef} id="share-url" className="app-share-url" value={APP_SHARE_URL} readOnly rows={2} spellCheck={false} />

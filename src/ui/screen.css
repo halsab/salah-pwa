@@ -73,7 +73,6 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .pill-row--stacked { flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; white-space: normal; }
 .action-row-title { font-size: 1rem; line-height: 1.2; }
 .action-row-secondary { font-size: 0.8125rem; line-height: 1.2; color: var(--text-secondary); }
-button.pill-row--stacked:active .action-row-secondary { color: inherit; }
 /* Icon-only action: строго 44×44 px с glyph по центру. */
 .icon-button { width: var(--button-height); min-width: var(--button-height); height: var(--button-height); padding: 0; flex: 0 0 var(--button-height); }
 .icon-button svg { width: 24px; height: 24px; display: block; }
@@ -130,7 +129,6 @@ button.religious-event-banner:active { background: var(--text-primary); color: v
 button.religious-event-banner:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; }
 .religious-event-banner-title { font-size: 16px; line-height: 1.2; }
 .religious-event-banner-secondary { font-size: 13px; line-height: 1.2; color: var(--text-secondary); }
-button.religious-event-banner:active .religious-event-banner-secondary { color: inherit; }
 .religious-events-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .religious-events-list > li { min-width: 0; }
 .event-row { font: var(--font-emphasis); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; padding-inline: 4px; color: var(--text-primary); }
@@ -184,3 +182,33 @@ button.religious-event-banner:active .religious-event-banner-secondary { color: 
 .date-field > .note, .theme-field > .note { flex: 0 1 auto; max-width: 100%; margin-left: auto; }
 .date-field select, .theme-field select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; font: var(--font-body); }
 .date-field:has(select:focus-visible), .theme-field:has(select:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: -3px; }
+
+/*
+ * Jelly-поверхность action-компонентов Salah. Canvas рисует ту же пилюлю,
+ * что и .pill, и локально деформируется; сама кнопка остаётся прозрачной.
+ * В покое форма и цвет совпадают с текущей кнопкой, поэтому визуальный язык
+ * не меняется, а при нажатии появляется мягкий отклик.
+ */
+.jelly-action { position: relative; isolation: isolate; background: transparent; }
+.jelly-action-canvas { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: -1; pointer-events: none; }
+/* Физика сама даёт понятный press-feedback, поэтому резкая инверсия ослаблена. */
+button.jelly-action:active { background: transparent; color: var(--text-primary); }
+/* Без 2d-контекста (jsdom, экзотическое окружение) остаётся статичная кнопка. */
+.jelly-action[data-jelly-fallback] { background: var(--background-tertiary); }
+.jelly-action[data-jelly-fallback] .jelly-action-canvas { display: none; }
+.jelly-action[data-jelly-fallback]:disabled { background: transparent; }
+.jelly-action[data-jelly-fallback]:not(:disabled):active { background: var(--text-primary); color: var(--background-secondary); }
+.jelly-action[data-jelly-fallback]:not(:disabled):active .action-row-secondary { color: inherit; }
+@media (forced-colors: active) {
+  .jelly-action-canvas { display: none; }
+  .jelly-action { background: ButtonFace; color: ButtonText; }
+  .jelly-action:not(:disabled):active { background: Highlight; color: HighlightText; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jelly-action-canvas { display: none; }
+  .jelly-action { background: var(--background-tertiary); }
+  .jelly-action:disabled { background: transparent; }
+  .jelly-action:not(:disabled):active { background: var(--text-primary); color: var(--background-secondary); }
+  .jelly-action:not(:disabled):active .action-row-secondary { color: inherit; }
+  .jelly-action:not(:disabled):active .religious-event-banner-secondary { color: inherit; }
+}

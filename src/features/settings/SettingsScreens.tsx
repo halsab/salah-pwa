@@ -4,7 +4,7 @@ import { effectiveCalculationSettings } from '../../domain/calculationSettings'
 import { CALCULATION_PROFILES, type CalculationProfileCapability, type CalculationProfileId, type HighLatitudeMethod } from '../../domain/prayerCalculation'
 import { HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
-import { ActionRow, Button, ScreenFooter } from '../../ui/controls'
+import { ActionRow, ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
 import { PRIVACY_ARTICLE, aboutArticle } from '../../content/informationArticles'
 import type { AppScreen } from '../../ui/useAppNavigation'
@@ -34,7 +34,7 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
   const legacy = calculation.overrides.fajrAngle !== undefined || calculation.overrides.isha !== undefined || Object.keys(calculation.overrides.adjustments ?? {}).length > 0
   const top = <BackButton onClick={onBack} />
   const row = (id: string, title: string, target: AppScreen, value?: string) => <ActionRow id={id} title={title} value={value} aria-label={value ? `${title} ${value}` : title} onClick={() => onOpen(target)} />
-  if (screen === 'settings') return <Screen label="Настройки" top={top} contentClassName="settings-menu" bottom={<ScreenFooter align="end"><Button variant="auxiliary" id="settings-share" onClick={() => onOpen('share')}>Поделиться</Button></ScreenFooter>}>
+  if (screen === 'settings') return <Screen label="Настройки" top={top} contentClassName="settings-menu" bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="settings-share" onClick={() => onOpen('share')}>Поделиться</ActionButton></ScreenFooter>}>
     <div className="screen-stack">{row('settings-source', 'Расписание', 'source', sourceLabel)}
       <label className="pill pill-row theme-field"><span>Тема</span><span className="note">{themeFamily === 'classic' ? 'Классическая' : 'Сезонная'}</span>
         <select aria-label="Тема" value={themeFamily} onChange={event => onThemeFamilyChange(event.target.value as ThemeFamily)}>
@@ -43,7 +43,7 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
       </label>
       {row('settings-privacy', 'Данные и конфиденциальность', 'privacy')}{row('settings-about', 'О приложении', 'about')}{notice}</div>
   </Screen>
-  if (screen === 'source') return <Screen label="Источник расписания" top={top} bottom={<ScreenFooter align="end"><Button variant="auxiliary" id="source-info" onClick={() => onOpen('source-info')}>О расписании</Button></ScreenFooter>}>
+  if (screen === 'source') return <Screen label="Источник расписания" top={top} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="source-info" onClick={() => onOpen('source-info')}>О расписании</ActionButton></ScreenFooter>}>
     <p className="screen-heading">Расписание</p><h1 className="screen-title">{mode === 'automatic' ? 'Автоматически' : mode === 'official' ? 'Официальная таблица' : 'Ручной расчёт'}</h1>
     <p className="note screen-space">{mode === 'automatic' ? 'Официальная таблица используется, если она доступна для места и даты. Иначе время рассчитывается по региону.' : mode === 'official' ? 'Используется выбранная официальная таблица без пересчёта. Если для места или даты данных нет, расписание не подменяется расчётом.' : 'Время рассчитывается на устройстве по выбранному профилю, координатам и дате.'}</p>
     <div className="screen-stack screen-space">
@@ -83,13 +83,13 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
         const highLatitudeRule = event.target.value as HighLatitudeMethod
         if (Object.hasOwn(HIGH_LATITUDE_LABELS, highLatitudeRule)) onChange(manualCalculation({ ...calculation, overrides: { ...calculation.overrides, highLatitudeRule } }))
       }}>{Object.entries(HIGH_LATITUDE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-      {legacy ? <div className="screen-stack"><p className="note">Сохранены прежние поправки</p><Button onClick={() => {
+      {legacy ? <div className="screen-stack"><p className="note">Сохранены прежние поправки</p><ActionButton onClick={() => {
         const { fajrAngle: _angle, isha: _isha, adjustments: _adjustments, ...overrides } = calculation.overrides
         onChange(manualCalculation({ ...calculation, overrides }))
-      }}>По профилю</Button></div> : null}{notice}
+      }}>По профилю</ActionButton></div> : null}{notice}
     </div>
   </Screen>
-  if (screen === 'privacy') return <Screen label="Данные и конфиденциальность" top={top} bottom={<ScreenFooter><Button variant="primary" id="reset-trigger" onClick={() => onOpen('reset')}>Удалить данные</Button></ScreenFooter>}>
+  if (screen === 'privacy') return <Screen label="Данные и конфиденциальность" top={top} bottom={<ScreenFooter><ActionButton variant="primary" id="reset-trigger" onClick={() => onOpen('reset')}>Удалить данные</ActionButton></ScreenFooter>}>
     <MarkdownArticle content={PRIVACY_ARTICLE} />{notice}
   </Screen>
   if (screen === 'about') return <Screen label="О приложении" top={top}><MarkdownArticle content={aboutArticle(version)} /></Screen>
@@ -106,8 +106,8 @@ function ResetScreen({ onBack, onReset }: { onBack: () => void; onReset: () => P
     try { if (!await onReset() && active.current) setStatus('failed') }
     catch { if (active.current) setStatus('failed') }
   }
-  return <Screen label="Удаление данных" top={<Button data-screen-focus onClick={onBack} disabled={status === 'busy'}>Назад</Button>}
-    bottom={<ScreenFooter><Button variant="primary" onClick={() => void reset()} disabled={status === 'busy'}>{status === 'busy' ? 'Удаляем данные…' : status === 'failed' ? 'Повторить' : 'Удалить данные'}</Button></ScreenFooter>}>
+  return <Screen label="Удаление данных" top={<ActionButton data-screen-focus onClick={onBack} disabled={status === 'busy'}>Назад</ActionButton>}
+    bottom={<ScreenFooter><ActionButton variant="primary" onClick={() => void reset()} disabled={status === 'busy'}>{status === 'busy' ? 'Удаляем данные…' : status === 'failed' ? 'Повторить' : 'Удалить данные'}</ActionButton></ScreenFooter>}>
     <p className="screen-title">Удалить данные?</p><p className="screen-copy screen-space">Место, координаты, настройки, недавние города и сохранённые расписания будут удалены во всех вкладках.</p><p className="note screen-space">Приложение и публичные справочники останутся. Отменить удаление нельзя.</p>
     {status === 'failed' ? <p className="note screen-space" role="alert">Не удалось удалить данные</p> : null}
   </Screen>

@@ -1,6 +1,6 @@
 import type { RefObject } from 'react'
 import { formatCalendarDate, type CalendarPreferences } from '../domain/calendar'
-import { Button } from './controls'
+import { ActionButton } from './controls'
 
 export function AppHeader({ locationButtonRef, locationLabel, locationTime, selectedDate, calendarPreferences, onOpenLocation, onOpenDate }: {
   locationButtonRef: RefObject<HTMLButtonElement | null>
@@ -12,13 +12,13 @@ export function AppHeader({ locationButtonRef, locationLabel, locationTime, sele
   onOpenDate: () => void
 }) {
   return <>
-    <Button ref={locationButtonRef} id="home-location" className="home-location" onClick={onOpenLocation}
+    <ActionButton ref={locationButtonRef} id="home-location" className="home-location" onClick={onOpenLocation}
       aria-label={locationTime ? `${locationLabel} ${locationTime}` : undefined}>
       <span className="home-location-name">{locationLabel}</span>
       {locationTime ? <span className="home-location-time">{locationTime}</span> : null}
-    </Button>
-    <Button id="home-date" aria-label="Выбрать дату" aria-describedby="home-date-value" onClick={onOpenDate}>
+    </ActionButton>
+    <ActionButton id="home-date" aria-label="Выбрать дату" aria-describedby="home-date-value" onClick={onOpenDate}>
       <time id="home-date-value" dateTime={selectedDate}>{formatCalendarDate(selectedDate, calendarPreferences)}</time>
-    </Button>
+    </ActionButton>
   </>
 }
