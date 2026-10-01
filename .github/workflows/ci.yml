@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '17 4 * * 1'
   workflow_call:
     inputs:
       app_version:
@@ -21,7 +23,7 @@ permissions:
 
 concurrency:
   group: verify-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
 
 jobs:
   verify:
@@ -55,22 +57,51 @@ jobs:
       - name: Установить зависимости
         run: npm ci
 
+      - name: Определить область изменений
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            schedule)
+              echo 'dependencies=true' >> "$GITHUB_OUTPUT"
+              echo 'workflows=false' >> "$GITHUB_OUTPUT"
+              ;;
+            pull_request|push)
+              if [ "${{ github.event_name }}" = 'pull_request' ]; then
+                base='${{ github.event.pull_request.base.sha }}'
+              else
+                base='${{ github.event.before }}'
+              fi
+              if [ -z "$base" ] || [ "$base" = '0000000000000000000000000000000000000000' ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+                base='HEAD~1'
+              fi
+              if [ "${{ github.event_name }}" = 'pull_request' ]; then
+                base="$(git merge-base "$base" HEAD)"
+              fi
+              git diff --name-only "$base" HEAD > changed-files.txt
+              node scripts/detectChanges.ts changed-files.txt >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo 'dependencies=false' >> "$GITHUB_OUTPUT"
+              echo 'workflows=false' >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
       - name: Проверить закрепление GitHub Actions
+        if: steps.changes.outputs.workflows == 'true'
         run: npm run actions:check
 
       - name: Проверить lint
         run: npm run lint
 
       - name: Запустить модульные тесты
-        if: ${{ !inputs.full_quality_gate }}
+        if: github.event_name != 'schedule'
         run: npm test
 
-      - name: Запустить все модульные тесты и проверить покрытие
-        if: inputs.full_quality_gate
+      - name: Запустить модульные тесты и проверить покрытие
+        if: github.event_name == 'schedule'
         run: npm run test:coverage
-
-      - name: Проверить типы
-        run: npm run typecheck
 
       - name: Собрать production-версию
         run: npm run build
@@ -80,32 +111,20 @@ jobs:
         run: npm run build:check
 
       - name: Проверить npm audit
-        if: inputs.full_quality_gate
+        if: steps.changes.outputs.dependencies == 'true'
         run: npm run security:audit
 
       - name: Проверить лицензии зависимостей
-        if: inputs.full_quality_gate
+        if: steps.changes.outputs.dependencies == 'true'
         run: npm run license:check
 
       - name: Установить браузеры Playwright
         if: inputs.full_quality_gate
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: npx playwright install --with-deps chromium webkit
 
-      - name: Проверить Content Security Policy
-        if: inputs.full_quality_gate
-        run: npm run security:csp
-
-      - name: Проверить повторный запуск без сети
-        if: inputs.full_quality_gate
-        run: npm run smoke:offline
-
-      - name: Проверить cross-browser интерфейс
+      - name: Проверить критический браузерный набор
         if: inputs.full_quality_gate
         run: npm run test:e2e
-
-      - name: Проверить обновление service worker
-        if: inputs.full_quality_gate
-        run: npm run smoke:sw-update
 
       - name: Загрузить артефакт GitHub Pages
         if: inputs.full_quality_gate

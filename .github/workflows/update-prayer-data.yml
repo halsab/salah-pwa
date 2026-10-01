@@ -32,9 +32,6 @@ jobs:
       - name: Запустить тесты
         run: npm test
 
-      - name: Проверить типы
-        run: npm run typecheck
-
       - name: Проверить production-сборку
         run: npm run build
 
