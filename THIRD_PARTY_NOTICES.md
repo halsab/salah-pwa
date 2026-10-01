@@ -82,6 +82,31 @@ Salah включает данные, шрифт и программные зав
 - Лицензия: SIL Open Font License 1.1; полный текст — `public/old-timey-mono-license.txt`.
 - Шрифт используется без изменений.
 
+## Производный код: Jelly UI
+
+- Источник: [jelly-org/ui](https://github.com/jelly-org/ui), API-справочник
+  [jelly-ui.com/api](https://jelly-ui.com/api/). Пакет, `package.js` и CDN не
+  подключаются; внешних runtime-запросов Jelly UI нет.
+- Версия: 1.1.0, зафиксированный upstream-коммит
+  `1b775385b17884ecb48374615c96ec6ee1b58d21` (30 сентября 2026 года).
+- Лицензия: MIT; copyright принадлежит авторам Jelly UI. Лицензия приложения
+  MIT не заменяет эту атрибуцию.
+- Перенесено: только soft-body алгоритм из upstream `src/core/body.ts`,
+  `src/core/config.ts`, `src/core/engine.ts` и `traceSmoothPath`. Файлы
+  `src/ui/jelly/softBody.ts` и `src/ui/jelly/engine.ts` — производный vendor-слой.
+- Локальные изменения задокументированы в шапке этих файлов: удалены не нужные
+  action-компонентам каналы depth/tilt/rotation/press и заготовки под слайдеры,
+  `JellyConfig` сокращён до используемых полей, индексация кольца оформлена
+  явно для `noUncheckedIndexedAccess`. Числовые параметры мембраны не менялись;
+  пресеты `subtle`/`standard`/`expressive` — собственная настройка Salah
+  (`src/ui/jelly/presets.ts`).
+- Граница производного слоя: vendor-код существует только в `src/ui/jelly/`.
+  Feature-модули используют собственные action-компоненты
+  `ActionButton`, `ActionRow`, `IconActionButton` из `src/ui/controls.tsx` и не
+  импортируют Jelly UI напрямую.
+- Обновление upstream выполнять сверкой с перечисленными файлами; локальные
+  расхождения намеренно ограничены удалением неиспользуемых ветвей и типизацией.
+
 ## Прямые runtime и поставляемые зависимости
 
 - [React / ReactDOM 19.2.8](https://github.com/react/react) — MIT.

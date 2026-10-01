@@ -107,8 +107,8 @@ describe('build budgets', () => {
       expect(messages).toHaveLength(1)
       const message = messages[0]
       if (!message) throw new Error('Не получен отчёт о бюджетах')
-      expect(message).toContain('appJavaScript: 1/471040 bytes')
-      expect(message).toContain('totalJavaScript: 1/491520 bytes')
+      expect(message).toContain('appJavaScript: 1/491520 bytes')
+      expect(message).toContain('totalJavaScript: 1/512000 bytes')
     } finally {
       await rm(root, { recursive: true })
     }
