@@ -2,7 +2,16 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
+import { RELIGIOUS_EVENTS } from '../../domain/religiousEvents'
 import { ReligiousEventScreen } from './ReligiousEventScreen'
+
+it.each(RELIGIOUS_EVENTS)('открывает локальную статью события $id', ({ id, title }) => {
+  const { container } = render(<ReligiousEventScreen eventId={id} onBack={() => {}} />)
+
+  expect(screen.getByRole('region', { name: title })).toBeVisible()
+  expect(screen.getByRole('heading', { level: 1, name: title })).toBeVisible()
+  expect(container.querySelector('.markdown-article blockquote')).not.toBeNull()
+})
 
 it('показывает только стандартный Back и локальную Markdown-статью', async () => {
   const onBack = vi.fn()
