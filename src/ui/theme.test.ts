@@ -79,7 +79,7 @@ describe('theme', () => {
     })
   })
 
-  it('applies the palette, browser color scheme and PWA theme color together', () => {
+  it('applies the palette and color scheme without changing the PWA theme color', () => {
     document.head.innerHTML = '<meta name="theme-color" content="#000000"><meta name="color-scheme" content="dark light">'
     const cleanup = applyTheme(resolveTheme('seasonal', '2026-07-15', new Date('2026-07-15T09:00:00Z'), {
       sunrise: Date.parse('2026-07-15T00:00:00Z'),
@@ -89,7 +89,7 @@ describe('theme', () => {
     expect(document.documentElement.dataset).toMatchObject({ theme: 'seasonal', themeTone: 'light', season: 'summer' })
     expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#B9D0CD')
     expect(document.documentElement.style.colorScheme).toBe('light')
-    expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe('#B9D0CD')
+    expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.content).toBe('#000000')
     expect(document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')?.content).toBe('light')
 
     cleanup()

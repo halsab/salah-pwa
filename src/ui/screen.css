@@ -1,6 +1,6 @@
 @import './theme.css';
 
-html, body { background: var(--background-primary); color: var(--text-primary); }
+html, body { background: var(--app-shell-background); color: var(--text-primary); }
 body { font-family: 'Old Timey Mono', monospace; font-weight: 400; font-synthesis: none; -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .app-layout {
@@ -12,10 +12,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   padding: 0;
   display: flex;
   justify-content: center;
-  background: var(--background-primary);
-}
-@media (display-mode: standalone) and (orientation: portrait) and (pointer: coarse) {
-  .app-layout { padding-top: 6px; }
+  background: var(--app-shell-background);
 }
 .app-screen {
   --screen-inset-left: max(var(--content-inset), env(safe-area-inset-left));

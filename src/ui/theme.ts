@@ -90,9 +90,6 @@ export function applyTheme(theme: ReturnType<typeof resolveTheme>): () => void {
     appliedJellySignature = jellySignature
     notifyJellyThemeChange()
   }
-  const themeColor = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-  const previousThemeColor = themeColor?.content
-  if (themeColor) themeColor.content = theme.palette.backgroundPrimary
   const colorScheme = document.querySelector<HTMLMetaElement>('meta[name="color-scheme"]')
   const previousColorScheme = colorScheme?.content
   if (colorScheme) colorScheme.content = theme.tone
@@ -103,7 +100,6 @@ export function applyTheme(theme: ReturnType<typeof resolveTheme>): () => void {
     delete root.dataset.theme
     delete root.dataset.themeTone
     delete root.dataset.season
-    if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor
     if (colorScheme && previousColorScheme !== undefined) colorScheme.content = previousColorScheme
   }
 }
