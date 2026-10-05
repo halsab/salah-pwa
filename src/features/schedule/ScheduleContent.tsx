@@ -52,7 +52,7 @@ interface ScheduleContentProps {
   now: () => Date
   officialMode: boolean
   hijriSupported?: boolean
-  onOpenReligiousEvent?: (eventId: ReligiousEventId) => void
+  onOpenReligiousEvent?: (eventId: ReligiousEventId, origin: HTMLElement) => void
   onChangeDate: (date: string) => void
   onRetrySchedule: () => void
   top?: ReactNode

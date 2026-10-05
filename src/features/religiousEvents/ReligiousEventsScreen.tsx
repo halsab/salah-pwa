@@ -16,14 +16,14 @@ import { formatReligiousEventOccurrenceDate } from './religiousEventDate'
 
 export function ReligiousEventOccurrenceRow({ occurrence, onOpenEvent }: {
   occurrence: ReligiousEventOccurrence
-  onOpenEvent: (eventId: ReligiousEventId) => void
+  onOpenEvent: (eventId: ReligiousEventId, origin: HTMLElement) => void
 }) {
   const id = `religious-event-${occurrence.civilDate}-${occurrence.eventId}`
   const contentId = occurrence.contentId
   const date = <span className="action-row-secondary">{formatReligiousEventOccurrenceDate(occurrence)}</span>
   return <li>
     {contentId
-      ? <ActionRow id={id} className="religious-event-list-row" title={occurrence.title} secondary={date} onClick={() => onOpenEvent(contentId)} />
+      ? <ActionRow id={id} className="religious-event-list-row" title={occurrence.title} secondary={date} onClick={event => onOpenEvent(contentId, event.currentTarget)} />
       : <div id={id} className="pill pill-row pill-row--stacked religious-event-list-row"><span className="action-row-title">{occurrence.title}</span>{date}</div>}
   </li>
 }
@@ -32,7 +32,7 @@ export function ReligiousEventsScreen({ today, correction, hijriSupported, onOpe
   today: string
   correction: DateCorrection
   hijriSupported: boolean
-  onOpenEvent: (eventId: ReligiousEventId) => void
+  onOpenEvent: (eventId: ReligiousEventId, origin: HTMLElement) => void
   onBack: () => void
 }) {
   const occurrences = useMemo(() => {

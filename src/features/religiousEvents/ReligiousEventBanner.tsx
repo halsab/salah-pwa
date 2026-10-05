@@ -3,7 +3,7 @@ import type { ReligiousBannerState, ReligiousEventId } from '../../domain/religi
 
 export function ReligiousEventBanner({ state, onOpen }: {
   state: ReligiousBannerState
-  onOpen: (eventId: ReligiousEventId) => void
+  onOpen: (eventId: ReligiousEventId, origin: HTMLElement) => void
 }) {
   const contentId = state.contentId
   const content = <>
@@ -13,6 +13,6 @@ export function ReligiousEventBanner({ state, onOpen }: {
 
   return contentId
     ? <ActionButton id="religious-event-banner" className="religious-event-banner"
-        aria-label={[state.title, state.secondaryText].filter(Boolean).join(' ')} onClick={() => onOpen(contentId)}>{content}</ActionButton>
+        aria-label={[state.title, state.secondaryText].filter(Boolean).join(' ')} onClick={event => onOpen(contentId, event.currentTarget)}>{content}</ActionButton>
     : <div id="religious-event-banner" className="religious-event-banner">{content}</div>
 }
