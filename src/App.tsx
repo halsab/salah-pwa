@@ -5,10 +5,12 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  lazy,
   useMemo,
   useRef,
   useState,
 } from 'react'
+import { Suspense } from 'react'
 
 import type { CityCatalogService } from './data/cityCatalog'
 import { cityCatalogService } from './data/cityCatalogClient'
@@ -41,7 +43,6 @@ import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
 import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
-import { ReligiousEventScreen } from './features/religiousEvents/ReligiousEventScreen'
 import { ReligiousEventsScreen } from './features/religiousEvents/ReligiousEventsScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
@@ -66,6 +67,8 @@ import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation } from './ui/useAppNavigation'
 import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
+
+const ReligiousEventScreen = lazy(() => import('./features/religiousEvents/ReligiousEventScreen').then(module => ({ default: module.ReligiousEventScreen })))
 
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
   cities: CityCatalogService
@@ -358,7 +361,7 @@ export function App({
         : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
         : null}
       {navigation.screen === 'religious-event' && navigation.religiousEventId
-        ? <ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} sharedTransitionName={navigation.sharedTransitionName} />
+        ? <Suspense fallback={null}><ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} sharedTransitionName={navigation.sharedTransitionName} /></Suspense>
         : null}
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
