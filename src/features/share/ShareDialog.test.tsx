@@ -22,6 +22,10 @@ function setClipboard(writeText: ((text: string) => Promise<void>) | undefined) 
   })
 }
 
+function setShare(share: ((data: ShareData) => Promise<void>) | undefined) {
+  Object.defineProperty(navigator, 'share', { configurable: true, writable: true, value: share })
+}
+
 function renderDialog(overrides: Partial<ComponentProps<typeof ShareDialog>> = {}) {
   const props: ComponentProps<typeof ShareDialog> = {
     open: true,
@@ -34,6 +38,7 @@ function renderDialog(overrides: Partial<ComponentProps<typeof ShareDialog>> = {
 
 afterEach(() => {
   setClipboard(undefined)
+  setShare(undefined)
   window.history.replaceState(null, '', '/')
 })
 
@@ -42,6 +47,7 @@ describe('ShareDialog', () => {
     const user = userEvent.setup()
     const writeText = vi.fn().mockResolvedValue(undefined)
     setClipboard(writeText)
+    setShare(undefined)
     window.history.replaceState(null, '', '/?preview=1#schedule')
     const { props } = renderDialog()
     const copyButton = screen.getByRole('button', { name: 'Скопировать ссылку' })
@@ -56,9 +62,62 @@ describe('ShareDialog', () => {
     expect(copyButton).toHaveFocus()
   })
 
+  it('сразу передаёт каноническую ссылку в системный share', async () => {
+    const user = userEvent.setup()
+    const share = vi.fn().mockResolvedValue(undefined)
+    setShare(share)
+    window.history.replaceState(null, '', '/?place=kazan&source=local&date=2026-10-05')
+    renderDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Поделиться' }))
+
+    expect(share).toHaveBeenCalledWith({ title: 'Salah — время намаза', url: 'https://halsab.github.io/salah-pwa/' })
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://halsab.github.io/salah-pwa/')
+  })
+
+  it('при отсутствии Web Share API показывает прежнее копирование', async () => {
+    const user = userEvent.setup()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard(writeText)
+    setShare(undefined)
+    renderDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
+
+    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+    expect(await screen.findByRole('status')).toHaveTextContent('Ссылка скопирована')
+  })
+
+  it('молча обрабатывает отмену системного share', async () => {
+    const user = userEvent.setup()
+    setShare(vi.fn().mockRejectedValue(new DOMException('cancelled', 'AbortError')))
+    renderDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Поделиться' }))
+
+    expect(screen.getByRole('status')).toBeEmptyDOMElement()
+    expect(screen.getByRole('button', { name: 'Поделиться' })).toBeVisible()
+  })
+
+  it('при ошибке share сообщает о ней и даёт скопировать ссылку', async () => {
+    const user = userEvent.setup()
+    setShare(vi.fn().mockRejectedValue(new Error('unavailable')))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard(writeText)
+    renderDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Поделиться' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось поделиться')
+    await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
+    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+    expect(await screen.findByRole('status')).toHaveTextContent('Ссылка скопирована')
+  })
+
   it('доступно сообщает об отказе Clipboard API и сохраняет диалог открытым', async () => {
     const user = userEvent.setup()
     setClipboard(vi.fn().mockRejectedValue(new Error('denied')))
+    setShare(undefined)
     const { props } = renderDialog()
 
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
@@ -74,6 +133,7 @@ describe('ShareDialog', () => {
   it('обрабатывает отсутствие Clipboard API как доступную ошибку', async () => {
     const user = userEvent.setup()
     setClipboard(undefined)
+    setShare(undefined)
     renderDialog()
 
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
