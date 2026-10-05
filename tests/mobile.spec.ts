@@ -114,12 +114,12 @@ test('список праздников и статья работают на у
 })
 
 test('экранный контент скроллится только по вертикали с Jelly-кнопками', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 420 })
+  await page.setViewportSize({ width: 320, height: 560 })
   await page.goto('./')
   await choosePlace(page)
 
-  const content = page.locator('.screen-content')
-  const expectVerticalOnly = async () => {
+  const contentFor = (label: string) => page.getByRole('region', { name: label }).locator('.screen-content')
+  const expectVerticalOnly = async (content: ReturnType<typeof contentFor>) => {
     const sizes = await content.evaluate((node) => ({
       width: node.clientWidth,
       scrollWidth: node.scrollWidth,
@@ -131,19 +131,21 @@ test('экранный контент скроллится только по в�
   }
 
   await page.locator('#home-date').click()
-  await expectVerticalOnly()
+  await expectVerticalOnly(contentFor('Установка даты'))
   await page.getByRole('button', { name: 'Праздники и события' }).click()
-  const events = await expectVerticalOnly()
+  const eventsContent = contentFor('Праздники и события')
+  const events = await expectVerticalOnly(eventsContent)
   expect(events.scrollHeight).toBeGreaterThan(events.height)
   await page.getByRole('button', { name: 'Назад', exact: true }).click()
   await page.getByRole('button', { name: 'Назад', exact: true }).click()
   await page.getByRole('button', { name: 'Настройки', exact: true }).click()
   await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
 
-  const privacy = await expectVerticalOnly()
+  const privacyContent = contentFor('Данные и конфиденциальность')
+  const privacy = await expectVerticalOnly(privacyContent)
   expect(privacy.scrollHeight).toBeGreaterThan(privacy.height)
-  expect(await content.evaluate((node) => getComputedStyle(node).overflowY)).toBe('auto')
-  expect(await content.evaluate((node) => {
+  expect(await privacyContent.evaluate((node) => getComputedStyle(node).overflowY)).toBe('auto')
+  expect(await privacyContent.evaluate((node) => {
     node.scrollTop = 100
     return node.scrollTop
   })).toBeGreaterThan(0)
