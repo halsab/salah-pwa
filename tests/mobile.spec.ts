@@ -1,6 +1,6 @@
 import { back, chooseDate, choosePlace, expectSchedule, expect, test, writeSavedSetting } from './fixtures'
 
-test('верхняя safe-area чёрная во всех темах и принадлежит оболочке, включая нулевой iOS inset', async ({ page }) => {
+test('верхняя safe-area использует цвет темы и принадлежит оболочке, включая нулевой iOS inset', async ({ page }) => {
   await page.goto('./')
   await choosePlace(page)
   for (const family of ['classic', 'seasonal']) {
@@ -11,20 +11,42 @@ test('верхняя safe-area чёрная во всех темах и прин
       await expectSchedule(page)
       await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
       expect((await page.locator('.app-screen').boundingBox())?.y).toBe(0)
-      await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
-      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      const tone = hour === '09' ? 'light' : 'dark'
+      await expect(page.locator('html')).toHaveAttribute('data-theme-tone', tone)
+      const shellColor = family === 'classic' ? 'rgb(0, 0, 0)'
+        : tone === 'light' ? 'rgb(214, 178, 155)' : 'rgb(110, 81, 70)'
+      await expect(page.locator('html')).toHaveCSS('background-color', shellColor)
+      await expect(page.locator('body')).toHaveCSS('background-color', shellColor)
       // WebKit-эмуляция не рисует системный status bar и возвращает нулевой env inset.
       await page.locator('.app-layout').evaluate(element => {
         (element as HTMLElement).style.setProperty('--app-safe-area-top', '59px')
       })
       await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '59px')
-      await expect(page.locator('.app-layout')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      await expect(page.locator('.app-layout')).toHaveCSS('background-color', shellColor)
       const bounds = await page.locator('.app-screen').boundingBox()
       expect(bounds?.y).toBe(59)
       expect(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, 30)?.className)).toBe('app-layout')
       await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#000000')
       await expect(page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')).toHaveAttribute('content', 'black')
     }
+  }
+})
+
+test('оболочка меняет сезонный цвет на ходу без перезагрузки', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-09-04T21:30:00.000Z'))
+  await page.goto('./')
+  await choosePlace(page)
+  await page.locator('#home-settings').click()
+  const theme = page.getByRole('combobox', { name: 'Тема' })
+  for (const family of ['seasonal', 'classic', 'seasonal']) {
+    await theme.selectOption(family)
+    const color = family === 'seasonal' ? 'rgb(110, 81, 70)' : 'rgb(0, 0, 0)'
+    for (const selector of ['html', 'body', '.app-layout']) {
+      await expect(page.locator(selector)).toHaveCSS('background-color', color)
+    }
+    await expect(page.locator('.app-layout')).toHaveCSS('position', 'absolute')
+    await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
+    expect((await page.locator('.app-screen').boundingBox())?.y).toBe(0)
   }
 })
 

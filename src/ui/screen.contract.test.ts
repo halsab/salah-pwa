@@ -13,8 +13,8 @@ function declarations(css: string, selector: string): string {
 }
 
 describe('контракт стандартизации кнопок и строк', () => {
-  it('оставляет верхнюю safe-area чёрной и начинает Screen сразу после неё', () => {
-    expect(themeCssRaw).toContain('--app-shell-background: #000000;')
+  it('окрашивает оболочку цветом палитры и начинает Screen после реальной safe-area', () => {
+    expect(themeCssRaw).toContain('--app-shell-background: var(--background-primary);')
     expect(declarations(screenCssRaw, '.app-layout')).toContain('position: absolute;')
     expect(declarations(screenCssRaw, '.app-layout')).toContain('padding-top: max(0px, calc(var(--app-safe-area-top, env(safe-area-inset-top, 0px)) - var(--app-viewport-top, 0px)));')
     expect(indexHtmlRaw).toContain('<meta name="apple-mobile-web-app-status-bar-style" content="black" />')
