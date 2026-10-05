@@ -1,6 +1,6 @@
 import { back, chooseDate, choosePlace, expectSchedule, expect, test, writeSavedSetting } from './fixtures'
 
-test('верхняя safe-area чёрная во всех темах и не добавляет зазор над Screen', async ({ page }) => {
+test('верхняя safe-area чёрная во всех темах и принадлежит оболочке, включая нулевой iOS inset', async ({ page }) => {
   await page.goto('./')
   await choosePlace(page)
   for (const family of ['classic', 'seasonal']) {
@@ -9,6 +9,10 @@ test('верхняя safe-area чёрная во всех темах и не д�
       await page.clock.setFixedTime(new Date(`2026-09-04T${hour}:30:00.000Z`))
       await page.reload()
       await expectSchedule(page)
+      await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '10px')
+      expect((await page.locator('.app-screen').boundingBox())?.y).toBe(10)
+      await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
       // WebKit-эмуляция не рисует системный status bar и возвращает нулевой env inset.
       await page.locator('.app-layout').evaluate(element => {
         (element as HTMLElement).style.setProperty('--app-safe-area-top', '59px')
@@ -19,7 +23,7 @@ test('верхняя safe-area чёрная во всех темах и не д�
       expect(bounds?.y).toBe(59)
       expect(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, 30)?.className)).toBe('app-layout')
       await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#000000')
-      await expect(page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')).toHaveAttribute('content', 'black-translucent')
+      await expect(page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')).toHaveAttribute('content', 'black')
     }
   }
 })
@@ -63,6 +67,9 @@ test('поиск остаётся доступен в уменьшенной в�
   await expect(page.getByRole('searchbox')).toBeFocused()
   await page.getByRole('searchbox').fill('Москва')
   await expect(page.getByRole('button', { name: 'Москва, Москва, Россия' })).toBeVisible()
+  await page.locator('.app-layout').evaluate(element => {
+    (element as HTMLElement).style.setProperty('--app-safe-area-top', '59px')
+  })
   const visibleHeight = await page.evaluate(() => {
     const viewport = window.visualViewport
     if (!viewport) throw new Error('Нет visualViewport')
@@ -80,10 +87,32 @@ test('поиск остаётся доступен в уменьшенной в�
   await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '16px')
   const panel = await page.locator('.app-screen').boundingBox()
   if (!panel) throw new Error('Нет контейнера поиска')
+  expect(panel.y).toBe(59)
   expect(visibleHeight + 30 - panel.y - panel.height).toBeCloseTo(0, 0)
   const result = await page.getByRole('button', { name: 'Москва, Москва, Россия' }).boundingBox()
   if (!result) throw new Error('Результат скрыт')
   expect(result.y + result.height).toBeLessThanOrEqual(visibleHeight + 30)
+  await page.evaluate(() => {
+    const viewport = window.visualViewport
+    if (!viewport) throw new Error('Нет visualViewport')
+    Object.defineProperty(viewport, 'offsetTop', { configurable: true, value: 80 })
+    viewport.dispatchEvent(new Event('scroll'))
+  })
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
+  await expect(page.locator('.app-layout')).toHaveCSS('top', '80px')
+  expect((await page.locator('.app-screen').boundingBox())?.y).toBe(80)
+  await page.evaluate(() => {
+    const viewport = window.visualViewport
+    if (!viewport) throw new Error('Нет visualViewport')
+    Object.defineProperties(viewport, {
+      height: { configurable: true, value: document.documentElement.clientHeight },
+      offsetTop: { configurable: true, value: 0 },
+    })
+    viewport.dispatchEvent(new Event('resize'))
+  })
+  await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '59px')
+  await expect(page.locator('.app-layout')).toHaveCSS('top', '0px')
+  expect((await page.locator('.app-screen').boundingBox())?.y).toBe(59)
 })
 
 test('нижняя безопасная область не перекрывает нижнее действие', async ({ page }) => {
