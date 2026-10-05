@@ -245,8 +245,12 @@ export function App({
   }, [openScreen])
 
   const openSettingsDialog = useCallback(() => { openScreen('settings') }, [openScreen])
-  const openReligiousEvent = useCallback((religiousEventId: import('./domain/religiousEvents').ReligiousEventId) => {
-    openScreen({ screen: 'religious-event', religiousEventId })
+  const openReligiousEvent = useCallback((religiousEventId: import('./domain/religiousEvents').ReligiousEventId, originElement: HTMLElement) => {
+    openScreen({ screen: 'religious-event', religiousEventId }, {
+      kind: 'expand',
+      origin: { entityType: 'religious-event', entityId: religiousEventId, elementId: originElement.id },
+      originElement,
+    })
   }, [openScreen])
 
   if (loading) return <LoadingScreen />
@@ -354,7 +358,7 @@ export function App({
         : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
         : null}
       {navigation.screen === 'religious-event' && navigation.religiousEventId
-        ? <ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} />
+        ? <ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} sharedTransitionName={navigation.sharedTransitionName} />
         : null}
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}

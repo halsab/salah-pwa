@@ -14,7 +14,7 @@ it('рендерит content banner кнопкой со стабильным id 
   expect(button).toHaveClass('religious-event-banner')
   expect(button).not.toHaveClass('pill-row--stacked')
   await userEvent.click(button)
-  expect(onOpen).toHaveBeenCalledWith('arafa')
+  expect(onOpen).toHaveBeenCalledWith('arafa', button)
 })
 
 it('рендерит banner без content обычным неинтерактивным элементом', () => {

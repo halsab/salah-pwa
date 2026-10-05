@@ -36,6 +36,11 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 }
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
 .screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+.screen-content:not(.religious-event-detail) { view-transition-name: salah-screen-content; }
+.screen-content.religious-event-detail { position: relative; }
+.screen-shared-surface, .salah-shared-surface { view-transition-class: salah-shared-surface; }
+.screen-shared-surface { position: absolute; inset: 0; z-index: 0; border-radius: 0; background: var(--background-secondary); pointer-events: none; }
+.screen-shared-content { position: relative; z-index: 1; }
 .screen-content--edge-bottom { margin-bottom: calc(0px - var(--screen-bottom-inset)); padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
@@ -102,6 +107,14 @@ html[data-input='pointer'] .select-field { outline: none; }
 .screen-title { font: var(--font-title); overflow-wrap: anywhere; }
 .screen-copy { font: var(--font-body); }
 .screen-status { font: var(--font-footnote); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+::view-transition-group(salah-screen-content) { animation: none; }
+::view-transition-old(salah-screen-content) { animation: salah-content-out var(--navigation-fade-duration) var(--navigation-transition-easing) both; }
+::view-transition-new(salah-screen-content) { animation: salah-content-in var(--navigation-fade-duration) var(--navigation-transition-easing) both; }
+::view-transition-group(.salah-shared-surface) { animation-duration: var(--navigation-expand-duration); animation-timing-function: var(--navigation-transition-easing); }
+::view-transition-old(.salah-shared-surface), ::view-transition-new(.salah-shared-surface) { animation-duration: var(--navigation-expand-duration); animation-timing-function: var(--navigation-transition-easing); }
+@keyframes salah-content-out { to { opacity: 0; } }
+@keyframes salah-content-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .app-layout *, .app-layout *::before, .app-layout *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

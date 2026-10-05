@@ -32,7 +32,7 @@ it('показывает хронологический список с display 
   expect(region).toHaveTextContent('16 июня 2026 · 1 мухаррам 1448')
 
   await userEvent.click(within(region).getByRole('button', { name: /Начало Рамадана/ }))
-  expect(onOpenEvent).toHaveBeenCalledWith('ramadan')
+  expect(onOpenEvent).toHaveBeenCalledWith('ramadan', expect.any(HTMLElement))
   await userEvent.click(within(region).getByRole('button', { name: 'Назад' }))
   expect(onBack).toHaveBeenCalledOnce()
 })

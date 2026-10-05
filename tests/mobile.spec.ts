@@ -80,7 +80,7 @@ test('нижняя безопасная область не перекрывае
 })
 
 test('список праздников и статья работают на узком экране', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 700 })
+  await page.setViewportSize({ width: 320, height: 480 })
   await page.goto('./')
   await choosePlace(page)
   await page.locator('#home-date').click()
@@ -96,11 +96,21 @@ test('список праздников и статья работают на у
   await expect(list.getByText('Дни ташрика', { exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
     .toBeLessThanOrEqual(1)
-  await list.getByRole('button', { name: /Начало Рамадана/ }).click()
+  const ramadan = list.getByRole('button', { name: /Начало Рамадана/ })
+  const listContent = list.locator('.screen-content')
+  await ramadan.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
+  expect(await listContent.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+  await ramadan.click()
   const article = page.getByRole('region', { name: 'Рамадан' })
   await expect(article.getByRole('heading', { level: 1 })).toHaveText('Рамадан')
+  const savedScrollTop = await page.evaluate(() => {
+    const state = history.state as { salahNavigation?: { entries?: Array<{ scrollTop?: number }> } } | null
+    return state?.salahNavigation?.entries?.at(-2)?.scrollTop
+  })
+  expect(savedScrollTop).toBeGreaterThan(0)
   await article.getByRole('button', { name: 'Назад' }).click()
   await expect(list.getByRole('button', { name: /Начало Рамадана/ })).toBeFocused()
+  await expect.poll(() => listContent.evaluate(element => element.scrollTop)).toBe(savedScrollTop)
 })
 
 test('экранный контент скроллится только по вертикали с Jelly-кнопками', async ({ page }) => {
