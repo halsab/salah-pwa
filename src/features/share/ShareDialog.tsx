@@ -30,8 +30,7 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
     }
   }
   const shareLink = () => {
-    const share = navigator.share
-    if (!share) {
+    if (typeof navigator.share !== 'function') {
       void copyLink()
       return
     }
@@ -39,11 +38,11 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
     const epoch = ++operation.current
     setStatus('idle')
     try {
-      void share.call(navigator, { title: 'Salah — время намаза', url: APP_SHARE_URL }).then(
+      void navigator.share({ title: 'Salah — время намаза', url: APP_SHARE_URL }).then(
         () => { if (epoch === operation.current) setStatus('shared') },
-        error => {
+        (error: unknown) => {
           if (epoch !== operation.current) return
-          if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') return
+          if (error instanceof Error && error.name === 'AbortError') return
           setStatus('share-error')
         },
       )
