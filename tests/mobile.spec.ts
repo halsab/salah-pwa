@@ -114,7 +114,7 @@ test('список праздников и статья работают на у
 })
 
 test('экранный контент скроллится только по вертикали с Jelly-кнопками', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 560 })
+  await page.setViewportSize({ width: 320, height: 420 })
   await page.goto('./')
   await choosePlace(page)
 
