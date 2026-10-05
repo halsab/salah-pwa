@@ -70,11 +70,13 @@ export function useAppNavigation() {
     if (content) content.scrollTop = entry.scrollTop
   }, [entries])
 
-  const open = useCallback((target: NavigationTarget) => {
+  const open = useCallback((target: NavigationTarget, returnFocusOverride?: string | null) => {
     intentGeneration.current += 1
     const screen = typeof target === 'string' ? target : target.screen
     if (traversing.current || current.current.at(-1)?.screen === screen) return
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement.id || null : null
+    const trigger = returnFocusOverride === undefined
+      ? document.activeElement instanceof HTMLElement ? document.activeElement.id || null : null
+      : returnFocusOverride
     const content = document.querySelector<HTMLElement>('.screen-content')
     const parent = current.current.at(-1) ?? HOME[0]
     if (!parent) return
@@ -96,9 +98,10 @@ export function useAppNavigation() {
   }, [session])
   const openPrepared = useCallback(async (target: NavigationTarget, prepare: () => Promise<void>) => {
     const generation = ++intentGeneration.current
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement.id || null : null
     await prepare()
     if (intentGeneration.current !== generation) return
-    open(target)
+    open(target, returnFocus)
   }, [open])
   const back = useCallback(() => {
     if (traversing.current || current.current.length <= 1) return

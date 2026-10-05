@@ -19,9 +19,11 @@ function NavigationExample() {
 
 function PreparedNavigationExample({ prepare }: { prepare: () => Promise<void> }) {
   const navigation = useAppNavigation()
+  if (navigation.screen === 'share') return <><p>share</p><button onClick={navigation.back}>Back</button></>
   return <>
     <p>{navigation.screen}</p>
-    <button onClick={() => { void navigation.openPrepared('share', prepare) }}>Open when ready</button>
+    <button id="prepared-caller" onClick={() => { void navigation.openPrepared('share', prepare) }}>Open when ready</button>
+    <button id="other-focus">Other focus</button>
     <button onClick={() => navigation.open('settings')}>Settings</button>
   </>
 }
@@ -77,6 +79,23 @@ describe('навигация экранов', () => {
       return Promise.resolve()
     })
     expect(screen.getByText('settings')).toBeInTheDocument()
+  })
+
+  it('возвращает фокус к исходной кнопке после ожидания подготовки', async () => {
+    let resolvePreparation: (() => void) | undefined
+    const prepare = () => new Promise<void>(resolve => { resolvePreparation = resolve })
+    render(<PreparedNavigationExample prepare={prepare} />)
+    const caller = screen.getByRole('button', { name: 'Open when ready' })
+    caller.focus()
+    fireEvent.click(caller)
+    screen.getByRole('button', { name: 'Other focus' }).focus()
+    await act(() => {
+      resolvePreparation?.()
+      return Promise.resolve()
+    })
+    expect(screen.getByText('share')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    await waitFor(() => expect(caller).toHaveFocus())
   })
 
   it('сохраняет вложенную цепочку DateScreen → список → статья и восстанавливает focus', async () => {
