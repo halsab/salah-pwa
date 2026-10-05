@@ -42,7 +42,7 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
         () => { if (epoch === operation.current) setStatus('shared') },
         (error: unknown) => {
           if (epoch !== operation.current) return
-          if (error instanceof Error && error.name === 'AbortError') return
+          if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') return
           setStatus('share-error')
         },
       )
