@@ -38,14 +38,18 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
 
     const epoch = ++operation.current
     setStatus('idle')
-    void share.call(navigator, { title: 'Salah — время намаза', url: APP_SHARE_URL }).then(
-      () => { if (epoch === operation.current) setStatus('shared') },
-      error => {
-        if (epoch !== operation.current) return
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        setStatus('share-error')
-      },
-    )
+    try {
+      void share.call(navigator, { title: 'Salah — время намаза', url: APP_SHARE_URL }).then(
+        () => { if (epoch === operation.current) setStatus('shared') },
+        error => {
+          if (epoch !== operation.current) return
+          if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') return
+          setStatus('share-error')
+        },
+      )
+    } catch {
+      if (epoch === operation.current) setStatus('share-error')
+    }
   }
   const copyOnly = status === 'share-error' || !navigator.share
   const hasError = status === 'share-error' || status === 'copy-error'

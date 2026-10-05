@@ -99,6 +99,31 @@ describe('ShareDialog', () => {
     expect(screen.getByRole('button', { name: 'Поделиться' })).toBeVisible()
   })
 
+  it('обрабатывает AbortError из другого realm как обычную отмену', async () => {
+    const user = userEvent.setup()
+    setShare(vi.fn().mockRejectedValue({ name: 'AbortError' }))
+    renderDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Поделиться' }))
+
+    expect(await screen.findByRole('status')).toBeEmptyDOMElement()
+    expect(screen.getByRole('button', { name: 'Поделиться' })).toBeVisible()
+  })
+
+  it('предоставляет копирование при синхронной ошибке share', async () => {
+    const user = userEvent.setup()
+    setShare(vi.fn(() => { throw new Error('unavailable') }))
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard(writeText)
+    renderDialog()
+
+    await user.click(screen.getByRole('button', { name: 'Поделиться' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось поделиться')
+    await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
+    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+  })
+
   it('при ошибке share сообщает о ней и даёт скопировать ссылку', async () => {
     const user = userEvent.setup()
     setShare(vi.fn().mockRejectedValue(new Error('unavailable')))
