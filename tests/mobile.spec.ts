@@ -9,8 +9,8 @@ test('верхняя safe-area чёрная во всех темах и прин
       await page.clock.setFixedTime(new Date(`2026-09-04T${hour}:30:00.000Z`))
       await page.reload()
       await expectSchedule(page)
-      await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '10px')
-      expect((await page.locator('.app-screen').boundingBox())?.y).toBe(10)
+      await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
+      expect((await page.locator('.app-screen').boundingBox())?.y).toBe(0)
       await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
       // WebKit-эмуляция не рисует системный status bar и возвращает нулевой env inset.
