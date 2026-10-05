@@ -42,7 +42,8 @@ test('GPS и автоматический старт не отправляют �
   await expect(page.locator('#home-location')).toBeVisible()
   await expect.poll(() => starts).toBeGreaterThan(0)
   expect(await readSavedSetting(page, 'locationChoice')).toMatchObject({ place: { accuracy: 15 } })
-  expect(requests.filter((request) => !request.url.startsWith('http://127.0.0.1:4175/'))).toEqual([])
+  const appOrigin = new URL(page.url()).origin
+  expect(requests.filter((request) => new URL(request.url).origin !== appOrigin)).toEqual([])
   for (const request of requests) {
     expect(request.url).not.toMatch(/nominatim/i)
     for (const coordinate of [latitude, longitude]) {

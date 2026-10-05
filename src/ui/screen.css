@@ -10,6 +10,8 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   right: 0;
   height: var(--app-viewport-height, 100dvh);
   padding: 0;
+  /* Чёрная оболочка видна под status bar; сдвиг клавиатуры не дублирует safe-area. */
+  padding-top: max(0px, calc(var(--app-safe-area-top, env(safe-area-inset-top, 0px)) - var(--app-viewport-top, 0px)));
   display: flex;
   justify-content: center;
   background: var(--app-shell-background);
@@ -32,12 +34,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   .app-screen { border-radius: 0; }
 }
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
-.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
-.screen-content:not(.religious-event-detail) { view-transition-name: salah-screen-content; }
-.screen-content.religious-event-detail { position: relative; }
-.screen-shared-surface, .salah-shared-surface { view-transition-class: salah-shared-surface; }
-.screen-shared-surface { position: absolute; inset: 0; z-index: 0; border-radius: 0; background: var(--background-secondary); pointer-events: none; }
-.screen-shared-content { position: relative; z-index: 1; }
+.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; view-transition-name: salah-screen-content; }
 .screen-content--edge-bottom { margin-bottom: calc(0px - var(--screen-bottom-inset)); padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
@@ -108,8 +105,6 @@ html[data-input='pointer'] .select-field { outline: none; }
 ::view-transition-group(salah-screen-content) { animation: none; }
 ::view-transition-old(salah-screen-content) { animation: salah-content-out var(--navigation-fade-duration) var(--navigation-transition-easing) both; }
 ::view-transition-new(salah-screen-content) { animation: salah-content-in var(--navigation-fade-duration) var(--navigation-transition-easing) both; }
-::view-transition-group(.salah-shared-surface) { animation-duration: var(--navigation-expand-duration); animation-timing-function: var(--navigation-transition-easing); }
-::view-transition-old(.salah-shared-surface), ::view-transition-new(.salah-shared-surface) { animation-duration: var(--navigation-expand-duration); animation-timing-function: var(--navigation-transition-easing); }
 @keyframes salah-content-out { to { opacity: 0; } }
 @keyframes salah-content-in { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {

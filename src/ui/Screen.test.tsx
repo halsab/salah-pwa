@@ -19,11 +19,9 @@ it('прокручивает экран без нижнего действия �
   expect(screen.getByRole('list')).toBeInTheDocument()
 })
 
-it('не назначает detail scroll-root имя shared surface', () => {
-  render(<Screen label="Событие" contentClassName="religious-event-detail" sharedTransitionName="salah-religious-event-arafa"><p>Статья</p></Screen>)
+it('рендерит содержимое статьи в обычном scroll-root без shared surface', () => {
+  render(<Screen label="Событие"><p>Статья</p></Screen>)
   const content = screen.getByRole('region', { name: 'Событие' }).querySelector('.screen-content')
-  const surface = content?.querySelector('.screen-shared-surface')
-
-  expect(content).not.toHaveStyle({ viewTransitionName: 'salah-religious-event-arafa' })
-  expect(surface).toHaveStyle({ viewTransitionName: 'salah-religious-event-arafa' })
+  expect(content).toContainElement(screen.getByText('Статья'))
+  expect(content?.querySelector('.screen-shared-surface')).toBeNull()
 })

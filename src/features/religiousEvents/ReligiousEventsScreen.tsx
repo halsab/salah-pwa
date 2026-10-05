@@ -16,24 +16,25 @@ import { formatReligiousEventOccurrenceDate } from './religiousEventDate'
 
 export function ReligiousEventOccurrenceRow({ occurrence, onOpenEvent }: {
   occurrence: ReligiousEventOccurrence
-  onOpenEvent: (eventId: ReligiousEventId, origin: HTMLElement) => void
+  onOpenEvent: (eventId: ReligiousEventId) => void
 }) {
   const id = `religious-event-${occurrence.civilDate}-${occurrence.eventId}`
   const contentId = occurrence.contentId
   const date = <span className="action-row-secondary">{formatReligiousEventOccurrenceDate(occurrence)}</span>
   return <li>
     {contentId
-      ? <ActionRow id={id} className="religious-event-list-row" title={occurrence.title} secondary={date} onClick={event => onOpenEvent(contentId, event.currentTarget)} />
+      ? <ActionRow id={id} className="religious-event-list-row" title={occurrence.title} secondary={date} onClick={() => onOpenEvent(contentId)} />
       : <div id={id} className="pill pill-row pill-row--stacked religious-event-list-row"><span className="action-row-title">{occurrence.title}</span>{date}</div>}
   </li>
 }
 
-export function ReligiousEventsScreen({ today, correction, hijriSupported, onOpenEvent, onBack }: {
+export function ReligiousEventsScreen({ today, correction, hijriSupported, onOpenEvent, onBack, loadError }: {
   today: string
   correction: DateCorrection
   hijriSupported: boolean
-  onOpenEvent: (eventId: ReligiousEventId, origin: HTMLElement) => void
+  onOpenEvent: (eventId: ReligiousEventId) => void
   onBack: () => void
+  loadError?: string | null
 }) {
   const occurrences = useMemo(() => {
     const start = calendarDateFromCivil(today, 'gregorian')
@@ -42,6 +43,7 @@ export function ReligiousEventsScreen({ today, correction, hijriSupported, onOpe
   }, [today, correction, hijriSupported])
 
   return <Screen label="Праздники и события" top={<BackButton onClick={onBack} />}>
+    {loadError ? <p role="alert">{loadError}</p> : null}
     <ul className="religious-events-list">
       {occurrences.map(occurrence => <ReligiousEventOccurrenceRow
         key={`${occurrence.civilDate}:${occurrence.eventId}`}

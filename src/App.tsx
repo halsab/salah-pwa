@@ -5,12 +5,10 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  lazy,
   useMemo,
   useRef,
   useState,
 } from 'react'
-import { Suspense } from 'react'
 
 import type { CityCatalogService } from './data/cityCatalog'
 import { cityCatalogService } from './data/cityCatalogClient'
@@ -68,8 +66,7 @@ import { useAppNavigation } from './ui/useAppNavigation'
 import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
 
-const ReligiousEventScreen = lazy(() => import('./features/religiousEvents/ReligiousEventScreen').then(module => ({ default: module.ReligiousEventScreen })))
-
+const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
@@ -136,10 +133,12 @@ export function App({
     saveSettings({ locationChoice: choice, recentPlaces: recent })
   }, [saveSettings])
   const navigation = useAppNavigation()
-  const { open: openScreen, back: backScreen, home: homeScreen } = navigation
+  const { open: openScreen, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
   const sessionHasPlace = useRef(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [religiousEventScreen, setReligiousEventScreen] = useState<typeof import('./features/religiousEvents/ReligiousEventScreen')['ReligiousEventScreen'] | null>(null)
+  const [religiousEventLoadError, setReligiousEventLoadError] = useState<string | null>(null)
   const locationDialogOpen = navigation.screen === 'location' || navigation.screen === 'search'
   const settingsDialogOpen = ['settings', 'source', 'source-choice', 'profiles', 'parameters', 'privacy', 'reset', 'about'].includes(navigation.screen)
   const methodologyDialogOpen = navigation.screen === 'methodology'
@@ -147,6 +146,7 @@ export function App({
   const [retryCount, setRetryCount] = useState(0)
   const locationButtonRef = useRef<HTMLButtonElement>(null)
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
+  const LoadedReligiousEventScreen = religiousEventScreen
 
   const closeLocationDialog = useCallback(() => {
     backScreen()
@@ -248,13 +248,15 @@ export function App({
   }, [openScreen])
 
   const openSettingsDialog = useCallback(() => { openScreen('settings') }, [openScreen])
-  const openReligiousEvent = useCallback((religiousEventId: import('./domain/religiousEvents').ReligiousEventId, originElement: HTMLElement) => {
-    openScreen({ screen: 'religious-event', religiousEventId }, {
-      kind: 'expand',
-      origin: { entityType: 'religious-event', entityId: religiousEventId, elementId: originElement.id },
-      originElement,
+  const openReligiousEvent = useCallback((religiousEventId: import('./domain/religiousEvents').ReligiousEventId) => {
+    setReligiousEventLoadError(null)
+    void openScreenPrepared({ screen: 'religious-event', religiousEventId }, async () => {
+      const module = await loadReligiousEventScreen()
+      flushSync(() => setReligiousEventScreen(() => module.ReligiousEventScreen))
+    }).catch(() => {
+      setReligiousEventLoadError('Не удалось загрузить статью. Попробуйте ещё раз.')
     })
-  }, [openScreen])
+  }, [openScreenPrepared])
 
   if (loading) return <LoadingScreen />
 
@@ -335,7 +337,8 @@ export function App({
                 <circle cx="12" cy="12" r="1.6" fill="currentColor" />
               </svg>
             </IconActionButton>}
-            notice={<>{locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}
+            notice={<>{religiousEventLoadError ? <p role="alert">{religiousEventLoadError}</p> : null}
+              {locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}
               {!locationNotice && nearbyCityNotice ? <p className="note" role="status">{nearbyCityNotice}</p> : null}{persistenceNotice}</>}
             onChangeDate={changeDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
@@ -348,7 +351,7 @@ export function App({
         onBack={backScreen} notice={persistenceNotice} /> : null}
 
       {navigation.screen === 'religious-events' ? <ReligiousEventsScreen today={today} correction={calendarPreferences.correction}
-        hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} /> : null}
+        hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} loadError={religiousEventLoadError} /> : null}
 
       {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
         onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
@@ -361,7 +364,7 @@ export function App({
         : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
         : null}
       {navigation.screen === 'religious-event' && navigation.religiousEventId
-        ? <Suspense fallback={null}><ReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} sharedTransitionName={navigation.sharedTransitionName} /></Suspense>
+        ? LoadedReligiousEventScreen ? <LoadedReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} /> : null
         : null}
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}

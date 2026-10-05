@@ -1,4 +1,28 @@
-import { back, chooseDate, choosePlace, expectSchedule, expect, test } from './fixtures'
+import { back, chooseDate, choosePlace, expectSchedule, expect, test, writeSavedSetting } from './fixtures'
+
+test('верхняя safe-area чёрная во всех темах и не добавляет зазор над Screen', async ({ page }) => {
+  await page.goto('./')
+  await choosePlace(page)
+  for (const family of ['classic', 'seasonal']) {
+    await writeSavedSetting(page, 'themeFamily', family)
+    for (const hour of ['09', '21']) {
+      await page.clock.setFixedTime(new Date(`2026-09-04T${hour}:30:00.000Z`))
+      await page.reload()
+      await expectSchedule(page)
+      // WebKit-эмуляция не рисует системный status bar и возвращает нулевой env inset.
+      await page.locator('.app-layout').evaluate(element => {
+        (element as HTMLElement).style.setProperty('--app-safe-area-top', '59px')
+      })
+      await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '59px')
+      await expect(page.locator('.app-layout')).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+      const bounds = await page.locator('.app-screen').boundingBox()
+      expect(bounds?.y).toBe(59)
+      expect(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, 30)?.className)).toBe('app-layout')
+      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#000000')
+      await expect(page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')).toHaveAttribute('content', 'black-translucent')
+    }
+  }
+})
 
 test('главный экран, расписание и touch-цели пригодны на мобильном Safari', async ({ page }) => {
   const errors: string[] = []
@@ -83,6 +107,22 @@ test('список праздников и статья работают на у
   await page.setViewportSize({ width: 320, height: 480 })
   await page.goto('./')
   await choosePlace(page)
+  await page.evaluate(() => {
+    const start = document.startViewTransition.bind(document)
+    const snapshots: Array<{ title: string | null; contentName: string; sharedNames: string[] }> = []
+    Object.assign(window, { navigationSnapshots: snapshots })
+    document.startViewTransition = (update: ViewTransitionUpdateCallback | StartViewTransitionOptions) => start(async () => {
+      if (typeof update === 'function') await update()
+      else await update.update?.()
+      const content = document.querySelector('.screen-content')
+      if (!content) throw new Error('Переход снял пустой экран')
+      snapshots.push({
+        title: document.querySelector('.markdown-article h1')?.textContent ?? null,
+        contentName: getComputedStyle(content).viewTransitionName,
+        sharedNames: Array.from(document.querySelectorAll('[style*="view-transition-name"]')).map(element => element.id),
+      })
+    })
+  })
   await page.locator('#home-date').click()
   const dateScreen = page.getByRole('region', { name: 'Установка даты' })
   await dateScreen.getByRole('button', { name: 'Праздники и события' }).click()
@@ -103,6 +143,10 @@ test('список праздников и статья работают на у
   await ramadan.click()
   const article = page.getByRole('region', { name: 'Рамадан' })
   await expect(article.getByRole('heading', { level: 1 })).toHaveText('Рамадан')
+  const snapshots = await page.evaluate(() => (window as unknown as {
+    navigationSnapshots: Array<{ title: string | null; contentName: string; sharedNames: string[] }>
+  }).navigationSnapshots)
+  expect(snapshots.at(-1)).toEqual({ title: 'Рамадан', contentName: 'salah-screen-content', sharedNames: [] })
   const savedScrollTop = await page.evaluate(() => {
     const state = history.state as { salahNavigation?: { entries?: Array<{ scrollTop?: number }> } } | null
     return state?.salahNavigation?.entries?.at(-2)?.scrollTop

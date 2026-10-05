@@ -17,6 +17,15 @@ function NavigationExample() {
   </>
 }
 
+function PreparedNavigationExample({ prepare }: { prepare: () => Promise<void> }) {
+  const navigation = useAppNavigation()
+  return <>
+    <p>{navigation.screen}</p>
+    <button onClick={() => { void navigation.openPrepared('share', prepare) }}>Open when ready</button>
+    <button onClick={() => navigation.open('settings')}>Settings</button>
+  </>
+}
+
 function CalendarNavigationExample() {
   const navigation = useAppNavigation()
   const [date, setDate] = useState('2026-09-02')
@@ -57,6 +66,19 @@ function controlFrames() {
 }
 
 describe('навигация экранов', () => {
+  it('отменяет подготовленную навигацию, если пользователь выбрал другой экран', async () => {
+    let resolvePreparation: (() => void) | undefined
+    const prepare = () => new Promise<void>(resolve => { resolvePreparation = resolve })
+    render(<PreparedNavigationExample prepare={prepare} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open when ready' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    await act(() => {
+      resolvePreparation?.()
+      return Promise.resolve()
+    })
+    expect(screen.getByText('settings')).toBeInTheDocument()
+  })
+
   it('сохраняет вложенную цепочку DateScreen → список → статья и восстанавливает focus', async () => {
     const user = userEvent.setup()
     render(<NestedReligiousNavigationExample />)

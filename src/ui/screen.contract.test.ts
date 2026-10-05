@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import screenCssRaw from './screen.css?raw'
 import themeCssRaw from './theme.css?raw'
+import indexHtmlRaw from '../../index.html?raw'
 
 /** Нормализует объявления правила, чтобы проверять контракт независимо от форматирования. */
 function declarations(css: string, selector: string): string {
@@ -12,6 +13,12 @@ function declarations(css: string, selector: string): string {
 }
 
 describe('контракт стандартизации кнопок и строк', () => {
+  it('оставляет верхнюю safe-area чёрной и начинает Screen сразу после неё', () => {
+    expect(themeCssRaw).toContain('--app-shell-background: #000000;')
+    expect(declarations(screenCssRaw, '.app-layout')).toContain('padding-top: max(0px, calc(var(--app-safe-area-top, env(safe-area-inset-top, 0px)) - var(--app-viewport-top, 0px)));')
+    expect(indexHtmlRaw).toContain('<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />')
+  })
+
   it('держит базовую высоту 44 px как токен и в foundation', () => {
     expect(themeCssRaw).toContain('--button-height: 44px;')
     expect(declarations(screenCssRaw, '.pill, .text-field, .select-field')).toContain('min-height: var(--button-height);')
