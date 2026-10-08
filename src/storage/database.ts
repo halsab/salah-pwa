@@ -10,6 +10,7 @@ import type { DataFailure, StorageFailure } from '../domain/errors'
 import type { LocationSelectionSource } from '../domain/locationSelection'
 import type { CalculationSettings } from '../domain/prayerCalculation'
 import type { ThemeFamily } from '../domain/theme'
+import type { LanguagePreference } from '../localization/locale'
 import { failure, success, type Result } from '../domain/result'
 import type {
   PrayerDataset,
@@ -48,6 +49,7 @@ interface SettingValueMap {
   locationChoice: LocationChoice
   sourcePreferences: SourcePreferences
   calculationSettings: CalculationSettings
+  languagePreference: LanguagePreference
 }
 
 interface LegacySettingValueMap {
@@ -436,7 +438,7 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences' | 'languagePreference'>>
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
@@ -452,6 +454,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
+      if (patch.languagePreference) await transaction.objectStore('settings').put({ key: 'languagePreference', value: patch.languagePreference })
       await transaction.done
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }

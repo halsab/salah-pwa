@@ -41,6 +41,15 @@ describe('local initialization and persistence', () => {
     await clearAppData()
     expect(await initializePrayerRepository()).toMatchObject({ value: { calendarPreferences: { calendar: 'gregorian', correction: 0 } } })
   })
+  it('сохраняет выбор языка без изменения версии базы и восстанавливает auto по умолчанию', async () => {
+    expect(await initializePrayerRepository()).toMatchObject({ value: { languagePreference: 'auto' } })
+    expect(await repo.saveSettings({ languagePreference: 'ru' })).toEqual(success(undefined))
+    expect(await initializePrayerRepository()).toMatchObject({ value: { languagePreference: 'ru' } })
+    expect(await repo.saveSettings({ languagePreference: 'en' as unknown as import('../localization/locale').LanguagePreference }))
+      .toMatchObject({ ok: false, error: { kind: 'data' } })
+    await clearAppData()
+    expect(await initializePrayerRepository()).toMatchObject({ value: { languagePreference: 'auto' } })
+  })
   it('не сохраняет неверную поправку, а повреждённую запись восстанавливает', async () => {
     const invalid = { calendar: 'hijri', correction: 2 } as unknown as import('../domain/calendar').CalendarPreferences
     expect(await repo.saveSettings({ calendarPreferences: invalid })).toMatchObject({ ok: false, error: { kind: 'data' } })
