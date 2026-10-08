@@ -1,5 +1,3 @@
-import type { SupportedLocale } from './locale'
-
 export type ContentKind = 'event-article' | 'information-article' | 'prophet-story'
 
 export interface ContentVariant {
@@ -17,8 +15,8 @@ export function resolveContent(
   variants: readonly ContentVariant[],
   kind: ContentKind,
   contentId: string,
-  preferredLocale: SupportedLocale,
-  fallbackLocale: SupportedLocale = 'ru',
+  preferredLocale: string,
+  fallbackLocale = 'ru',
 ): ContentResolution {
   const match = variants.find(item => item.kind === kind && item.contentId === contentId && item.locale === preferredLocale)
     ?? variants.find(item => item.kind === kind && item.contentId === contentId && item.locale === fallbackLocale)
