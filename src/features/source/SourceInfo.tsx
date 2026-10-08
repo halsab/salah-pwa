@@ -4,7 +4,7 @@ import type { DatasetMeta } from '../../storage/database'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
 import { formatCompactDateLabel, formatDateLabel } from '../../domain/date'
-import { ASR_METHOD_LABELS, EVENT_LABELS, HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
+import { ASR_METHOD_KEYS, EVENT_LABEL_KEYS, HIGH_LATITUDE_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
@@ -33,17 +33,17 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   else if (params) facts.push(
     [t('prayerFajr'), `${params.fajrAngle}°`],
     [t('prayerIsha'), params.ishaInterval > 0 ? t('minutesAfterSunset', { minutes: params.ishaInterval }) : `${params.ishaAngle}°`],
-    [t('asr'), ASR_METHOD_LABELS[context.settings.asrMethod]],
-    [t('highLatitude'), HIGH_LATITUDE_LABELS[context.settings.highLatitudeRule]],
+    [t('asr'), t(ASR_METHOD_KEYS[context.settings.asrMethod])],
+    [t('highLatitude'), t(HIGH_LATITUDE_KEYS[context.settings.highLatitudeRule])],
   )
   const adjustments = context.source === 'calculated' ? Object.entries(context.settings.adjustments ?? {})
     .filter(([, value]) => value !== 0)
-    .map(([key, value]) => `${EVENT_LABELS[key as CalculatedPrayerKey]} ${value > 0 ? '+' : ''}${t('minutes', { count: value })}`).join('; ') : ''
+    .map(([key, value]) => `${t(EVENT_LABEL_KEYS[key as CalculatedPrayerKey])} ${value > 0 ? '+' : ''}${t('minutes', { count: value })}`).join('; ') : ''
   if (adjustments) facts.push([t('previousAdjustments'), adjustments])
 
   const lateFajrNote = lateFajrStart ? t('lateFajrNote', { time: markdownText(lateFajrStart.time), date: markdownText(formatDateLabel(lateFajrStart.date)) }) : ''
   const runtimeNotes = [
-    calculated?.estimatedPrayers.length ? t('estimatedRule', { values: markdownText(calculated.estimatedPrayers.map(key => EVENT_LABELS[key]).join(', ')) }) : '',
+    calculated?.estimatedPrayers.length ? t('estimatedRule', { values: markdownText(calculated.estimatedPrayers.map(key => t(EVENT_LABEL_KEYS[key])).join(', ')) }) : '',
     calculated?.polarResolutionApplied ? t('polarResolution') : '',
     lateFajrNote,
   ].filter(Boolean)
@@ -62,7 +62,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     official ? markdownLink(t('primarySource', { name: provider?.label ?? t('provider') }), meta?.source.url ?? provider?.bundled.source.url ?? '') : '',
     `## ${t('important')}`,
     ...important,
-    official ? '' : '[Профили Adhan](https://github.com/batoulapps/adhan-js/blob/master/METHODS.md)',
+    official ? '' : markdownLink(t('adhanProfilesLink'), 'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md'),
     `> ${t('disclaimer')}`,
   ].filter(Boolean).join('\n\n')
 

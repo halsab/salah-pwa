@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
 import { effectiveCalculationSettings } from '../../domain/calculationSettings'
 import { CALCULATION_PROFILES, type CalculationProfileCapability, type CalculationProfileId, type HighLatitudeMethod } from '../../domain/prayerCalculation'
-import { HIGH_LATITUDE_LABELS } from '../../ui/calculationLabels'
+import { HIGH_LATITUDE_KEYS, PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow, ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
@@ -32,7 +32,7 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
     : preferences.calculationDraft ?? { profile: 'muslimWorldLeague', overrides: {} }
   const parameters = effectiveCalculationSettings(calculation)
   const mode = preferences.mode === 'automatic' ? 'automatic' : preferences.source.kind === 'official' ? 'official' : 'calculated'
-  const profileLabel = CALCULATION_PROFILES.find(profile => profile.id === calculation.profile)?.label ?? ''
+  const profileLabel = t(PROFILE_LABEL_KEYS[calculation.profile])
   const legacy = calculation.overrides.fajrAngle !== undefined || calculation.overrides.isha !== undefined || Object.keys(calculation.overrides.adjustments ?? {}).length > 0
   const privacyContent = getInformationContent('privacy', locale)
   const aboutContent = getInformationContent('about', locale, '', version)
@@ -72,7 +72,7 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
     {legacy ? <p className="note screen-space">{t('replaceLegacy')}</p> : null}
     <div className="screen-stack screen-space">{CALCULATION_PROFILES.map(profile => {
       const capability = getCapability(profile.id)
-      return <div key={profile.id}><ActionRow title={profile.label} value={calculation.profile === profile.id ? t('selected') : undefined} disabled={!capability.supported} aria-pressed={calculation.profile === profile.id}
+      return <div key={profile.id}><ActionRow title={t(PROFILE_LABEL_KEYS[profile.id])} value={calculation.profile === profile.id ? t('selected') : undefined} disabled={!capability.supported} aria-pressed={calculation.profile === profile.id}
         onClick={() => { onChange(manualCalculation({ profile: profile.id, overrides: {} })); onBack() }} />
         {!capability.supported ? <p className="note">{capability.reason}</p> : null}</div>
     })}{notice}</div>
@@ -85,8 +85,8 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
       }}><option value="hanafi">{t('hanafi')}</option><option value="standard">{t('otherMadhhabs')}</option></select></label>
       <label className="screen-field"><span>{t('highLatitude')}</span><select aria-label={t('highLatitude')} className="select-field" value={parameters.highLatitudeRule} onChange={event => {
         const highLatitudeRule = event.target.value as HighLatitudeMethod
-        if (Object.hasOwn(HIGH_LATITUDE_LABELS, highLatitudeRule)) onChange(manualCalculation({ ...calculation, overrides: { ...calculation.overrides, highLatitudeRule } }))
-      }}>{Object.entries(HIGH_LATITUDE_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
+        if (Object.hasOwn(HIGH_LATITUDE_KEYS, highLatitudeRule)) onChange(manualCalculation({ ...calculation, overrides: { ...calculation.overrides, highLatitudeRule } }))
+      }}>{Object.entries(HIGH_LATITUDE_KEYS).map(([key, labelKey]) => <option key={key} value={key}>{t(labelKey)}</option>)}</select></label>
       {legacy ? <div className="screen-stack"><p className="note">{t('savedLegacyAdjustments')}</p><ActionButton onClick={() => {
         const { fajrAngle: _angle, isha: _isha, adjustments: _adjustments, ...overrides } = calculation.overrides
         onChange(manualCalculation({ ...calculation, overrides }))

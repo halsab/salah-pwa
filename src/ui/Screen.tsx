@@ -19,7 +19,7 @@ export function Screen({ label, top, bottom, children, contentClassName = '', bu
   </section>
 }
 
-export function BackButton({ onClick, label = 'Назад' }: { onClick: () => void; label?: string }) {
+export function BackButton({ onClick, label }: { onClick: () => void; label?: string }) {
   const { t } = useLocalization()
-  return <ActionButton data-screen-focus onClick={onClick}>{label === 'Назад' ? t('back') : label}</ActionButton>
+  return <ActionButton data-screen-focus onClick={onClick}>{label ?? t('back')}</ActionButton>
 }

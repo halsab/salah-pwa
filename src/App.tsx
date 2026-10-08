@@ -65,6 +65,7 @@ import { useAppNavigation } from './ui/useAppNavigation'
 import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
 import { setLanguagePreference, useLocalization } from './localization'
+import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
 
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
@@ -372,7 +373,7 @@ export function App({
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}
-        sourceLabel={officialMode ? t('dumRt') : CALCULATION_PROFILES.find(profile => profile.id === calculationSettings.profile)?.label ?? t('autoShort')} /> : null}
+        sourceLabel={officialMode ? t('dumRt') : t(PROFILE_LABEL_KEYS[calculationSettings.profile])} /> : null}
       <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />
       <ShareDialog open={shareDialogOpen} onClose={backScreen} />
     </AppShell>

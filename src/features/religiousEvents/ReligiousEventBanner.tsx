@@ -1,17 +1,18 @@
 import { ActionButton } from '../../ui/controls'
 import type { ReligiousBannerState, ReligiousEventId } from '../../domain/religiousEvents'
 import { RELIGIOUS_EVENTS } from '../../domain/religiousEvents'
-import { useLocalization } from '../../localization'
+import { translate, useLocalization } from '../../localization'
 import { localizedEventTitle } from '../../localization/religiousEvents'
+import type { Translator } from '../../localization/messages'
 
 export function ReligiousEventBanner({ state, onOpen }: {
   state: ReligiousBannerState
   onOpen: (eventId: ReligiousEventId, origin: HTMLElement) => void
 }) {
-  const { locale } = useLocalization()
+  const { locale, t } = useLocalization()
   const contentId = state.contentId
   const title = localizedEventTitle(state.eventId, locale)
-  const secondaryText = localizeSecondary(state.secondaryText, locale)
+  const secondaryText = localizeSecondary(state.secondaryText, locale, t)
   const content = <>
     <span className="religious-event-banner-title">{title}</span>
     {secondaryText ? <span className="religious-event-banner-secondary">{secondaryText}</span> : null}
@@ -23,13 +24,14 @@ export function ReligiousEventBanner({ state, onOpen }: {
     : <div id="religious-event-banner" className="religious-event-banner">{content}</div>
 }
 
-function localizeSecondary(value: string | null, locale: 'ru'): string | null {
+function localizeSecondary(value: string | null, locale: 'ru', t: Translator): string | null {
   if (!value) return null
-  if (value === 'завтра') return 'завтра'
-  const match = value.match(/^(.*) через (\d+) дня$/u)
+  if (value === translate('ru', 'tomorrow')) return t('tomorrow')
+  const match = value.match(/(\d+)/u)
   if (!match) return value
-  const [, rawTitle, rawCount] = match
-  const definition = RELIGIOUS_EVENTS.find(item => item.title === rawTitle || item.listTitle === rawTitle)
-  const title = definition ? localizedEventTitle(definition.id, locale, definition.listTitle === rawTitle) : rawTitle
-  return `${title} через ${rawCount} ${Number(rawCount) === 1 ? 'день' : Number(rawCount) >= 2 && Number(rawCount) <= 4 ? 'дня' : 'дней'}`
+  const rawCount = match[1]
+  const definition = RELIGIOUS_EVENTS.find(item => value.startsWith(item.title) || (item.listTitle && value.startsWith(item.listTitle)))
+  if (!definition) return value
+  const title = localizedEventTitle(definition.id, locale, definition.listTitle !== undefined && value.startsWith(definition.listTitle))
+  return `${title} ${t('inDays', { count: Number(rawCount) })}`
 }

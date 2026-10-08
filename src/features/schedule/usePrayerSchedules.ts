@@ -12,6 +12,7 @@ import type { Place } from '../../domain/place'
 import type { ResolvedPrayerSource } from '../../domain/prayerSource'
 import { isPrayerDay } from '../../domain/prayerDatasetValidation'
 import { translate } from '../../localization'
+import { PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 
 export type DisplaySchedule = PrayerSchedule
 
@@ -68,13 +69,13 @@ export function usePrayerSchedules({
         const days = await services.getDays(context.localityId, dates, context.datasetRevision)
         if (days.length !== dates.length || days.some((day, index) => day && (
           !isPrayerDay(day) || day.date !== dates[index] || day.locationId !== context.localityId
-        ))) throw new Error('Набор дней не соответствует запросу')
-        if (!days.some(day => day?.date === context.date)) throw new Error('Не найден день покрытого расписания')
+        ))) throw new Error('dataset-shape-mismatch')
+        if (!days.some(day => day?.date === context.date)) throw new Error('dataset-date-missing')
         return days.filter((day) => day !== undefined)
       }
       const days = dates.map((date) => calculatePrayerSchedule(context.location, date, context.timeZone, context.settings))
       if (days.flatMap(buildScheduleEvents).some((event) => Math.abs(event.dayOffset) > 3)) {
-        throw new Error('Событие вне поддерживаемого окна календарных дат')
+        throw new Error('schedule-event-outside-window')
       }
       return days
     }
@@ -83,7 +84,7 @@ export function usePrayerSchedules({
     }).catch((error: unknown) => {
       if (active) setResult({ context, key, retry, services, schedules: [], error:
         error instanceof UnsupportedCalculationProfileError
-          ? error.message
+          ? translate('ru', 'unsupportedProfile', { profile: translate('ru', PROFILE_LABEL_KEYS[error.profile]) })
           : translate('ru', 'scheduleLoadFailed'),
       })
     })
