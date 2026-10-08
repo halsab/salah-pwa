@@ -1,4 +1,6 @@
 import type { ReligiousEventId } from '../../domain/religiousEvents'
+import { resolveContent, type ContentResolution, type ContentVariant } from '../../localization/content'
+import type { SupportedLocale } from '../../localization/locale'
 
 import arafa from '../../content/religious-events/arafa.md?raw'
 import ashura from '../../content/religious-events/ashura.md?raw'
@@ -27,3 +29,13 @@ export const RELIGIOUS_EVENT_CONTENT: Readonly<Record<ReligiousEventId, string>>
   'eid-al-adha': eidAlAdha,
   tashriq,
 })
+
+export const RELIGIOUS_EVENT_CONTENT_VARIANTS: readonly ContentVariant[] = Object.freeze(
+  Object.entries(RELIGIOUS_EVENT_CONTENT).map(([contentId, content]) => ({
+    contentId, content, kind: 'event-article' as const, locale: 'ru' as const,
+  })),
+)
+
+export function getReligiousEventContent(eventId: ReligiousEventId, locale: SupportedLocale): ContentResolution {
+  return resolveContent(RELIGIOUS_EVENT_CONTENT_VARIANTS, 'event-article', eventId, locale)
+}

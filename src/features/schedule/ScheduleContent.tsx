@@ -8,14 +8,15 @@ import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { ReligiousEventBanner } from '../religiousEvents/ReligiousEventBanner'
 import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
+import { useLocalization } from '../../localization'
 
-const LABELS: Record<SchedulePrayerKey, string> = {
-  fajrStart: 'Фаджр (конец сухура)', fajrJamaat: 'Фаджр в мечети', fajr: 'Фаджр', sunrise: 'Восход',
-  zenith: 'Зенит', dhuhr: 'Зухр', asr: 'Аср', maghrib: 'Магриб', isha: 'Иша',
+const LABELS: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
+  fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', fajr: 'prayerFajr', sunrise: 'prayerSunrise',
+  zenith: 'prayerZenith', dhuhr: 'prayerDhuhr', asr: 'prayerAsr', maghrib: 'prayerMaghrib', isha: 'prayerIsha',
 }
-const COUNTDOWN: Record<SchedulePrayerKey, string> = {
-  fajrStart: 'До Фаджра', fajrJamaat: 'До Фаджра в мечети', fajr: 'До Фаджра', sunrise: 'До восхода',
-  zenith: 'До зенита', dhuhr: 'До Зухра', asr: 'До Асра', maghrib: 'До Магриба', isha: 'До Иши',
+const COUNTDOWN: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
+  fajrStart: 'countdownFajrStart', fajrJamaat: 'countdownFajrJamaat', fajr: 'countdownFajr', sunrise: 'countdownSunrise',
+  zenith: 'countdownZenith', dhuhr: 'countdownDhuhr', asr: 'countdownAsr', maghrib: 'countdownMaghrib', isha: 'countdownIsha',
 }
 
 function estimated(event: ResolvedScheduleEvent, schedules: DisplaySchedule[]): boolean {
@@ -25,16 +26,17 @@ function estimated(event: ResolvedScheduleEvent, schedules: DisplaySchedule[]): 
 function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
   schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean; calendarPreferences: CalendarPreferences
 }) {
+  const { t } = useLocalization()
   const events = buildScheduleEvents(schedule).sort((left, right) => left.instant - right.instant)
-  return <ol className="event-list" aria-label="Расписание дня">
+  return <ol className="event-list" aria-label={t('scheduleListLabel')}>
     {events.map(event => {
       const active = live && event.key === current?.key && event.scheduleDate === current.scheduleDate
       const past = live && !active && event.instant <= now.getTime()
       return <li key={event.key} className={`event-row${past ? ' event-past' : ''}${active ? ' event-current' : ''}`} aria-current={active || undefined}>
-        <div className="event-name"><span>{LABELS[event.key]}</span>
+        <div className="event-name"><span>{t(LABELS[event.key])}</span>
           {event.dayOffset ? <small className="event-day">{formatCalendarDate(event.date, calendarPreferences)}</small> : null}
         </div>
-        <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label="Приблизительное время">≈ </span> : null}{event.time}</time>
+        <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>
       </li>
     })}
   </ol>
@@ -64,6 +66,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   currentTime, now, officialMode, hijriSupported = false, onOpenReligiousEvent = () => {},
   onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
 }: ScheduleContentProps) {
+  const { t } = useLocalization()
   const [boundary, setBoundary] = useState<{ time: Date; parentTime: number; schedules: DisplaySchedule[] } | null>(null)
   // Граница относится к загруженному набору, а не к предыдущему расписанию.
   const effectiveNow = boundary?.schedules === schedules && boundary.parentTime === currentTime.getTime() ? boundary.time : currentTime
@@ -81,21 +84,21 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
     scheduleReady: ready,
     schedules,
   })
-  const countdown = next ? <ScheduleCountdown key={`${next.scheduleDate}:${next.key}:${next.instant}`} countdownLabel={COUNTDOWN[next.key]}
+  const countdown = next ? <ScheduleCountdown key={`${next.scheduleDate}:${next.key}:${next.instant}`} countdownLabel={t(COUNTDOWN[next.key])}
     targetInstant={next.instant} now={now} onElapsed={onElapsed} /> : null
   const footer = <ScreenFooter align="between">
-    <span className="screen-footer-lead">{selectedDate !== today ? <ActionButton onClick={() => onChangeDate(today)}>Сегодня</ActionButton> : countdown}</span>
+    <span className="screen-footer-lead">{selectedDate !== today ? <ActionButton onClick={() => onChangeDate(today)}>{t('today')}</ActionButton> : countdown}</span>
     {actions}
   </ScreenFooter>
-  return <Screen label="Главная" top={top} bottom={footer} busy={scheduleLoading} contentClassName={ready ? 'home-content' : 'screen-center'}>
-    {scheduleError ? <div className="screen-stack"><p className="screen-copy" role="alert">{scheduleError}</p><ActionButton onClick={onRetrySchedule}>Повторить</ActionButton></div>
-      : scheduleLoading ? <p className="note" role="status">Загружаем расписание…</p>
-        : !schedule ? <p className="screen-copy">Нет расписания на эту дату</p>
+  return <Screen label={t('home')} top={top} bottom={footer} busy={scheduleLoading} contentClassName={ready ? 'home-content' : 'screen-center'}>
+    {scheduleError ? <div className="screen-stack"><p className="screen-copy" role="alert">{scheduleError}</p><ActionButton onClick={onRetrySchedule}>{t('retry')}</ActionButton></div>
+      : scheduleLoading ? <p className="note" role="status">{t('scheduleLoading')}</p>
+        : !schedule ? <p className="screen-copy">{t('scheduleForDate')}</p>
           : <>
             {religiousBanner ? <ReligiousEventBanner state={religiousBanner} onOpen={onOpenReligiousEvent} /> : null}
             <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} calendarPreferences={calendarPreferences} />
-            {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">≈ По северному правилу</p> : null}
-            {live && !next ? <p className="note screen-space">{officialMode ? 'Следующее расписание ещё не опубликовано' : 'Следующее событие не найдено'}</p> : null}
+            {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">{t('estimatedByHighLatitude')}</p> : null}
+            {live && !next ? <p className="note screen-space">{t(officialMode ? 'nextOfficialUnavailable' : 'nextEventUnavailable')}</p> : null}
           </>}
     {notice}
   </Screen>

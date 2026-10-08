@@ -13,18 +13,21 @@ import {
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow } from '../../ui/controls'
 import { formatReligiousEventOccurrenceDate } from './religiousEventDate'
+import { useLocalization } from '../../localization'
+import { localizedEventTitle } from '../../localization/religiousEvents'
 
 export function ReligiousEventOccurrenceRow({ occurrence, onOpenEvent }: {
   occurrence: ReligiousEventOccurrence
   onOpenEvent: (eventId: ReligiousEventId) => void
 }) {
+  const { locale } = useLocalization()
   const id = `religious-event-${occurrence.civilDate}-${occurrence.eventId}`
   const contentId = occurrence.contentId
   const date = <span className="action-row-secondary">{formatReligiousEventOccurrenceDate(occurrence)}</span>
   return <li>
     {contentId
-      ? <ActionRow id={id} className="religious-event-list-row" title={occurrence.title} secondary={date} onClick={() => onOpenEvent(contentId)} />
-      : <div id={id} className="pill pill-row pill-row--stacked religious-event-list-row"><span className="action-row-title">{occurrence.title}</span>{date}</div>}
+      ? <ActionRow id={id} className="religious-event-list-row" title={localizedEventTitle(occurrence.eventId, locale, true)} secondary={date} onClick={() => onOpenEvent(contentId)} />
+      : <div id={id} className="pill pill-row pill-row--stacked religious-event-list-row"><span className="action-row-title">{localizedEventTitle(occurrence.eventId, locale, true)}</span>{date}</div>}
   </li>
 }
 
@@ -36,13 +39,14 @@ export function ReligiousEventsScreen({ today, correction, hijriSupported, onOpe
   onBack: () => void
   loadError?: string | null
 }) {
+  const { t } = useLocalization()
   const occurrences = useMemo(() => {
     const start = calendarDateFromCivil(today, 'gregorian')
     const toDateExclusive = civilDateFromCalendar({ ...start, year: start.year + 1 }, 'gregorian')
     return listReligiousEventOccurrences({ fromDate: today, toDateExclusive, correction, hijriSupported })
   }, [today, correction, hijriSupported])
 
-  return <Screen label="Праздники и события" top={<BackButton onClick={onBack} />}>
+  return <Screen label={t('religiousEvents')} top={<BackButton onClick={onBack} />}>
     {loadError ? <p role="alert">{loadError}</p> : null}
     <ul className="religious-events-list">
       {occurrences.map(occurrence => <ReligiousEventOccurrenceRow

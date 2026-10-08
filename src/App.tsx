@@ -1,4 +1,3 @@
-import { staticText } from './ui/staticText'
 import { DEFAULT_CALENDAR_PREFERENCES, restoreCalendarPreferences, supportsHijriCalendar, type CalendarPreferences } from './domain/calendar'
 import { DateScreen } from './features/calendar/DateScreen'
 import {
@@ -65,6 +64,7 @@ import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation } from './ui/useAppNavigation'
 import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
+import { setLanguagePreference, useLocalization } from './localization'
 
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
@@ -93,10 +93,11 @@ const defaultServices: AppServices = {
 }
 
 function LoadingScreen() {
+  const { t } = useLocalization()
   return (
     <AppShell>
-      <Screen label="Загрузка" busy contentClassName="screen-center">
-        <p className="note" role="status">Открываем расписание…</p>
+      <Screen label={t('loading')} busy contentClassName="screen-center">
+        <p className="note" role="status">{t('appLoading')}</p>
       </Screen>
     </AppShell>
   )
@@ -110,6 +111,7 @@ export function App({
   services?: AppServices
   version?: string
 }) {
+  const { t } = useLocalization()
   const [repositoryState, setRepositoryState] = useState<PrayerRepositorySnapshot>({ meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null })
   const meta = repositoryState.meta
   const [preferences, setPreferences] = useState<SourcePreferences>(automaticPreferences)
@@ -182,6 +184,7 @@ export function App({
       recentRef.current = recent
       setRecentPlaces(recent)
       setPreferences(state.preferences)
+      setLanguagePreference(state.languagePreference ?? 'auto')
       setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
       setThemeFamily(restoreThemeFamily(state.themeFamily))
       sessionHasPlace.current = Boolean(state.locationChoice)
@@ -192,17 +195,17 @@ export function App({
     void services.initialize().then((result) => {
       if (!active) return
       if (!result.ok) {
-        setError(staticText('app-copy-2'))
+        setError(t('appLoadError'))
         return
       }
       acceptState(result.value)
       refresh()
-    }).catch(() => active && setError(staticText('app-copy-2')))
+    }).catch(() => active && setError(t('appLoadError')))
       .finally(() => active && setLoading(false))
     window.addEventListener('online', refresh)
     window.addEventListener('pageshow', refresh)
     return () => { active = false; unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('pageshow', refresh); void services.invalidateAndDrain() }
-  }, [retryCount, services, restore, resetting])
+  }, [retryCount, services, restore, resetting, t])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -254,19 +257,19 @@ export function App({
       const module = await loadReligiousEventScreen()
       flushSync(() => setReligiousEventScreen(() => module.ReligiousEventScreen))
     }).catch(() => {
-      setReligiousEventLoadError('Не удалось загрузить статью. Попробуйте ещё раз.')
+      setReligiousEventLoadError(t('eventUnavailable'))
     })
-  }, [openScreenPrepared])
+  }, [openScreenPrepared, t])
 
   if (loading) return <LoadingScreen />
 
   if (error) {
     return (
       <AppShell>
-        <Screen label="Ошибка загрузки" contentClassName="screen-center">
+        <Screen label={t('eventLoadError')} contentClassName="screen-center">
           <p role="alert">{error}</p>
           <ActionButton onClick={() => setRetryCount((count) => count + 1)}>
-            Попробовать снова
+            {t('retryAgain')}
           </ActionButton>
         </Screen>
       </AppShell>
@@ -286,7 +289,7 @@ export function App({
     persistence.save({ themeFamily: next })
   }
   const homeLocationLabel = homePlaceLabel(place)
-  const sourcePlaceLabel = compactPlaceLabel(place?.name || 'Выберите место')
+  const sourcePlaceLabel = compactPlaceLabel(place?.name || t('selectPlace'))
   const locationTime = place && getUtcOffset(currentTime, place.timeZone) !== getUtcOffset(currentTime, deviceTimeZone)
     ? getZonedTime(currentTime, place.timeZone)
     : undefined
@@ -301,8 +304,8 @@ export function App({
 
   const persistenceNotice = persistence.status === 'failed' ? (
         <div className="screen-status" role="status">
-          <span>Не удалось сохранить изменения</span>
-          <ActionButton onClick={persistence.retry}>Повторить</ActionButton>
+          <span>{t('saveFailed')}</span>
+          <ActionButton onClick={persistence.retry}>{t('retry')}</ActionButton>
         </div>
       ) : null
   const nearbyCityNotice = place?.selection === 'gps' ? nameLookupMessage(nameLookupState) : null
@@ -315,7 +318,7 @@ export function App({
           {!place ? <LocationScreen initial place={null} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
             onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
             gpsState={gpsState} nameLookupState={nameLookupState} onAcceptGps={acceptGps}
-            notice={persistenceNotice} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="home-settings" onClick={openSettingsDialog}>Настройки</ActionButton></ScreenFooter>} /> : <ScheduleContent
+            notice={persistenceNotice} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="home-settings" onClick={openSettingsDialog}>{t('settings')}</ActionButton></ScreenFooter>} /> : <ScheduleContent
             schedule={schedule}
             schedules={schedules}
             scheduleLoading={scheduleLoading}
@@ -331,7 +334,7 @@ export function App({
             onOpenReligiousEvent={openReligiousEvent}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={homeLocationLabel} locationTime={locationTime} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
-            actions={<IconActionButton id="home-settings" ref={settingsButtonRef} label="Настройки" title="Настройки" onClick={openSettingsDialog}>
+            actions={<IconActionButton id="home-settings" ref={settingsButtonRef} label={t('settings')} title={t('settings')} onClick={openSettingsDialog}>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M12 3.75 19.15 7.9v8.2L12 20.25 4.85 16.1V7.9L12 3.75Z" stroke="currentColor" strokeWidth="1.55" strokeLinejoin="round" />
                 <circle cx="12" cy="12" r="1.6" fill="currentColor" />
@@ -361,7 +364,7 @@ export function App({
       {navigation.screen === 'source-info' ? schedule && context
         ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={sourcePlaceLabel}
             checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} />
-        : <Screen label="О расписании" top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? 'Нет расписания для места или даты' : 'Сначала выберите место'}</p></Screen>
+        : <Screen label={t('scheduleInfo')} top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? t('scheduleForDate') : t('noSchedulePlace')}</p></Screen>
         : null}
       {navigation.screen === 'religious-event' && navigation.religiousEventId
         ? LoadedReligiousEventScreen ? <LoadedReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} /> : null
@@ -369,7 +372,7 @@ export function App({
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}
-        sourceLabel={officialMode ? 'ДУМ РТ' : CALCULATION_PROFILES.find(profile => profile.id === calculationSettings.profile)?.label ?? 'Авто'} /> : null}
+        sourceLabel={officialMode ? t('dumRt') : CALCULATION_PROFILES.find(profile => profile.id === calculationSettings.profile)?.label ?? t('autoShort')} /> : null}
       <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />
       <ShareDialog open={shareDialogOpen} onClose={backScreen} />
     </AppShell>

@@ -5,6 +5,7 @@ import {
 } from '../../domain/calendar'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow, ActionButton, ScreenFooter } from '../../ui/controls'
+import { useLocalization } from '../../localization'
 
 interface SelectOption { value: string; label: string; disabled?: boolean }
 
@@ -30,6 +31,7 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
   onDateChange: (date: string) => void; onPreferencesChange: (preferences: CalendarPreferences) => void
   onOpenReligiousEvents: () => void; onBack: () => void; notice?: ReactNode
 }) {
+  const { t } = useLocalization()
   const dayRef = useRef<HTMLSelectElement>(null)
   const { calendar, correction } = preferences
   const date = calendarDateFromCivil(selectedDate, calendar, correction)
@@ -37,29 +39,29 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
   const months = calendar === 'hijri' ? HIJRI_MONTHS : GREGORIAN_MONTHS
   const updateDate = (patch: Partial<CalendarDate>) => onDateChange(civilDateFromCalendar({ ...date, ...patch }, calendar, correction))
 
-  return <Screen label="Установка даты" top={<BackButton onClick={onBack} />} contentClassName="screen-center"
+  return <Screen label={t('dateSetup')} top={<BackButton onClick={onBack} />} contentClassName="screen-center"
     bottom={selectedDate !== today ? <ScreenFooter><ActionButton variant="primary" onClick={() => {
       onDateChange(today)
       dayRef.current?.focus()
-    }}>Сегодня</ActionButton></ScreenFooter> : null}>
+    }}>{t('today')}</ActionButton></ScreenFooter> : null}>
     <div className="screen-stack">
-      <SelectRow label="Календарь" value={calendar} options={[
-        { value: 'gregorian', label: 'Григорианский' },
-        { value: 'hijri', label: 'Хиджра', disabled: !hijriSupported },
+      <SelectRow label={t('calendar')} value={calendar} options={[
+        { value: 'gregorian', label: t('gregorian') },
+        { value: 'hijri', label: t('hijri'), disabled: !hijriSupported },
       ]} onChange={value => {
         if (value === 'gregorian' || (value === 'hijri' && hijriSupported)) onPreferencesChange({ ...preferences, calendar: value })
       }} />
-      <SelectRow label="День" selectRef={dayRef} value={String(date.day)} options={numbers(1, daysInCalendarMonth(date.year, date.month, calendar))} onChange={value => updateDate({ day: Number(value) })} />
-      <SelectRow label="Месяц" value={String(date.month)} options={months.map((label, index) => ({ value: String(index + 1), label }))} onChange={value => updateDate({ month: Number(value) })} />
-      <SelectRow label="Год" value={String(date.year)} options={numbers(Math.max(1, Math.min(currentYear - 100, date.year)), Math.max(currentYear + 100, date.year))} onChange={value => updateDate({ year: Number(value) })} />
-      {calendar === 'hijri' ? <SelectRow label="Поправка даты" value={String(correction)} options={[
-        { value: '-1', label: '−1 день' }, { value: '0', label: '0' }, { value: '1', label: '+1 день' },
+      <SelectRow label={t('day')} selectRef={dayRef} value={String(date.day)} options={numbers(1, daysInCalendarMonth(date.year, date.month, calendar))} onChange={value => updateDate({ day: Number(value) })} />
+      <SelectRow label={t('month')} value={String(date.month)} options={months.map((label, index) => ({ value: String(index + 1), label }))} onChange={value => updateDate({ month: Number(value) })} />
+      <SelectRow label={t('year')} value={String(date.year)} options={numbers(Math.max(1, Math.min(currentYear - 100, date.year)), Math.max(currentYear + 100, date.year))} onChange={value => updateDate({ year: Number(value) })} />
+      {calendar === 'hijri' ? <SelectRow label={t('dateCorrection')} value={String(correction)} options={[
+        { value: '-1', label: t('dateMinusOne') }, { value: '0', label: '0' }, { value: '1', label: t('datePlusOne') },
       ]} onChange={value => {
         const correction = Number(value)
         if (correction === -1 || correction === 0 || correction === 1) onPreferencesChange({ ...preferences, correction })
       }} /> : null}
-      <ActionRow id="date-religious-events" title="Праздники и события" disabled={!hijriSupported} onClick={onOpenReligiousEvents} />
-      {!hijriSupported ? <p className="note" role="status">Этот браузер не поддерживает календарь хиджры.</p> : null}
+      <ActionRow id="date-religious-events" title={t('religiousEvents')} disabled={!hijriSupported} onClick={onOpenReligiousEvents} />
+      {!hijriSupported ? <p className="note" role="status">{t('hijriUnsupported')}</p> : null}
       {notice}
     </div>
   </Screen>

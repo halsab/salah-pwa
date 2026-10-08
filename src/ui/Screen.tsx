@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ActionButton } from './controls'
+import { useLocalization } from '../localization'
 
 export function Screen({ label, top, bottom, children, contentClassName = '', busy = false }: {
   label: string
@@ -19,5 +20,6 @@ export function Screen({ label, top, bottom, children, contentClassName = '', bu
 }
 
 export function BackButton({ onClick, label = 'Назад' }: { onClick: () => void; label?: string }) {
-  return <ActionButton data-screen-focus onClick={onClick}>{label}</ActionButton>
+  const { t } = useLocalization()
+  return <ActionButton data-screen-focus onClick={onClick}>{label === 'Назад' ? t('back') : label}</ActionButton>
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { APP_SHARE_URL } from '../../platform/appLink'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
+import { useLocalization } from '../../localization'
 
 interface ShareDialogProps { open: boolean; onClose: () => void }
 
@@ -10,6 +11,7 @@ export function ShareDialog({ open, onClose }: ShareDialogProps) {
 }
 
 function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
+  const { t } = useLocalization()
   const [status, setStatus] = useState<'idle' | 'shared' | 'copied' | 'share-error' | 'copy-error'>('idle')
   const operation = useRef(0)
   const linkRef = useRef<HTMLTextAreaElement>(null)
@@ -19,7 +21,7 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
     setStatus('idle')
     try {
       const clipboard = (navigator as { clipboard?: Clipboard }).clipboard
-      if (!clipboard) throw new Error('Clipboard API недоступен')
+      if (!clipboard) throw new Error('clipboard-unavailable')
       await clipboard.writeText(APP_SHARE_URL)
       if (epoch === operation.current) setStatus('copied')
     } catch {
@@ -38,7 +40,7 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
     const epoch = ++operation.current
     setStatus('idle')
     try {
-      void navigator.share({ title: 'Salah — время намаза', url: APP_SHARE_URL }).then(
+      void navigator.share({ title: t('shareTitle'), url: APP_SHARE_URL }).then(
         () => { if (epoch === operation.current) setStatus('shared') },
         (error: unknown) => {
           if (epoch !== operation.current) return
@@ -52,13 +54,13 @@ function ShareScreen({ onClose }: Pick<ShareDialogProps, 'onClose'>) {
   }
   const copyOnly = status === 'share-error' || !navigator.share
   const hasError = status === 'share-error' || status === 'copy-error'
-  return <Screen label="Поделиться" top={<BackButton onClick={onClose} />} contentClassName="share-screen"
-    bottom={<ScreenFooter><ActionButton variant="primary" onClick={copyOnly ? () => void copyLink() : shareLink}>{status === 'copied' ? 'Скопировано' : copyOnly ? 'Скопировать ссылку' : 'Поделиться'}</ActionButton></ScreenFooter>}>
-    <img className="app-share-qr" src={`${import.meta.env.BASE_URL}share-qr.svg`} width="270" height="270" alt="QR-код ссылки на приложение" />
-    <div><label className="note share-label" htmlFor="share-url">Ссылка на приложение</label>
+  return <Screen label={t('share')} top={<BackButton onClick={onClose} />} contentClassName="share-screen"
+    bottom={<ScreenFooter><ActionButton variant="primary" onClick={copyOnly ? () => void copyLink() : shareLink}>{status === 'copied' ? t('copied') : copyOnly ? t('copyLink') : t('share')}</ActionButton></ScreenFooter>}>
+    <img className="app-share-qr" src={`${import.meta.env.BASE_URL}share-qr.svg`} width="270" height="270" alt={t('shareQrAlt')} />
+    <div><label className="note share-label" htmlFor="share-url">{t('appLink')}</label>
       <textarea ref={linkRef} id="share-url" className="app-share-url" value={APP_SHARE_URL} readOnly rows={2} spellCheck={false} />
       <p role="status" aria-live="polite" aria-atomic="true" className={hasError ? 'note screen-space' : 'sr-only'}>
-        {status === 'copied' ? 'Ссылка скопирована' : status === 'share-error' ? 'Не удалось поделиться. Скопируйте ссылку.' : status === 'copy-error' ? 'Не удалось скопировать ссылку. Скопируйте выделенный текст.' : ''}
+        {status === 'copied' ? t('linkCopied') : status === 'share-error' ? t('shareError') : status === 'copy-error' ? t('copyError') : ''}
       </p>
     </div>
   </Screen>

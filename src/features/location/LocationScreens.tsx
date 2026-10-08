@@ -8,15 +8,17 @@ import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow, ActionButton } from '../../ui/controls'
 import type { CityCatalogStatus } from './useCityCatalog'
 import { formatAccuracy, formatCoordinates, geolocationFailureMessage, nameLookupMessage, type GpsUiState, type NameLookupState } from './locationState'
+import { useLocalization } from '../../localization'
+import type { Translator } from '../../localization/messages'
 
 const idleGpsState: GpsUiState = { status: 'idle' }
 
-function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, gpsPlace: boolean): string | null {
-  if (gpsState.status === 'locating') return 'Определяем местоположение…'
-  if (gpsState.status === 'refining') return 'Местоположение найдено. Уточняем…'
-  if (gpsState.status === 'ready' && gpsState.lowAccuracy) return 'Местоположение определено с низкой точностью'
+function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, gpsPlace: boolean, t: Translator): string | null {
+  if (gpsState.status === 'locating') return t('locating')
+  if (gpsState.status === 'refining') return t('refiningLocation')
+  if (gpsState.status === 'ready' && gpsState.lowAccuracy) return t('lowAccuracyLocation')
   if (!gpsPlace || gpsState.status === 'error') return null
-  return nameLookupMessage(nameLookupState)
+  return nameLookupMessage(nameLookupState, 'ru')
 }
 
 export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
@@ -25,29 +27,30 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
   onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
   gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
 }) {
+  const { t } = useLocalization()
   const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
   const gpsPlace = place?.selection === 'gps'
   const busy = gpsState.status === 'locating' || gpsState.status === 'refining'
   const lowAccuracy = gpsState.status === 'ready' && gpsState.lowAccuracy
-  const status = locationStatus(gpsState, nameLookupState, gpsPlace)
-  const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason) : null
-  return <Screen label={initial ? 'Выбор места' : 'Локация'} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
-    {initial ? <h1 className="screen-title">Выберите место</h1> : null}
+  const status = locationStatus(gpsState, nameLookupState, gpsPlace, t)
+  const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason, 'ru') : null
+  return <Screen label={initial ? t('selectPlace') : t('location')} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
+    {initial ? <h1 className="screen-title">{t('selectPlace')}</h1> : null}
     {place ? <div className="location-current"><p className="screen-title">{gpsPlace
-      ? place.nearbyCity ? `Ближайший населённый пункт: ${compactPlaceLabel(place.nearbyCity.name)}` : 'Ближайший населённый пункт не определён'
+      ? place.nearbyCity ? t('nearestPlace', { name: compactPlaceLabel(place.nearbyCity.name) }) : t('nearestPlaceUnknown')
       : compactPlaceLabel(place.name)}</p>
       {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy)}</p></>
         : place.region ? <p className="note">{place.region.name}</p> : null}
     </div> : null}
     <div className="screen-stack">
-      <ActionButton variant="field" id="location-search" onClick={onSearch}>Найти город</ActionButton>
-      <ActionButton variant="primary" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? 'Повторить' : 'По геопозиции'}</ActionButton>
-      {initial ? <p className="note">Браузер запросит доступ к геопозиции. При необходимости город можно выбрать вручную.</p> : null}
-      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <ActionButton variant="primary" onClick={onAcceptGps}>Использовать эту точку</ActionButton> : null}
+      <ActionButton variant="field" id="location-search" onClick={onSearch}>{t('locationSearch')}</ActionButton>
+      <ActionButton variant="primary" onClick={() => void onLocate()} disabled={busy}>{lowAccuracy || gpsState.status === 'error' ? t('retry') : t('geolocation')}</ActionButton>
+      {initial ? <p className="note">{t('locationPermissionNotice')}</p> : null}
+      {gpsPlace && (gpsState.status === 'refining' || lowAccuracy) ? <ActionButton variant="primary" onClick={onAcceptGps}>{t('useThisPoint')}</ActionButton> : null}
       {status ? <p className="note" role="status" aria-live="polite">{status}</p> : null}
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
-    {recent.length ? <section className="screen-space" aria-label="Недавние города"><p className="screen-heading">Недавние</p><div className="screen-stack screen-space">
+    {recent.length ? <section className="screen-space" aria-label={t('recentCities')}><p className="screen-heading">{t('recent')}</p><div className="screen-stack screen-space">
       {recent.map(item => <ActionRow key={item.id} title={compactPlaceLabel(item.name)} onClick={() => onSelectRecent(item)} />)}
     </div></section> : null}
     {notice}
@@ -67,6 +70,7 @@ interface SearchScreenProps {
 interface SearchCompletion { query: string; data: CitySearchResult | null; failed: boolean }
 
 export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchCities, onBack, onSelectOfficial, onSelectCity, notice }: SearchScreenProps) {
+  const { t } = useLocalization()
   const [text, setText] = useState('')
   const [completion, setCompletion] = useState<SearchCompletion | null>(null)
   const [retry, setRetry] = useState(0)
@@ -87,21 +91,21 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
   const pending = Boolean(query && catalogStatus === 'ready' && !ready)
   const cities = ready?.data?.cities ?? []
   const retrySearch = () => { setCompletion(null); setRetry(value => value + 1); onLoadCities() }
-  const status = catalogStatus === 'offline' ? 'Для поиска городов нужен интернет'
-    : catalogStatus === 'error' ? 'Не удалось загрузить города'
-      : catalogStatus === 'loading' || catalogStatus === 'idle' ? 'Загружаем города…'
-        : pending ? 'Ищем города…'
-          : ready?.failed ? 'Не удалось выполнить поиск'
-            : ready?.data?.status === 'needs-download' ? 'Для полного поиска нужен интернет'
-              : ready?.data?.status === 'refine' ? 'Уточните название города'
-                : query && ready && !cities.length && !official.length ? 'Город не найден' : null
+  const status = catalogStatus === 'offline' ? t('citySearchNeedsInternet')
+    : catalogStatus === 'error' ? t('cityLoadFailed')
+      : catalogStatus === 'loading' || catalogStatus === 'idle' ? t('cityLoading')
+        : pending ? t('citySearching')
+          : ready?.failed ? t('citySearchFailed')
+            : ready?.data?.status === 'needs-download' ? t('citySearchNeedsDownload')
+              : ready?.data?.status === 'refine' ? t('citySearchRefine')
+                : query && ready && !cities.length && !official.length ? t('cityNotFound') : null
   const canRetry = ['offline', 'error'].includes(catalogStatus) || ready?.failed || ready?.data?.status === 'needs-download'
-  return <Screen label="Поиск города" top={<BackButton onClick={onBack} label="Отмена" />}>
-    <input className="text-field" data-screen-focus type="search" aria-label="Поиск населённого пункта" placeholder="Найти город" value={text}
+  return <Screen label={t('searchCity')} top={<BackButton onClick={onBack} label={t('cancel')} />}>
+    <input className="text-field" data-screen-focus type="search" aria-label={t('searchPlaceLabel')} placeholder={t('locationSearch')} value={text}
       onChange={event => { setText(event.target.value); if (event.target.value.trim() !== query) setCompletion(null) }} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
-    <ul className="city-results" aria-label="Результаты поиска" aria-busy={pending}>
+    <ul className="city-results" aria-label={t('searchResults')} aria-busy={pending}>
       {official.map(item => <li key={item.id}><ActionRow className="city-result" title={item.name}
-        secondary={<span className="note">Татарстан · таблица ДУМ РТ</span>} onClick={() => onSelectOfficial(item.id)} />
+        secondary={<span className="note">{t('officialCityResult')}</span>} onClick={() => onSelectOfficial(item.id)} />
       </li>)}
       {cities.map(city => {
         const sameLabel = cities.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))
@@ -112,8 +116,8 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
       })}
     </ul>
     {status ? <p className="note screen-space" role="status">{status}</p> : null}
-    {canRetry ? <ActionButton className="screen-space" onClick={retrySearch}>Повторить</ActionButton> : null}
-    {ready?.data?.previousVersion ? <p className="note screen-space">Показан сохранённый каталог</p> : null}
+    {canRetry ? <ActionButton className="screen-space" onClick={retrySearch}>{t('retry')}</ActionButton> : null}
+    {ready?.data?.previousVersion ? <p className="note screen-space">{t('savedCatalog')}</p> : null}
     {notice}
   </Screen>
 }

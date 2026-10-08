@@ -11,6 +11,7 @@ import type { PrayerDay } from '../../domain/types'
 import type { Place } from '../../domain/place'
 import type { ResolvedPrayerSource } from '../../domain/prayerSource'
 import { isPrayerDay } from '../../domain/prayerDatasetValidation'
+import { translate } from '../../localization'
 
 export type DisplaySchedule = PrayerSchedule
 
@@ -83,7 +84,7 @@ export function usePrayerSchedules({
       if (active) setResult({ context, key, retry, services, schedules: [], error:
         error instanceof UnsupportedCalculationProfileError
           ? error.message
-          : 'Не удалось загрузить расписание. Попробуйте ещё раз.',
+          : translate('ru', 'scheduleLoadFailed'),
       })
     })
     return () => { active = false }
@@ -93,10 +94,10 @@ export function usePrayerSchedules({
   const matching = result?.key === key && result.retry === retry && result.services === services ? result : null
   const schedules = matching?.schedules ?? []
   const unavailable = resolution && resolution.status !== 'ready'
-    ? resolution.kind === 'calculated' ? 'Выбранный расчётный профиль недоступен в этом браузере.'
-      : resolution.status === 'not-covered' ? 'Выбранный официальный источник не покрывает это место или дату. Выберите другой источник или автоматический режим.'
-        : resolution.status === 'invalid' ? 'Официальное расписание повреждено. Повторите загрузку.'
-          : 'Официальное расписание ещё не загружено. Подключитесь к сети и повторите загрузку.'
+    ? resolution.kind === 'calculated' ? translate('ru', 'calculatedProfileUnavailable')
+      : resolution.status === 'not-covered' ? translate('ru', 'officialSourceNotCovered')
+        : resolution.status === 'invalid' ? translate('ru', 'officialScheduleInvalid')
+          : translate('ru', 'officialScheduleNotLoaded')
     : null
   return {
     context,

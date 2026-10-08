@@ -9,6 +9,7 @@ import { validPosition } from '../../domain/localGeography'
 import type { City } from '../../domain/cities'
 import type { GeolocationFailure } from '../../domain/errors'
 import type { PrayerLocation } from '../../domain/types'
+import { translate } from '../../localization'
 import { geolocationFailureMessage, isLowAccuracy, preferredGeolocationFailure, type GpsUiState, type NameLookupState } from './locationState'
 
 export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void, persist: (choice: LocationChoice) => void) {
@@ -147,7 +148,7 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     }
     const reason = preferredGeolocationFailure(failures.map(error => error.reason))
     if (interactive) setGpsState({ status: 'error', reason })
-    else setNotice(`${geolocationFailureMessage(reason)} Сохранённое место остаётся доступным.`)
+    else setNotice(`${geolocationFailureMessage(reason)} ${translate('ru', 'savedPlaceStillAvailable')}`)
   }, [apply, finishInteractive, services])
 
   useEffect(() => {
