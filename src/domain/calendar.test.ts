@@ -2,14 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { addDays } from './date'
 import {
   calendarDateFromCivil, civilDateFromCalendar, daysInCalendarMonth,
-  formatCalendarDate, restoreCalendarPreferences,
+  restoreCalendarPreferences,
 } from './calendar'
 
-describe('представление гражданской даты в календаре', () => {
-  it('показывает Умм аль-Кура и сокращённый месяц на кириллице', () => {
+describe('семантика гражданской даты в календаре', () => {
+  it('возвращает дату Умм аль-Кура как структурированные компоненты', () => {
     expect(calendarDateFromCivil('2026-09-10', 'hijri')).toEqual({ year: 1448, month: 3, day: 28 })
-    expect(formatCalendarDate('2026-09-10', { calendar: 'hijri', correction: 0 })).toBe('28 раби I')
-    expect(formatCalendarDate('2026-09-10', { calendar: 'gregorian', correction: 1 })).toBe('10 сентября')
   })
 
   it('применяет поправку в обе стороны, включая границу года', () => {

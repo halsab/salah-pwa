@@ -34,3 +34,11 @@ export function formatCivilDate(date: string, locale: SupportedLocale = 'ru'): s
 export function formatLocaleDate(date: string, locale: string = 'ru', options: Intl.DateTimeFormatOptions = {}): string {
   return new Intl.DateTimeFormat(locale, { ...options, calendar: 'gregory', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00.000Z`))
 }
+
+export function formatDateLabel(date: string, locale: SupportedLocale = 'ru'): string {
+  return formatLocaleDate(date, locale, { weekday: 'long', day: 'numeric', month: 'long' })
+}
+
+export function formatCompactDateLabel(date: string, locale: SupportedLocale = 'ru'): string {
+  return formatLocaleDate(date, locale, { day: 'numeric', month: 'long' })
+}

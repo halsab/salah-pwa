@@ -6,9 +6,9 @@ import {
   resolveLocale,
   restoreLanguagePreference,
 } from './locale'
-import { formatCivilDate, formatClockTime, formatDateTime, formatLocaleDate, formatNumber, interpolate, pluralCategory } from './formatters'
+import { formatCivilDate, formatClockTime, formatDateLabel, formatCompactDateLabel, formatDateTime, formatLocaleDate, formatNumber, interpolate, pluralCategory } from './formatters'
 import { translate, validateCatalog } from './messages'
-import { formatLocalizedGregorianDate, formatLocalizedGregorianNightRange } from './calendar'
+import { formatLocalizedCalendarDate, formatLocalizedGregorianDate, formatLocalizedGregorianNightRange } from './calendar'
 
 describe('локализация', () => {
   it('регистрирует только полностью поддержанный русский интерфейс', () => {
@@ -39,6 +39,10 @@ describe('локализация', () => {
     expect(formatClockTime(instant, 'Europe/Moscow')).toBe('15:00')
     expect(formatDateTime(instant, 'Europe/Moscow')).toContain('15:00')
     expect(formatCivilDate('2026-09-01')).toBe('1 сентября')
+    expect(formatDateLabel('2026-09-01')).toBe('вторник, 1 сентября')
+    expect(formatCompactDateLabel('2026-09-01')).toBe('1 сентября')
+    expect(formatLocalizedCalendarDate('2026-09-10', { calendar: 'hijri', correction: 0 })).toBe('28 раби I')
+    expect(formatLocalizedCalendarDate('2026-09-10', { calendar: 'gregorian', correction: 1 })).toBe('10 сентября')
     expect(formatNumber(1_234.5)).toBe('1 234,5')
   })
 

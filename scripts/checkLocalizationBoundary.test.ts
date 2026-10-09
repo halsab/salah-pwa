@@ -23,6 +23,8 @@ function presentationFiles(): string[] {
     join(repositoryRoot, 'src/domain/prayerCalculation.ts'),
     join(repositoryRoot, 'src/domain/religiousEvents.ts'),
     join(repositoryRoot, 'src/domain/scheduleEvents.ts'),
+    join(repositoryRoot, 'src/domain/calendar.ts'),
+    join(repositoryRoot, 'src/domain/date.ts'),
   ]
 }
 

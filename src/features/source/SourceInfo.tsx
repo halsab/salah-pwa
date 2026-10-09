@@ -3,14 +3,13 @@ import { getEffectiveParameters } from '../../domain/prayerCalculation'
 import type { DatasetMeta } from '../../storage/database'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
-import { formatCompactDateLabel, formatDateLabel } from '../../domain/date'
 import { ASR_METHOD_KEYS, EVENT_LABEL_KEYS, HIGH_LATITUDE_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
 import { markdownLink, markdownText } from '../../ui/markdownContent'
 import type { CalculatedPrayerKey } from '../../domain/types'
-import { formatDateTime, formatLocaleDate, useLocalization } from '../../localization'
+import { formatCompactDateLabel, formatDateLabel, formatDateTime, formatLocaleDate, useLocalization } from '../../localization'
 
 export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel, checkedAt, updateFailed, onOpenMethodology }: {
   open: boolean; onClose: () => void; context: ScheduleContext; schedule: PrayerSchedule

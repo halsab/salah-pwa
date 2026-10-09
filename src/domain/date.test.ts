@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { addDays, formatCompactDateLabel, formatDateLabel, getSystemDate } from './date'
+import { addDays, getSystemDate } from './date'
 
 describe('getSystemDate', () => {
   it('использует календарный день указанного часового пояса', () => {
@@ -24,15 +24,5 @@ describe('addDays', () => {
     ['2026-03-01', -1, '2026-02-28'],
   ] as const)('соблюдает календарную границу %s', (date, offset, expected) => {
     expect(addDays(date, offset)).toBe(expected)
-  })
-})
-
-describe('formatDateLabel', () => {
-  it('возвращает спокойную русскую подпись без лишней пунктуации', () => {
-    expect(formatDateLabel('2026-09-01')).toBe('вторник, 1 сентября')
-  })
-
-  it('возвращает короткую подпись для тесной мобильной строки', () => {
-    expect(formatCompactDateLabel('2026-09-01')).toBe('1 сентября')
   })
 })
