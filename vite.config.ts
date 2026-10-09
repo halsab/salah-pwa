@@ -1,5 +1,6 @@
 import react from '@vitejs/plugin-react'
-import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -8,6 +9,17 @@ const packageMetadata = JSON.parse(
   readFileSync(fileURLToPath(new URL('./package.json', import.meta.url)), 'utf8'),
 ) as { version: string }
 const LOCAL_APP_VERSION = `v${packageMetadata.version}`
+const ICON_DIRECTORIES = ['light', 'dark'] as const
+const ICON_VERSION_HASH = createHash('sha256')
+for (const theme of ICON_DIRECTORIES) {
+  const directory = new URL(`./public/icons/${theme}/`, import.meta.url)
+  for (const file of readdirSync(directory).sort()) {
+    ICON_VERSION_HASH.update(file)
+    ICON_VERSION_HASH.update(readFileSync(new URL(file, directory)))
+  }
+}
+const ICON_VERSION = ICON_VERSION_HASH.digest('hex').slice(0, 12)
+const iconUrl = (theme: string, file: string) => `icons/${theme}/${file}?v=${ICON_VERSION}`
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'none'",
@@ -56,10 +68,17 @@ export default defineConfig({
         }],
       },
     },
+    {
+      name: 'icon-asset-version',
+      transformIndexHtml: {
+        order: 'pre',
+        handler: html => html.replaceAll('%ICON_VERSION%', ICON_VERSION),
+      },
+    },
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['app-icon.svg', 'apple-touch-icon.png', 'old-timey-mono-license.txt', 'data/ODbL-1.0.txt', 'data/tatarstan-boundary.NOTICE.txt'],
+      includeAssets: ['old-timey-mono-license.txt', 'data/ODbL-1.0.txt', 'data/tatarstan-boundary.NOTICE.txt'],
       manifest: {
         name: 'Salah — времена намаза',
         short_name: 'Salah',
@@ -71,15 +90,25 @@ export default defineConfig({
         start_url: './',
         scope: './',
         icons: [
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          ...[192, 512, 1024].map(size => ({
+            src: iconUrl('dark', `icon-${size}.png`),
+            sizes: `${size}x${size}`,
+            type: 'image/png',
+            purpose: 'any',
+          })),
+          ...[192, 512, 1024].map(size => ({
+            src: iconUrl('dark', `icon-maskable-${size}.png`),
+            sizes: `${size}x${size}`,
+            type: 'image/png',
+            purpose: 'maskable',
+          })),
         ]
       },
       workbox: {
         cleanupOutdatedCaches: true,
         importScripts: ['city-cache-cleanup.js'],
         navigateFallback: 'index.html',
+        ignoreURLParametersMatching: [/^v$/, /^utm_/i, /^fbclid$/i],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,ttf,json}'],
         globIgnores: [
           '**/data/cities-current.json',
