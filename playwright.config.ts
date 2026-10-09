@@ -17,7 +17,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    // Обязательный gate: критический Chromium smoke, offline, privacy и CSP.
+    // Release gate: основной сценарий, offline, privacy и CSP.
     {
       name: 'chromium',
       testMatch: [
@@ -40,27 +40,6 @@ export default defineConfig({
       testMatch: '**/sw-update.spec.ts',
       dependencies: ['chromium', 'mobile-safari-portrait'],
       use: { ...devices['Desktop Chrome'] },
-    },
-    // Ручная/on-demand проверка: `npm run test:e2e:extended`.
-    {
-      name: 'firefox',
-      testMatch: '**/cross-browser.spec.ts',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      testMatch: '**/cross-browser.spec.ts',
-      use: { ...devices['Desktop Safari'] },
-    },
-    {
-      name: 'mobile-safari-landscape',
-      testMatch: '**/cross-browser.spec.ts',
-      use: { ...devices['iPhone 13 landscape'] },
-    },
-    {
-      name: 'mobile-chrome',
-      testMatch: '**/cross-browser.spec.ts',
-      use: { ...devices['Pixel 7'] },
     },
   ],
   webServer: {

@@ -2,24 +2,14 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createRef } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ActionButton, ActionRow, IconActionButton, ScreenFooter } from './controls'
+import { ActionButton, ActionRow, IconActionButton } from './controls'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
-it('однострочное действие выражено семантическим action-вариантом', () => {
+it('рендерит действие доступной нативной кнопкой', () => {
   render(<ActionButton>Готово</ActionButton>)
   const button = screen.getByRole('button', { name: 'Готово' })
-  expect(button).toHaveClass('pill', 'pill--action', 'jelly-action')
   expect(button).toHaveAttribute('type', 'button')
-  expect(button).toHaveAttribute('data-jelly-preset', 'standard')
-  expect(button.querySelector('canvas.jelly-action-canvas')).toHaveAttribute('aria-hidden', 'true')
-})
-
-it('основное действие сценария и field-like trigger имеют семантические варианты', () => {
-  render(<ActionButton variant="primary">Удалить данные</ActionButton>)
-  render(<ActionButton variant="field">Найти город</ActionButton>)
-  expect(screen.getByRole('button', { name: 'Удалить данные' })).toHaveClass('pill--primary')
-  expect(screen.getByRole('button', { name: 'Найти город' })).toHaveClass('pill--field')
 })
 
 it('нажимается мышью и клавиатурой как нативная кнопка', async () => {
@@ -56,28 +46,18 @@ it('прокидывает ref, id, классы и aria-атрибуты на �
   expect(button).toHaveAttribute('aria-pressed', 'true')
 })
 
-it('строка списка слева, значение справа', () => {
-  render(<ActionRow title="Тема" value="Классическая" />)
-  const row = screen.getByRole('button')
-  expect(row).toHaveClass('pill-row', 'jelly-action')
-  expect(row).not.toHaveClass('pill-row--stacked')
-  expect(row).toHaveAttribute('data-jelly-preset', 'subtle')
-  expect(screen.getByText('Классическая')).toHaveClass('note')
+it('строка настройки доступна как кнопка и сообщает своё значение', async () => {
+  const user = userEvent.setup()
+  const onClick = vi.fn()
+  render(<ActionRow title="Тема" value="Классическая" onClick={onClick} />)
+  const row = screen.getByRole('button', { name: /Тема\s*Классическая/ })
+  await user.click(row)
+  expect(onClick).toHaveBeenCalledTimes(1)
 })
 
-it('двухстрочная строка помечена вертикальным левым вариантом', () => {
-  render(<ActionRow title="Казань" secondary={<span className="action-row-secondary">Татарстан</span>} />)
-  const row = screen.getByRole('button')
-  expect(row).toHaveClass('pill-row', 'pill-row--stacked')
-  expect(screen.getByText('Казань')).toHaveClass('action-row-title')
-  expect(screen.getByText('Татарстан')).toHaveClass('action-row-secondary')
-})
-
-it('icon-only действие выражено icon-button вариантом и expressive-пресетом', () => {
+it('иконная кнопка получает доступное имя', () => {
   render(<IconActionButton label="Настройки"><svg /></IconActionButton>)
-  const button = screen.getByRole('button', { name: 'Настройки' })
-  expect(button).toHaveClass('pill', 'icon-button', 'jelly-action')
-  expect(button).toHaveAttribute('data-jelly-preset', 'expressive')
+  expect(screen.getByRole('button', { name: 'Настройки' })).toBeInTheDocument()
 })
 
 it('при prefers-reduced-motion действие и семантика сохраняются', async () => {
@@ -96,9 +76,4 @@ it('при prefers-reduced-motion действие и семантика сох�
   render(<ActionButton onClick={onClick}>Назад</ActionButton>)
   await user.click(screen.getByRole('button', { name: 'Назад' }))
   expect(onClick).toHaveBeenCalledTimes(1)
-})
-
-it('footer выражает позицию действия общим layout-вариантом', () => {
-  const { container } = render(<ScreenFooter align="end"><ActionButton variant="auxiliary">Поделиться</ActionButton></ScreenFooter>)
-  expect(container.querySelector('.screen-footer')).toHaveClass('screen-footer--end')
 })

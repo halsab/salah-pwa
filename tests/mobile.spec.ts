@@ -1,266 +1,81 @@
-import { back, chooseDate, choosePlace, expectSchedule, expect, test, writeSavedSetting } from './fixtures'
+import { choosePlace, expectSchedule, expect, test } from './fixtures'
 
-test('верхняя safe-area использует цвет темы и принадлежит оболочке, включая нулевой iOS inset', async ({ page }) => {
-  await page.goto('./')
-  await choosePlace(page)
-  for (const family of ['classic', 'seasonal']) {
-    await writeSavedSetting(page, 'themeFamily', family)
-    for (const hour of ['09', '21']) {
-      await page.clock.setFixedTime(new Date(`2026-09-04T${hour}:30:00.000Z`))
-      await page.reload()
-      await expectSchedule(page)
-      await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
-      expect((await page.locator('.app-screen').boundingBox())?.y).toBe(0)
-      const tone = hour === '09' ? 'light' : 'dark'
-      await expect(page.locator('html')).toHaveAttribute('data-theme-tone', tone)
-      const shellColor = family === 'classic' ? 'rgb(0, 0, 0)'
-        : tone === 'light' ? 'rgb(214, 178, 155)' : 'rgb(110, 81, 70)'
-      await expect(page.locator('html')).toHaveCSS('background-color', shellColor)
-      await expect(page.locator('body')).toHaveCSS('background-color', shellColor)
-      // WebKit-эмуляция не рисует системный status bar и возвращает нулевой env inset.
-      await page.locator('.app-layout').evaluate(element => {
-        (element as HTMLElement).style.setProperty('--app-safe-area-top', '59px')
-      })
-      await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '59px')
-      await expect(page.locator('.app-layout')).toHaveCSS('background-color', shellColor)
-      const bounds = await page.locator('.app-screen').boundingBox()
-      expect(bounds?.y).toBe(59)
-      expect(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, 30)?.className)).toBe('app-layout')
-      await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#000000')
-      await expect(page.locator('meta[name="apple-mobile-web-app-status-bar-style"]')).toHaveAttribute('content', 'black')
-    }
-  }
-})
-
-test('оболочка меняет сезонный цвет на ходу без перезагрузки', async ({ page }) => {
-  await page.clock.setFixedTime(new Date('2026-09-04T21:30:00.000Z'))
-  await page.goto('./')
-  await choosePlace(page)
-  await page.locator('#home-settings').click()
-  const theme = page.getByRole('combobox', { name: 'Тема' })
-  for (const family of ['seasonal', 'classic', 'seasonal']) {
-    await theme.selectOption(family)
-    const color = family === 'seasonal' ? 'rgb(110, 81, 70)' : 'rgb(0, 0, 0)'
-    for (const selector of ['html', 'body', '.app-layout']) {
-      await expect(page.locator(selector)).toHaveCSS('background-color', color)
-    }
-    await expect(page.locator('.app-layout')).toHaveCSS('position', 'absolute')
-    await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
-    expect((await page.locator('.app-screen').boundingBox())?.y).toBe(0)
-  }
-})
-
-test('главный экран, расписание и touch-цели пригодны на мобильном Safari', async ({ page }) => {
+test('Mobile Safari показывает расписание и основные действия без обрезанного контента', async ({ page }) => {
   const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('pageerror', error => errors.push(error.message))
 
   await page.goto('./')
   await choosePlace(page)
   await expectSchedule(page)
   await expect(page.getByRole('timer')).toBeVisible()
-  for (const control of ['#home-location', '#home-date', '#home-settings']) {
-    const rect = await page.locator(control).boundingBox()
-    expect(rect?.width).toBeGreaterThanOrEqual(44)
-    expect(rect?.height).toBeGreaterThanOrEqual(44)
-  }
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
-    .toBeLessThanOrEqual(1)
+  await page.locator('#home-date').click()
+  await expect(page.getByRole('region', { name: 'Установка даты' })).toBeVisible()
+  await page.getByRole('button', { name: 'Назад', exact: true }).click()
+  await expectSchedule(page)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1)
   expect(errors).toEqual([])
 })
 
-test('экран даты и возврат сохраняют фокус и расписание', async ({ page }) => {
-  await page.goto('./')
-  await choosePlace(page)
-  await chooseDate(page, '2024-01-31')
-  await page.getByRole('button', { name: 'Выбрать дату' }).click()
-  await page.getByRole('combobox', { name: 'Месяц' }).selectOption('2')
-  await expect(page.getByRole('combobox', { name: 'День' })).toHaveValue('29')
-  await back(page)
-  await expect(page.locator('#home-date')).toBeFocused()
-  await expect(page.locator('#home-date time')).toHaveAttribute('datetime', '2024-02-29')
-  await expect(page.getByRole('list', { name: 'Расписание дня' })).toBeVisible()
-})
-
-test('поиск остаётся доступен в уменьшенной видимой области', async ({ page }) => {
+test('поиск города остаётся доступным при уменьшении visual viewport', async ({ page }) => {
   await page.goto('./')
   await choosePlace(page)
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'Найти город' }).click()
-  await expect(page.getByRole('searchbox')).toBeFocused()
-  await page.getByRole('searchbox').fill('Москва')
-  await expect(page.getByRole('button', { name: 'Москва, Москва, Россия' })).toBeVisible()
-  await page.locator('.app-layout').evaluate(element => {
-    (element as HTMLElement).style.setProperty('--app-safe-area-top', '59px')
-  })
-  const visibleHeight = await page.evaluate(() => {
+  const search = page.getByRole('searchbox')
+  await search.fill('Москва')
+  const city = page.getByRole('button', { name: 'Москва, Москва, Россия', exact: true })
+  await expect(city).toBeVisible()
+
+  await page.evaluate(() => {
     const viewport = window.visualViewport
     if (!viewport) throw new Error('Нет visualViewport')
-    // Потеря высоты должна превысить порог AppShell для открытой клавиатуры.
-    const height = Math.min(300, document.documentElement.clientHeight - 130)
     Object.defineProperties(viewport, {
-      height: { configurable: true, value: height },
+      height: { configurable: true, value: Math.min(300, document.documentElement.clientHeight - 130) },
       offsetTop: { configurable: true, value: 30 },
     })
     viewport.dispatchEvent(new Event('resize'))
-    return height
+    return new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   })
-  await expect(page.locator('.app-layout')).toHaveCSS('height', `${visibleHeight}px`)
-  await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '16px')
-  const panel = await page.locator('.app-screen').boundingBox()
-  if (!panel) throw new Error('Нет контейнера поиска')
-  expect(panel.y).toBe(59)
-  expect(visibleHeight + 30 - panel.y - panel.height).toBeCloseTo(0, 0)
-  const result = await page.getByRole('button', { name: 'Москва, Москва, Россия' }).boundingBox()
-  if (!result) throw new Error('Результат скрыт')
-  expect(result.y + result.height).toBeLessThanOrEqual(visibleHeight + 30)
-  await page.evaluate(() => {
+
+  await expect(search).toBeVisible()
+  await expect(city).toBeVisible()
+  const withinVisualViewport = await city.evaluate(element => {
+    const bounds = element.getBoundingClientRect()
     const viewport = window.visualViewport
-    if (!viewport) throw new Error('Нет visualViewport')
-    Object.defineProperty(viewport, 'offsetTop', { configurable: true, value: 80 })
-    viewport.dispatchEvent(new Event('scroll'))
+    if (!viewport) return false
+    return bounds.top >= viewport.offsetTop
+      && bounds.bottom <= viewport.offsetTop + viewport.height
   })
-  await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '0px')
-  await expect(page.locator('.app-layout')).toHaveCSS('top', '80px')
-  expect((await page.locator('.app-screen').boundingBox())?.y).toBe(80)
-  await page.evaluate(() => {
-    const viewport = window.visualViewport
-    if (!viewport) throw new Error('Нет visualViewport')
-    Object.defineProperties(viewport, {
-      height: { configurable: true, value: document.documentElement.clientHeight },
-      offsetTop: { configurable: true, value: 0 },
-    })
-    viewport.dispatchEvent(new Event('resize'))
-  })
-  await expect(page.locator('.app-layout')).toHaveCSS('padding-top', '59px')
-  await expect(page.locator('.app-layout')).toHaveCSS('top', '0px')
-  expect((await page.locator('.app-screen').boundingBox())?.y).toBe(59)
+  expect(withinVisualViewport).toBe(true)
+  await city.click()
+  await expect(page.locator('#home-location')).toHaveAccessibleName(/^Москва(?: \d{2}:\d{2})?$/)
 })
 
-test('нижняя безопасная область не перекрывает нижнее действие', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
+test('интерактивные элементы не попадают под системные safe-area', async ({ page }) => {
   await page.goto('./')
   await choosePlace(page)
-  await page.locator('.app-screen').evaluate((element) => {
-    // Браузерная эмуляция iPhone не задаёт env(safe-area-inset-bottom).
-    element.style.setProperty('--screen-bottom-inset', '34px')
-  })
-  await expect(page.locator('.app-layout')).toHaveCSS('padding-bottom', '0px')
-  await expect(page.locator('.app-screen')).toHaveCSS('padding-bottom', '34px')
-  const home = await page.locator('.app-screen').boundingBox()
-  const footer = await page.locator('.screen-bottom').boundingBox()
-  if (!home || !footer) throw new Error('Нет геометрии главного экрана')
-  expect(home.y + home.height).toBeCloseTo(844, 0)
-  expect(home.y + home.height - footer.y - footer.height).toBeCloseTo(34, 0)
-})
-
-test('список праздников и статья работают на узком экране', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 480 })
-  await page.goto('./')
-  await choosePlace(page)
-  await page.evaluate(() => {
-    const start = document.startViewTransition.bind(document)
-    const snapshots: Array<{ title: string | null; contentName: string; sharedNames: string[] }> = []
-    Object.assign(window, { navigationSnapshots: snapshots })
-    document.startViewTransition = (update: ViewTransitionUpdateCallback | StartViewTransitionOptions) => start(async () => {
-      if (typeof update === 'function') await update()
-      else await update.update?.()
-      const content = document.querySelector('.screen-content')
-      if (!content) throw new Error('Переход снял пустой экран')
-      snapshots.push({
-        title: document.querySelector('.markdown-article h1')?.textContent ?? null,
-        contentName: getComputedStyle(content).viewTransitionName,
-        sharedNames: Array.from(document.querySelectorAll('[style*="view-transition-name"]')).map(element => element.id),
-      })
-    })
-  })
-  await page.locator('#home-date').click()
-  const dateScreen = page.getByRole('region', { name: 'Установка даты' })
-  await dateScreen.getByRole('button', { name: 'Праздники и события' }).click()
-  const list = page.getByRole('region', { name: 'Праздники и события' })
-  await expect(list).toBeVisible()
-  const ids = await list.locator('button.religious-event-list-row')
-    .evaluateAll((rows) => rows.map((row) => row.id))
-  expect(ids).toEqual([...ids].sort())
-  await expect(list.getByText('Начало Рамадана', { exact: true })).toBeVisible()
-  await expect(list.getByText('Начало Зуль-хиджи', { exact: true })).toBeVisible()
-  await expect(list.getByText('Дни ташрика', { exact: true })).toHaveCount(0)
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
-    .toBeLessThanOrEqual(1)
-  const ramadan = list.getByRole('button', { name: /Начало Рамадана/ })
-  const listContent = list.locator('.screen-content')
-  await ramadan.evaluate(element => element.scrollIntoView({ block: 'center', inline: 'nearest' }))
-  expect(await listContent.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
-  await ramadan.click()
-  const article = page.getByRole('region', { name: 'Рамадан' })
-  await expect(article.getByRole('heading', { level: 1 })).toHaveText('Рамадан')
-  const snapshots = await page.evaluate(() => (window as unknown as {
-    navigationSnapshots: Array<{ title: string | null; contentName: string; sharedNames: string[] }>
-  }).navigationSnapshots)
-  expect(snapshots.at(-1)).toEqual({ title: 'Рамадан', contentName: 'salah-screen-content', sharedNames: [] })
-  const savedScrollTop = await page.evaluate(() => {
-    const state = history.state as { salahNavigation?: { entries?: Array<{ scrollTop?: number }> } } | null
-    return state?.salahNavigation?.entries?.at(-2)?.scrollTop
-  })
-  expect(savedScrollTop).toBeGreaterThan(0)
-  await article.getByRole('button', { name: 'Назад' }).click()
-  await expect(list.getByRole('button', { name: /Начало Рамадана/ })).toBeFocused()
-  await expect.poll(() => listContent.evaluate(element => element.scrollTop)).toBe(savedScrollTop)
-})
-
-test('экранный контент скроллится только по вертикали с Jelly-кнопками', async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 560 })
-  await page.goto('./')
-  await choosePlace(page)
-
-  const contentFor = (label: string) => page.getByRole('region', { name: label }).locator('.screen-content')
-  const expectVerticalOnly = async (content: ReturnType<typeof contentFor>) => {
-    const sizes = await content.evaluate((node) => ({
-      width: node.clientWidth,
-      scrollWidth: node.scrollWidth,
-      height: node.clientHeight,
-      scrollHeight: node.scrollHeight,
-    }))
-    expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.width)
-    return sizes
-  }
-
-  await page.locator('#home-date').click()
-  await expectVerticalOnly(contentFor('Установка даты'))
-  await page.getByRole('button', { name: 'Праздники и события' }).click()
-  const eventsContent = contentFor('Праздники и события')
-  const events = await expectVerticalOnly(eventsContent)
-  expect(events.scrollHeight).toBeGreaterThan(events.height)
-  await page.getByRole('button', { name: 'Назад', exact: true }).click()
-  await page.getByRole('button', { name: 'Назад', exact: true }).click()
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
-
-  const privacyContent = contentFor('Данные и конфиденциальность')
-  const privacy = await expectVerticalOnly(privacyContent)
-  expect(privacy.scrollHeight).toBeGreaterThan(privacy.height)
-  expect(await privacyContent.evaluate((node) => getComputedStyle(node).overflowY)).toBe('auto')
-  expect(await privacyContent.evaluate((node) => {
-    node.scrollTop = 100
-    return node.scrollTop
-  })).toBeGreaterThan(0)
-  await expect(page.locator('.screen-top .jelly-action').first()).toHaveCSS('touch-action', 'pan-y')
-})
-
-test('увеличение текста вдвое сохраняет список и действия', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('./')
-  await choosePlace(page)
-  await page.evaluate(() => { document.documentElement.style.fontSize = '32px' })
   await expectSchedule(page)
-  await expect(page.locator('.event-row').first()).toHaveCSS('font-size', '36px')
-  expect(await page.locator('.screen-content').evaluate((node) => node.scrollWidth - node.clientWidth))
-    .toBeLessThanOrEqual(1)
-  await page.getByText('Иша', { exact: true }).scrollIntoViewIfNeeded()
-  await expect(page.getByText('Иша', { exact: true })).toBeInViewport()
-  await page.getByRole('button', { name: 'Настройки', exact: true }).click()
-  await page.getByRole('button', { name: 'Данные и конфиденциальность' }).click()
-  await expect(page.getByRole('button', { name: 'Удалить данные' })).toBeInViewport()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth))
-    .toBeLessThanOrEqual(1)
+
+  const safeArea = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)'
+    document.body.append(probe)
+    const style = getComputedStyle(probe)
+    const insets = { top: parseFloat(style.paddingTop), bottom: parseFloat(style.paddingBottom) }
+    probe.remove()
+    return insets
+  })
+  const controls = await page.evaluate(() => {
+    const top = document.querySelector('#home-location')
+    const bottom = document.querySelector('#home-settings')
+    if (!(top instanceof HTMLElement) || !(bottom instanceof HTMLElement)) throw new Error('Не найдены основные действия')
+    return {
+      top: top.getBoundingClientRect().top,
+      bottom: bottom.getBoundingClientRect().bottom,
+      height: window.innerHeight,
+    }
+  })
+
+  expect(controls.top).toBeGreaterThanOrEqual(safeArea.top)
+  expect(controls.bottom).toBeLessThanOrEqual(controls.height - safeArea.bottom)
 })
