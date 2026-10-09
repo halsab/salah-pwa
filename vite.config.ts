@@ -91,13 +91,13 @@ export default defineConfig({
         scope: './',
         icons: [
           ...[192, 512, 1024].map(size => ({
-            src: iconUrl('dark', `icon-${size}.png`),
+            src: iconUrl('light', `icon-${size}.png`),
             sizes: `${size}x${size}`,
             type: 'image/png',
             purpose: 'any',
           })),
           ...[192, 512, 1024].map(size => ({
-            src: iconUrl('dark', `icon-maskable-${size}.png`),
+            src: iconUrl('light', `icon-maskable-${size}.png`),
             sizes: `${size}x${size}`,
             type: 'image/png',
             purpose: 'maskable',

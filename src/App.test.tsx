@@ -559,7 +559,7 @@ describe('Salah', () => {
 
   it('повторяет загрузку после ошибки открытия хранилища и ошибки дня', async () => {
     const base = createServices()
-    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()), getDays: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockImplementation(base.getDays) })
+    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()), getDays: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockImplementation(base.getDays) })
     render(<App services={services} />)
     expect(await screen.findByRole('alert')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }))
@@ -638,15 +638,23 @@ describe('Salah', () => {
     expect(screen.queryByText('Часовой пояс')).not.toBeInTheDocument()
   })
 
-  it('применяет classic light днём и classic dark ночью по сегодняшнему расписанию', async () => {
+  it('применяет системную тему и меняет её без перезагрузки независимо от расписания', async () => {
+    let listener: ((event: MediaQueryListEvent) => void) | undefined
+    const media = {
+      matches: false,
+      addEventListener: vi.fn((_type: string, callback: (event: MediaQueryListEvent) => void) => { listener = callback }),
+      removeEventListener: vi.fn(),
+    }
+    vi.stubGlobal('matchMedia', () => media)
     const view = render(<App services={createServices()} />)
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
     expect(document.documentElement.style.getPropertyValue('--background-secondary')).toBe('#F2F2EE')
-    view.unmount()
-
-    render(<App services={createServices({ now: () => new Date('2026-09-01T20:00:00.000Z') })} />)
+    act(() => { listener?.({ matches: true } as MediaQueryListEvent) })
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('dark'))
     expect(document.documentElement.style.getPropertyValue('--background-secondary')).toBe('#282828')
+    view.unmount()
+    expect(media.removeEventListener).toHaveBeenCalledWith('change', listener)
+    vi.unstubAllGlobals()
   })
 
   it('применяет сезон текущего дня, а не открытой даты, и сохраняет выбор без reload', async () => {

@@ -27,3 +27,15 @@
   --navigation-fade-duration: 300ms;
   --navigation-transition-easing: ease-in-out;
 }
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --background-primary: #000000;
+    --background-secondary: #f2f2ee;
+    --background-tertiary: #e3e3de;
+    --text-primary: #181818;
+    --text-secondary: #5f5f5a;
+    --accent-countdown: #b34900;
+  }
+}
