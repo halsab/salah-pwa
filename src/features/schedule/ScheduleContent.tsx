@@ -7,6 +7,8 @@ import { Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { ReligiousEventBanner } from '../religiousEvents/ReligiousEventBanner'
 import { ScheduleCountdown } from './ScheduleCountdown'
+import type { ScheduleError } from './usePrayerSchedules'
+import { PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 import type { DisplaySchedule } from './usePrayerSchedules'
 import { useLocalization } from '../../localization'
 import { formatLocalizedCalendarDate } from '../../localization/calendar'
@@ -47,7 +49,7 @@ interface ScheduleContentProps {
   schedule: DisplaySchedule | null
   schedules: DisplaySchedule[]
   scheduleLoading: boolean
-  scheduleError: string | null
+  scheduleError: ScheduleError | null
   selectedDate: string
   calendarPreferences?: CalendarPreferences
   today: string
@@ -87,12 +89,19 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   })
   const countdown = next ? <ScheduleCountdown key={`${next.scheduleDate}:${next.key}:${next.instant}`} countdownLabel={t(COUNTDOWN[next.key])}
     targetInstant={next.instant} now={now} onElapsed={onElapsed} /> : null
+  const errorMessage = scheduleError
+    ? scheduleError.code === 'unsupported-profile'
+      ? t('unsupportedProfile', { profile: t(PROFILE_LABEL_KEYS[scheduleError.profile]) })
+      : t(({ 'load-failed': 'scheduleLoadFailed', 'profile-unavailable': 'calculatedProfileUnavailable',
+        'source-not-covered': 'officialSourceNotCovered', 'official-invalid': 'officialScheduleInvalid',
+        'official-not-loaded': 'officialScheduleNotLoaded' } as const)[scheduleError.code])
+    : null
   const footer = <ScreenFooter align="between">
     <span className="screen-footer-lead">{selectedDate !== today ? <ActionButton onClick={() => onChangeDate(today)}>{t('today')}</ActionButton> : countdown}</span>
     {actions}
   </ScreenFooter>
   return <Screen label={t('home')} top={top} bottom={footer} busy={scheduleLoading} contentClassName={ready ? 'home-content' : 'screen-center'}>
-    {scheduleError ? <div className="screen-stack"><p className="screen-copy" role="alert">{scheduleError}</p><ActionButton onClick={onRetrySchedule}>{t('retry')}</ActionButton></div>
+    {errorMessage ? <div className="screen-stack"><p className="screen-copy" role="alert">{errorMessage}</p><ActionButton onClick={onRetrySchedule}>{t('retry')}</ActionButton></div>
       : scheduleLoading ? <p className="note" role="status">{t('scheduleLoading')}</p>
         : !schedule ? <p className="screen-copy">{t('scheduleForDate')}</p>
           : <>

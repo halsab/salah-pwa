@@ -525,7 +525,7 @@ describe('Salah', () => {
   it('восстанавливается после смены неподдерживаемого профиля', async () => {
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'ummAlQura', overrides: {} }) })), getCalculationProfileCapability: profile => profile === 'ummAlQura' ? { supported: false, reason: 'Календарь профиля недоступен' } : { supported: true } })
     render(<App services={services} />)
-    expect(await screen.findByRole('alert')).toHaveTextContent('Календарь профиля недоступен')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Профиль «Умм аль-Кура» недоступен')
     await openSource()
     await userEvent.click(screen.getByRole('button', { name: /Профиль/ }))
     expect(screen.getByRole('button', { name: /Умм аль-Кура/ })).toBeDisabled()

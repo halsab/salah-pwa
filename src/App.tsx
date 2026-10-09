@@ -323,8 +323,7 @@ export function App({
             schedule={schedule}
             schedules={schedules}
             scheduleLoading={scheduleLoading}
-            scheduleError={resolution?.kind === 'calculated' && resolution.status === 'unsupported'
-              ? (() => { const capability = services.getCalculationProfileCapability(resolution.settings.profile); return capability.supported ? scheduleError : capability.reason })() : scheduleError}
+            scheduleError={scheduleError}
             selectedDate={selectedDate}
             calendarPreferences={calendarPreferences}
             today={today}

@@ -11,10 +11,17 @@ import type { PrayerDay } from '../../domain/types'
 import type { Place } from '../../domain/place'
 import type { ResolvedPrayerSource } from '../../domain/prayerSource'
 import { isPrayerDay } from '../../domain/prayerDatasetValidation'
-import { translate } from '../../localization'
-import { PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
+import type { CalculationProfileId } from '../../domain/prayerCalculation'
 
 export type DisplaySchedule = PrayerSchedule
+
+export type ScheduleError =
+  | { code: 'load-failed' }
+  | { code: 'unsupported-profile'; profile: CalculationProfileId }
+  | { code: 'profile-unavailable' }
+  | { code: 'source-not-covered' }
+  | { code: 'official-invalid' }
+  | { code: 'official-not-loaded' }
 
 interface PrayerScheduleServices {
   getDays: (locationId: string, dates: readonly string[], datasetRevision: string) => Promise<(PrayerDay | undefined)[]>
@@ -34,7 +41,7 @@ interface ScheduleResult {
   retry: number
   services: PrayerScheduleServices
   schedules: DisplaySchedule[]
-  error: string | null
+  error: ScheduleError | null
 }
 
 export function usePrayerSchedules({
@@ -84,8 +91,8 @@ export function usePrayerSchedules({
     }).catch((error: unknown) => {
       if (active) setResult({ context, key, retry, services, schedules: [], error:
         error instanceof UnsupportedCalculationProfileError
-          ? translate('ru', 'unsupportedProfile', { profile: translate('ru', PROFILE_LABEL_KEYS[error.profile]) })
-          : translate('ru', 'scheduleLoadFailed'),
+          ? { code: 'unsupported-profile', profile: error.profile }
+          : { code: 'load-failed' },
       })
     })
     return () => { active = false }
@@ -94,11 +101,14 @@ export function usePrayerSchedules({
   // Проверка во время render закрывает промежуток до cleanup/effect нового запроса.
   const matching = result?.key === key && result.retry === retry && result.services === services ? result : null
   const schedules = matching?.schedules ?? []
-  const unavailable = resolution && resolution.status !== 'ready'
-    ? resolution.kind === 'calculated' ? translate('ru', 'calculatedProfileUnavailable')
-      : resolution.status === 'not-covered' ? translate('ru', 'officialSourceNotCovered')
-        : resolution.status === 'invalid' ? translate('ru', 'officialScheduleInvalid')
-          : translate('ru', 'officialScheduleNotLoaded')
+  const unavailable: ScheduleError | null = resolution && resolution.status !== 'ready'
+    ? resolution.kind === 'calculated'
+      ? resolution.status === 'unsupported'
+        ? { code: 'unsupported-profile', profile: resolution.settings.profile }
+        : { code: 'profile-unavailable' }
+      : resolution.status === 'not-covered' ? { code: 'source-not-covered' }
+        : resolution.status === 'invalid' ? { code: 'official-invalid' }
+          : { code: 'official-not-loaded' }
     : null
   return {
     context,
