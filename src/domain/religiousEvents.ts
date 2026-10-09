@@ -213,7 +213,7 @@ export function resolveReligiousBanner(input: ResolveReligiousBannerInput): Reli
     .sort(compareDefinitions)[0]
   if (period) {
     const upcomingConcrete = upcomingEvents(input, ['day', 'night'])[0]
-    const secondary = upcomingConcrete
+    const secondary: ReligiousBannerState['secondary'] = upcomingConcrete
       ? { type: 'event-days', eventId: upcomingConcrete.definition.id, count: upcomingConcrete.offset }
       : null
     return banner(period, secondary)

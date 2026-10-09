@@ -103,9 +103,7 @@ export function usePrayerSchedules({
   const schedules = matching?.schedules ?? []
   const unavailable: ScheduleError | null = resolution && resolution.status !== 'ready'
     ? resolution.kind === 'calculated'
-      ? resolution.status === 'unsupported'
-        ? { code: 'unsupported-profile', profile: resolution.settings.profile }
-        : { code: 'profile-unavailable' }
+      ? { code: 'unsupported-profile', profile: resolution.settings.profile }
       : resolution.status === 'not-covered' ? { code: 'source-not-covered' }
         : resolution.status === 'invalid' ? { code: 'official-invalid' }
           : { code: 'official-not-loaded' }

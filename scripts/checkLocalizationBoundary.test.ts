@@ -14,10 +14,6 @@ function sourceFiles(directory: string): string[] {
   })
 }
 
-function productionUiFiles(): string[] {
-  return [join(repositoryRoot, 'src/App.tsx'), ...sourceFiles(join(repositoryRoot, 'src/features')), ...sourceFiles(join(repositoryRoot, 'src/ui')).filter(path => !path.includes(join('src', 'ui', 'jelly')))]
-}
-
 function presentationFiles(): string[] {
   return [
     join(repositoryRoot, 'src/App.tsx'),
@@ -37,23 +33,22 @@ function hardcodedPresentationText(path: string, source: string): string[] {
     if (ts.isJsxText(node)) return /[\p{L}\p{N}]/u.test(node.getText(file))
     if (!/[\p{L}\p{N}]/u.test(node.getText(file).replace(/^['`]|['`]$/gu, ''))) return false
     const parent = node.parent
-    if (parent && ts.isJsxExpression(parent) && parent.expression === node) {
+    if (ts.isJsxExpression(parent) && parent.expression === node) {
       return ts.isJsxElement(parent.parent) || ts.isJsxFragment(parent.parent)
     }
-    if (parent && ts.isJsxAttribute(parent)) {
+    if (ts.isJsxAttribute(parent)) {
       const initializer = parent.initializer
       const name = parent.name.getText(file)
       return ['aria-label', 'aria-description', 'alt', 'label', 'placeholder', 'title'].includes(name)
+        && initializer !== undefined
         && (initializer === node || (ts.isJsxExpression(initializer) && initializer.expression === node))
     }
     return false
   }
   const isConsoleDiagnostic = (node: ts.Node) => {
-    let parent = node.parent
-    while (parent && !ts.isCallExpression(parent)) parent = parent.parent
-    return Boolean(parent && ts.isCallExpression(parent)
-      && ts.isPropertyAccessExpression(parent.expression)
-      && parent.expression.expression.getText(file) === 'console')
+    const parent = ts.findAncestor(node.parent, ts.isCallExpression)
+    return parent !== undefined && ts.isPropertyAccessExpression(parent.expression)
+      && parent.expression.expression.getText(file) === 'console'
   }
   const visit = (node: ts.Node) => {
     const isText = ts.isStringLiteralLike(node) || ts.isTemplateLiteralToken(node) || ts.isJsxText(node)

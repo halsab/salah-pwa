@@ -201,8 +201,8 @@ export const RU_MESSAGES = Object.freeze({
   countdownAria: ({ label, remaining }: CountdownParams) => `${label}, осталось ${remaining}`,
   tomorrow: 'завтра',
   inDays: ({ count }: CountParams) => `через ${count} ${pluralCategory(count, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })}`,
-  eventCountdown: ({ event, count }: EventCountdownParams) => `${event} ${translate('ru', 'inDays', { count })}`,
-  eventCountdownTomorrow: ({ event }: { event: string }) => `${event} ${translate('ru', 'tomorrow')}`,
+  eventCountdown: ({ event, count }: EventCountdownParams) => `${event} через ${count} ${pluralCategory(count, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })}`,
+  eventCountdownTomorrow: ({ event }: { event: string }) => `${event} завтра`,
   eventHijriNewYear: 'Новый год по хиджре',
   eventAshura: 'День Ашура',
   eventMawlid: 'Мавлид ан-Наби ﷺ',
@@ -275,14 +275,15 @@ export const RU_MESSAGES = Object.freeze({
 export type MessageKey = keyof typeof RU_MESSAGES
 export type MessageParams = Record<string, string | number>
 type ParamsFor<Key extends MessageKey> = typeof RU_MESSAGES[Key] extends (params: infer Params) => string ? Params : never
-export type Translator = <Key extends MessageKey>(key: Key, ...args: ParamsFor<Key> extends never ? [] : [params: ParamsFor<Key>]) => string
+type TranslationArgs<Key extends MessageKey> = ParamsFor<Key> extends never ? [] : [params: ParamsFor<Key>]
+export type Translator = <Key extends MessageKey>(key: Key, ...args: TranslationArgs<Key>) => string
 
 const CATALOGS: Record<SupportedLocale, typeof RU_MESSAGES> = { ru: RU_MESSAGES }
 
 export function translate<Key extends MessageKey>(
   locale: SupportedLocale,
   key: Key,
-  ...args: ParamsFor<Key> extends never ? [] : [params: ParamsFor<Key>]
+  ...args: TranslationArgs<Key>
 ): string {
   const params = args[0] ?? {}
   const value = CATALOGS[locale][key]
@@ -290,7 +291,11 @@ export function translate<Key extends MessageKey>(
   return interpolate(value, params)
 }
 
-export function validateCatalog(locale: SupportedLocale = 'ru'): string[] {
-  const catalog = CATALOGS[locale]
+export function createTranslator(locale: SupportedLocale): Translator {
+  return <Key extends MessageKey>(key: Key, ...args: TranslationArgs<Key>) => translate(locale, key, ...args)
+}
+
+export function validateCatalog(_locale: SupportedLocale = 'ru'): string[] {
+  const catalog = CATALOGS[_locale]
   return Object.keys(RU_MESSAGES).filter(key => !(key in catalog))
 }
