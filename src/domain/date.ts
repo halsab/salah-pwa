@@ -1,20 +1,6 @@
 import { getCivilDate, getDeviceTimeZone } from './locationTime'
-
-const DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: 'UTC',
-  weekday: 'long',
-  day: 'numeric',
-  month: 'long',
-})
-const COMPACT_DATE_LABEL_FORMATTER = new Intl.DateTimeFormat('ru-RU', {
-  timeZone: 'UTC',
-  day: 'numeric',
-  month: 'long',
-})
-
-function toUtcDate(date: string): Date {
-  return new Date(`${date}T12:00:00.000Z`)
-}
+import { formatLocaleDate } from '../localization/formatters'
+import type { SupportedLocale } from '../localization/locale'
 
 export function getSystemDate(now: Date, timeZone = getDeviceTimeZone()): string {
   return getCivilDate(now, timeZone)
@@ -26,10 +12,10 @@ export function addDays(date: string, amount: number): string {
   return instant.toISOString().slice(0, 10)
 }
 
-export function formatDateLabel(date: string): string {
-  return DATE_LABEL_FORMATTER.format(toUtcDate(date))
+export function formatDateLabel(date: string, locale: SupportedLocale = 'ru'): string {
+  return formatLocaleDate(date, locale, { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
-export function formatCompactDateLabel(date: string): string {
-  return COMPACT_DATE_LABEL_FORMATTER.format(toUtcDate(date))
+export function formatCompactDateLabel(date: string, locale: SupportedLocale = 'ru'): string {
+  return formatLocaleDate(date, locale, { day: 'numeric', month: 'long' })
 }

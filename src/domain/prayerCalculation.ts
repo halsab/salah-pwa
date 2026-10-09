@@ -100,7 +100,7 @@ interface LocationCoordinates {
 const MINUTE = 60_000
 const DIRECT_ANGLE_MARGIN = 1_000
 const UMM_AL_QURA_CALENDAR = 'islamic-umalqura'
-const UMM_AL_QURA_UNAVAILABLE_REASON =
+export const UMM_AL_QURA_UNAVAILABLE_REASON =
   'Профиль «Умм аль-Кура» недоступен: календарь islamic-umalqura не поддерживается этим браузером.'
 
 function dateFromIso(date: string): Date {

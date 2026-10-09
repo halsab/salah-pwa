@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
-import { DEFAULT_CALENDAR_PREFERENCES, formatCalendarDate, type CalendarPreferences } from '../../domain/calendar'
+import { DEFAULT_CALENDAR_PREFERENCES, type CalendarPreferences } from '../../domain/calendar'
 import { resolveReligiousBanner, type ReligiousEventId } from '../../domain/religiousEvents'
 import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
 import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
@@ -9,6 +9,7 @@ import { ReligiousEventBanner } from '../religiousEvents/ReligiousEventBanner'
 import { ScheduleCountdown } from './ScheduleCountdown'
 import type { DisplaySchedule } from './usePrayerSchedules'
 import { useLocalization } from '../../localization'
+import { formatLocalizedCalendarDate } from '../../localization/calendar'
 
 const LABELS: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
   fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', fajr: 'prayerFajr', sunrise: 'prayerSunrise',
@@ -26,7 +27,7 @@ function estimated(event: ResolvedScheduleEvent, schedules: DisplaySchedule[]): 
 function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
   schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean; calendarPreferences: CalendarPreferences
 }) {
-  const { t } = useLocalization()
+  const { locale, t } = useLocalization()
   const events = buildScheduleEvents(schedule).sort((left, right) => left.instant - right.instant)
   return <ol className="event-list" aria-label={t('scheduleListLabel')}>
     {events.map(event => {
@@ -34,7 +35,7 @@ function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
       const past = live && !active && event.instant <= now.getTime()
       return <li key={event.key} className={`event-row${past ? ' event-past' : ''}${active ? ' event-current' : ''}`} aria-current={active || undefined}>
         <div className="event-name"><span>{t(LABELS[event.key])}</span>
-          {event.dayOffset ? <small className="event-day">{formatCalendarDate(event.date, calendarPreferences)}</small> : null}
+          {event.dayOffset ? <small className="event-day">{formatLocalizedCalendarDate(event.date, calendarPreferences, locale)}</small> : null}
         </div>
         <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>
       </li>

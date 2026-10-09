@@ -112,7 +112,7 @@ export function App({
   services?: AppServices
   version?: string
 }) {
-  const { t } = useLocalization()
+  const { locale, t } = useLocalization()
   const [repositoryState, setRepositoryState] = useState<PrayerRepositorySnapshot>({ meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null })
   const meta = repositoryState.meta
   const [preferences, setPreferences] = useState<SourcePreferences>(automaticPreferences)
@@ -289,8 +289,8 @@ export function App({
     setThemeFamily(next)
     persistence.save({ themeFamily: next })
   }
-  const homeLocationLabel = homePlaceLabel(place)
-  const sourcePlaceLabel = compactPlaceLabel(place?.name || t('selectPlace'))
+  const homeLocationLabel = homePlaceLabel(place, t('locationUnknown'))
+  const sourcePlaceLabel = compactPlaceLabel(place?.name || t('selectPlace'), locale)
   const locationTime = place && getUtcOffset(currentTime, place.timeZone) !== getUtcOffset(currentTime, deviceTimeZone)
     ? getZonedTime(currentTime, place.timeZone)
     : undefined
@@ -309,7 +309,7 @@ export function App({
           <ActionButton onClick={persistence.retry}>{t('retry')}</ActionButton>
         </div>
       ) : null
-  const nearbyCityNotice = place?.selection === 'gps' ? nameLookupMessage(nameLookupState) : null
+  const nearbyCityNotice = place?.selection === 'gps' ? nameLookupMessage(nameLookupState, locale) : null
 
   return (
     <AppShell>

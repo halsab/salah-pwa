@@ -1,7 +1,8 @@
 import type { RefObject } from 'react'
-import { formatCalendarDate, type CalendarPreferences } from '../domain/calendar'
+import type { CalendarPreferences } from '../domain/calendar'
 import { ActionButton } from './controls'
 import { useLocalization } from '../localization'
+import { formatLocalizedCalendarDate } from '../localization/calendar'
 
 export function AppHeader({ locationButtonRef, locationLabel, locationTime, selectedDate, calendarPreferences, onOpenLocation, onOpenDate }: {
   locationButtonRef: RefObject<HTMLButtonElement | null>
@@ -12,7 +13,7 @@ export function AppHeader({ locationButtonRef, locationLabel, locationTime, sele
   onOpenLocation: () => void
   onOpenDate: () => void
 }) {
-  const { t } = useLocalization()
+  const { locale, t } = useLocalization()
   return <>
     <ActionButton ref={locationButtonRef} id="home-location" className="home-location" onClick={onOpenLocation}
       aria-label={locationTime ? `${locationLabel} ${locationTime}` : undefined}>
@@ -20,7 +21,7 @@ export function AppHeader({ locationButtonRef, locationLabel, locationTime, sele
       {locationTime ? <span className="home-location-time">{locationTime}</span> : null}
     </ActionButton>
     <ActionButton id="home-date" aria-label={t('chooseDate')} aria-describedby="home-date-value" onClick={onOpenDate}>
-      <time id="home-date-value" dateTime={selectedDate}>{formatCalendarDate(selectedDate, calendarPreferences)}</time>
+      <time id="home-date-value" dateTime={selectedDate}>{formatLocalizedCalendarDate(selectedDate, calendarPreferences, locale)}</time>
     </ActionButton>
   </>
 }

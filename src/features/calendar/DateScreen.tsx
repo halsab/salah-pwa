@@ -1,11 +1,12 @@
 import { useRef, type ReactNode, type RefObject } from 'react'
 import {
-  calendarDateFromCivil, civilDateFromCalendar, daysInCalendarMonth, GREGORIAN_MONTHS, HIJRI_MONTHS,
+  calendarDateFromCivil, civilDateFromCalendar, daysInCalendarMonth,
   type CalendarDate, type CalendarPreferences,
 } from '../../domain/calendar'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow, ActionButton, ScreenFooter } from '../../ui/controls'
 import { useLocalization } from '../../localization'
+import { calendarMonthLabels } from '../../localization/calendar'
 
 interface SelectOption { value: string; label: string; disabled?: boolean }
 
@@ -36,7 +37,7 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
   const { calendar, correction } = preferences
   const date = calendarDateFromCivil(selectedDate, calendar, correction)
   const currentYear = calendarDateFromCivil(today, calendar, correction).year
-  const months = calendar === 'hijri' ? HIJRI_MONTHS : GREGORIAN_MONTHS
+  const months = calendarMonthLabels(t, calendar)
   const updateDate = (patch: Partial<CalendarDate>) => onDateChange(civilDateFromCalendar({ ...date, ...patch }, calendar, correction))
 
   return <Screen label={t('dateSetup')} top={<BackButton onClick={onBack} />} contentClassName="screen-center"

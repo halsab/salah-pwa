@@ -9,8 +9,8 @@ export function pluralCategory(count: number, forms: Partial<Record<Intl.LDMLPlu
   return forms[category] ?? forms.other ?? ''
 }
 
-export function formatNumber(value: number, locale: SupportedLocale = 'ru'): string {
-  return new Intl.NumberFormat(locale).format(value)
+export function formatNumber(value: number, locale: SupportedLocale = 'ru', options: Intl.NumberFormatOptions = {}): string {
+  return new Intl.NumberFormat(locale, options).format(value)
 }
 
 export function formatClockTime(instant: number | Date, timeZone: string, locale: SupportedLocale = 'ru'): string {

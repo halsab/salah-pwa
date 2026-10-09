@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CityCatalogService, CitySearchResult } from '../../data/cityCatalog'
-import { formatCityLabel, formatCityRegion, type City } from '../../domain/cities'
+import type { City } from '../../domain/cities'
 import { compactPlaceLabel, getCountryLabel } from '../../domain/countryLabels'
 import type { Place } from '../../domain/place'
 import type { PrayerLocation } from '../../domain/types'
@@ -10,15 +10,17 @@ import type { CityCatalogStatus } from './useCityCatalog'
 import { formatAccuracy, formatCoordinates, geolocationFailureMessage, nameLookupMessage, type GpsUiState, type NameLookupState } from './locationState'
 import { useLocalization } from '../../localization'
 import type { Translator } from '../../localization/messages'
+import type { SupportedLocale } from '../../localization/locale'
+import { localizedCityLabel, localizedCityRegion } from '../../localization/place'
 
 const idleGpsState: GpsUiState = { status: 'idle' }
 
-function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, gpsPlace: boolean, t: Translator): string | null {
+function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, gpsPlace: boolean, locale: SupportedLocale, t: Translator): string | null {
   if (gpsState.status === 'locating') return t('locating')
   if (gpsState.status === 'refining') return t('refiningLocation')
   if (gpsState.status === 'ready' && gpsState.lowAccuracy) return t('lowAccuracyLocation')
   if (!gpsPlace || gpsState.status === 'error') return null
-  return nameLookupMessage(nameLookupState, 'ru')
+  return nameLookupMessage(nameLookupState, locale)
 }
 
 export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
@@ -27,19 +29,19 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
   onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
   gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
 }) {
-  const { t } = useLocalization()
+  const { locale, t } = useLocalization()
   const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
   const gpsPlace = place?.selection === 'gps'
   const busy = gpsState.status === 'locating' || gpsState.status === 'refining'
   const lowAccuracy = gpsState.status === 'ready' && gpsState.lowAccuracy
-  const status = locationStatus(gpsState, nameLookupState, gpsPlace, t)
-  const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason, 'ru') : null
+  const status = locationStatus(gpsState, nameLookupState, gpsPlace, locale, t)
+  const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason, locale) : null
   return <Screen label={initial ? t('selectPlace') : t('location')} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
     {initial ? <h1 className="screen-title">{t('selectPlace')}</h1> : null}
     {place ? <div className="location-current"><p className="screen-title">{gpsPlace
-      ? place.nearbyCity ? t('nearestPlace', { name: compactPlaceLabel(place.nearbyCity.name) }) : t('nearestPlaceUnknown')
-      : compactPlaceLabel(place.name)}</p>
-      {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy)}</p></>
+      ? place.nearbyCity ? t('nearestPlace', { name: compactPlaceLabel(place.nearbyCity.name, locale) }) : t('nearestPlaceUnknown')
+      : compactPlaceLabel(place.name, locale)}</p>
+      {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy, locale)}</p></>
         : place.region ? <p className="note">{place.region.name}</p> : null}
     </div> : null}
     <div className="screen-stack">
@@ -51,7 +53,7 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
     {recent.length ? <section className="screen-space" aria-label={t('recentCities')}><p className="screen-heading">{t('recent')}</p><div className="screen-stack screen-space">
-      {recent.map(item => <ActionRow key={item.id} title={compactPlaceLabel(item.name)} onClick={() => onSelectRecent(item)} />)}
+      {recent.map(item => <ActionRow key={item.id} title={compactPlaceLabel(item.name, locale)} onClick={() => onSelectRecent(item)} />)}
     </div></section> : null}
     {notice}
   </Screen>
@@ -70,7 +72,7 @@ interface SearchScreenProps {
 interface SearchCompletion { query: string; data: CitySearchResult | null; failed: boolean }
 
 export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchCities, onBack, onSelectOfficial, onSelectCity, notice }: SearchScreenProps) {
-  const { t } = useLocalization()
+  const { locale, t } = useLocalization()
   const [text, setText] = useState('')
   const [completion, setCompletion] = useState<SearchCompletion | null>(null)
   const [retry, setRetry] = useState(0)
@@ -108,9 +110,9 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
         secondary={<span className="note">{t('officialCityResult')}</span>} onClick={() => onSelectOfficial(item.id)} />
       </li>)}
       {cities.map(city => {
-        const sameLabel = cities.some(other => other.id !== city.id && formatCityLabel(other) === formatCityLabel(city))
-        return <li key={city.id}><ActionRow className="city-result" aria-label={formatCityLabel(city, sameLabel)} title={city.name}
-          secondary={<span className="note">{formatCityRegion(city)}, {getCountryLabel(city.countryCode)}{sameLabel ? ` · ${city.id}` : ''}</span>}
+        const sameLabel = cities.some(other => other.id !== city.id && localizedCityLabel(other, false, locale, t) === localizedCityLabel(city, false, locale, t))
+        return <li key={city.id}><ActionRow className="city-result" aria-label={localizedCityLabel(city, sameLabel, locale, t)} title={city.name}
+          secondary={<span className="note">{localizedCityRegion(city, t)}, {getCountryLabel(city.countryCode, locale)}{sameLabel ? ` · ${city.id}` : ''}</span>}
           onClick={() => onSelectCity(city)} />
         </li>
       })}

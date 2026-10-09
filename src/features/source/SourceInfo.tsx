@@ -41,7 +41,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     .map(([key, value]) => `${t(EVENT_LABEL_KEYS[key as CalculatedPrayerKey])} ${value > 0 ? '+' : ''}${t('minutes', { count: value })}`).join('; ') : ''
   if (adjustments) facts.push([t('previousAdjustments'), adjustments])
 
-  const lateFajrNote = lateFajrStart ? t('lateFajrNote', { time: markdownText(lateFajrStart.time), date: markdownText(formatDateLabel(lateFajrStart.date)) }) : ''
+  const lateFajrNote = lateFajrStart ? t('lateFajrNote', { time: markdownText(lateFajrStart.time), date: markdownText(formatDateLabel(lateFajrStart.date, locale)) }) : ''
   const runtimeNotes = [
     calculated?.estimatedPrayers.length ? t('estimatedRule', { values: markdownText(calculated.estimatedPrayers.map(key => t(EVENT_LABEL_KEYS[key])).join(', ')) }) : '',
     calculated?.polarResolutionApplied ? t('polarResolution') : '',
@@ -54,7 +54,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   const article = [
     `# ${markdownText(title)}`,
     official ? t('officialTable') : t('manualCalculation'),
-    `- **${t('placeLabel')}:** ${markdownText(placeLabel)}\n- **${t('dateLabel')}:** ${markdownText(formatCompactDateLabel(context.date))}`,
+    `- **${t('placeLabel')}:** ${markdownText(placeLabel)}\n- **${t('dateLabel')}:** ${markdownText(formatCompactDateLabel(context.date, locale))}`,
     official ? t('officialTimes') : t('calculatedTimes'),
     context.mode === 'automatic' ? t('automaticCoverage') : '',
     official ? `## ${t('sourceFacts')}` : `## ${t('sourceParameters')}`,

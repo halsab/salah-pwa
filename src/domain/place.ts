@@ -69,8 +69,8 @@ export function withNearbyCity(place: Place, city: City | null): Place {
   return { ...place, name: city.name, nearbyCity: { id: city.id, name: formatCityLabel(city), distanceKm } }
 }
 
-export function homePlaceLabel(place: Place | null): string {
-  if (!place || !validPosition(place)) return 'Местоположение не определено'
+export function homePlaceLabel(place: Place | null, unknownLabel = 'Местоположение не определено'): string {
+  if (!place || !validPosition(place)) return unknownLabel
   const name = place.name.replace(/^Рядом:\s*/u, '').split(',')[0]?.trim()
   if (name && name !== 'Моё местоположение') return name
   return `${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`

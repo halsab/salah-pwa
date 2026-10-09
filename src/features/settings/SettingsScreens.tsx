@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
 import { effectiveCalculationSettings } from '../../domain/calculationSettings'
 import { CALCULATION_PROFILES, type CalculationProfileCapability, type CalculationProfileId, type HighLatitudeMethod } from '../../domain/prayerCalculation'
-import { HIGH_LATITUDE_KEYS, PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
+import { calculationCapabilityMessage, HIGH_LATITUDE_KEYS, PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow, ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
@@ -72,9 +72,10 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
     {legacy ? <p className="note screen-space">{t('replaceLegacy')}</p> : null}
     <div className="screen-stack screen-space">{CALCULATION_PROFILES.map(profile => {
       const capability = getCapability(profile.id)
+      const capabilityMessage = calculationCapabilityMessage(profile.id, capability, t)
       return <div key={profile.id}><ActionRow title={t(PROFILE_LABEL_KEYS[profile.id])} value={calculation.profile === profile.id ? t('selected') : undefined} disabled={!capability.supported} aria-pressed={calculation.profile === profile.id}
         onClick={() => { onChange(manualCalculation({ profile: profile.id, overrides: {} })); onBack() }} />
-        {!capability.supported ? <p className="note">{capability.reason}</p> : null}</div>
+        {capabilityMessage ? <p className="note">{capabilityMessage}</p> : null}</div>
     })}{notice}</div>
   </Screen>
   if (screen === 'parameters') return <Screen label={t('calculationParameters')} top={top}>

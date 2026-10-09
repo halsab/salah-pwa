@@ -23,7 +23,7 @@ export function ReligiousEventOccurrenceRow({ occurrence, onOpenEvent }: {
   const { locale } = useLocalization()
   const id = `religious-event-${occurrence.civilDate}-${occurrence.eventId}`
   const contentId = occurrence.contentId
-  const date = <span className="action-row-secondary">{formatReligiousEventOccurrenceDate(occurrence)}</span>
+  const date = <span className="action-row-secondary">{formatReligiousEventOccurrenceDate(occurrence, locale)}</span>
   return <li>
     {contentId
       ? <ActionRow id={id} className="religious-event-list-row" title={localizedEventTitle(occurrence.eventId, locale, true)} secondary={date} onClick={() => onOpenEvent(contentId)} />
