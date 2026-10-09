@@ -64,10 +64,15 @@ describe('локализация', () => {
 
   it('интерполирует и выбирает русские plural forms', () => {
     expect(interpolate('До {name}: {count}', { name: 'Асра', count: 3 })).toBe('До Асра: 3')
+    const cases = [[0, 'через 0 дней'], [1, 'через 1 день'], [2, 'через 2 дня'], [3, 'через 3 дня'],
+      [4, 'через 4 дня'], [5, 'через 5 дней'], [11, 'через 11 дней'], [14, 'через 14 дней'],
+      [21, 'через 21 день'], [22, 'через 22 дня'], [25, 'через 25 дней'], [101, 'через 101 день']] as const
+    for (const [count, expected] of cases) {
+      expect(translate('ru', 'inDays', { count })).toBe(expected)
+    }
     expect(pluralCategory(1, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })).toBe('день')
     expect(pluralCategory(2, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })).toBe('дня')
     expect(pluralCategory(5, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })).toBe('дней')
-    expect(translate('ru', 'inDays', { count: 21 })).toBe('через 21 день')
   })
 
   it('не оставляет отсутствующих ключей в исходном каталоге', () => {
