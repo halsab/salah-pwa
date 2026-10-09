@@ -43,7 +43,6 @@ import { ScheduleContent } from './features/schedule/ScheduleContent'
 import { ReligiousEventsScreen } from './features/religiousEvents/ReligiousEventsScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
-import { useDaylightWindow } from './features/schedule/useDaylightWindow'
 import { SettingsScreens } from './features/settings/SettingsScreens'
 import { ShareDialog } from './features/share/ShareDialog'
 import {
@@ -64,6 +63,7 @@ import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation } from './ui/useAppNavigation'
 import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
+import { useSystemAppearance } from './ui/useSystemAppearance'
 import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
 
@@ -217,7 +217,6 @@ export function App({
     today,
     changeDate,
   } = useScheduleDate(services, calendarTimeZone)
-  const todayResolution = place ? resolvePrayerTimeSource(place, currentTime, preferences, datasets, capabilities) : null
   const resolution = place ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities) : null
   const officialMode = resolution?.kind === 'official'
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
@@ -229,8 +228,8 @@ export function App({
       return result.value
     },
   }), [services])
-  const daylight = useDaylightWindow({ services: scheduleServices, location: place, resolution: todayResolution, date: today })
-  const theme = useMemo(() => resolveTheme(themeFamily, today, currentTime, daylight), [currentTime, daylight, themeFamily, today])
+  const systemTone = useSystemAppearance()
+  const theme = useMemo(() => resolveTheme(themeFamily, today, systemTone), [systemTone, themeFamily, today])
   useLayoutEffect(() => applyTheme(theme), [theme])
   const {
     schedule,

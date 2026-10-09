@@ -1,4 +1,4 @@
-import { getSeason, getThemeTone, type DaylightWindow, type Season, type ThemeFamily, type ThemeTone } from '../domain/theme'
+import { getSeason, type Season, type ThemeFamily, type ThemeTone } from '../domain/theme'
 import { notifyJellyThemeChange } from './jelly/surface'
 
 export interface ThemePalette {
@@ -55,9 +55,8 @@ export const themePalettes = {
   },
 } as const satisfies Record<ThemePaletteKey, ThemePalette>
 
-export function resolveTheme(family: ThemeFamily, civilDate: string, now: Date, daylight: DaylightWindow | null) {
+export function resolveTheme(family: ThemeFamily, civilDate: string, tone: ThemeTone) {
   const season = getSeason(civilDate)
-  const tone = getThemeTone(now, daylight)
   const key = family === 'classic' ? `classic-${tone}` as const : `${season}-${tone}` as const
   return { family, season, tone, palette: themePalettes[key] }
 }
