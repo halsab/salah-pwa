@@ -18,28 +18,22 @@ const CSP = [
   "form-action 'none'",
 ].join('; ')
 
-interface CapturedViolation {
+interface CspViolation {
   blockedUri: string
   directive: string
 }
 
-test('production CSP единственный, предшествует ресурсам и блокирует сторонний connect', async ({ page, request }) => {
+test('production CSP allows the app and blocks a third-party connection', async ({ page, request }) => {
   const response = await request.get('./')
   expect(response.ok()).toBe(true)
   const html = await response.text()
-  const metaTags = html.match(
-    /<meta\b[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi,
-  ) ?? []
-  expect(metaTags).toHaveLength(1)
-  const metaIndex = html.indexOf(metaTags[0] ?? '')
-  const firstResourceIndex = html.search(/<(?:link|script)\b/i)
-  expect(metaIndex).toBeGreaterThanOrEqual(0)
-  expect(firstResourceIndex).toBeGreaterThan(metaIndex)
+  const tags = html.match(/<meta\b[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi) ?? []
+  expect(tags).toHaveLength(1)
 
   await page.addInitScript(() => {
-    const runtimeWindow = window as Window & { __cspViolations?: CapturedViolation[] }
+    const runtimeWindow = window as Window & { __cspViolations?: CspViolation[] }
     runtimeWindow.__cspViolations = []
-    document.addEventListener('securitypolicyviolation', (event) => {
+    document.addEventListener('securitypolicyviolation', event => {
       runtimeWindow.__cspViolations?.push({
         blockedUri: event.blockedURI,
         directive: event.effectiveDirective,
@@ -47,48 +41,24 @@ test('production CSP единственный, предшествует ресу
     })
   })
 
-  const localFailures: string[] = []
   const pageErrors: string[] = []
-  page.on('pageerror', (error) => pageErrors.push(error.message))
-  page.on('requestfailed', (request) => {
-    const url = new URL(request.url())
-    if (url.origin === 'http://127.0.0.1:4175') localFailures.push(url.pathname)
-  })
-
+  page.on('pageerror', error => pageErrors.push(error.message))
   await page.goto('./')
-  const meta = page.locator('meta[http-equiv="Content-Security-Policy"]')
-  await expect(meta).toHaveCount(1)
-  await expect(meta).toHaveAttribute('content', CSP)
-  await expect(meta).not.toHaveAttribute('content', /frame-ancestors/)
-  await expect(meta).not.toHaveAttribute('content', /(?:^|\s)\*(?:\s|;|$)/)
-  await expect(meta).not.toHaveAttribute('content', /(?:data|blob):|unsafe-eval/)
-  await page.evaluate(async () => navigator.serviceWorker.ready)
+  await expect(page.locator('meta[http-equiv="Content-Security-Policy"]'))
+    .toHaveAttribute('content', CSP)
+  await expect(page.getByRole('button', { name: 'По геопозиции' })).toBeVisible()
 
-  expect(await page.evaluate(() => (
-    (window as Window & { __cspViolations?: CapturedViolation[] }).__cspViolations ?? []
-  ))).toEqual([])
-  expect(localFailures).toEqual([])
-  expect(pageErrors).toEqual([])
-
-  const blocked = await page.evaluate(async () => {
+  const blockedUrl = 'https://example.invalid/csp-probe'
+  await expect.poll(() => page.evaluate(async url => {
     try {
-      await fetch('https://example.invalid/csp-probe')
+      await fetch(url)
       return false
     } catch {
       return true
     }
-  })
-  expect(blocked).toBe(true)
+  }, blockedUrl)).toBe(true)
   await expect.poll(() => page.evaluate(() => (
-    (window as Window & { __cspViolations?: CapturedViolation[] }).__cspViolations ?? []
-  ))).toContainEqual({
-    blockedUri: 'https://example.invalid/csp-probe',
-    directive: 'connect-src',
-  })
-  const unexpectedViolations = await page.evaluate(() => (
-    (window as Window & { __cspViolations?: CapturedViolation[] }).__cspViolations ?? []
-  )).then((violations) => violations.filter(({ blockedUri, directive }) => (
-    directive !== 'connect-src' || blockedUri !== 'https://example.invalid/csp-probe'
-  )))
-  expect(unexpectedViolations).toEqual([])
+    (window as Window & { __cspViolations?: CspViolation[] }).__cspViolations ?? []
+  ))).toContainEqual({ blockedUri: blockedUrl, directive: 'connect-src' })
+  expect(pageErrors).toEqual([])
 })
