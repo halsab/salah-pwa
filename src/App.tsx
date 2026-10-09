@@ -139,7 +139,7 @@ export function App({
   const { open: openScreen, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
   const sessionHasPlace = useRef(false)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState(false)
   const [religiousEventScreen, setReligiousEventScreen] = useState<typeof import('./features/religiousEvents/ReligiousEventScreen')['ReligiousEventScreen'] | null>(null)
   const [religiousEventLoadError, setReligiousEventLoadError] = useState<string | null>(null)
   const locationDialogOpen = navigation.screen === 'location' || navigation.screen === 'search'
@@ -174,7 +174,7 @@ export function App({
     queueMicrotask(() => {
       if (!active) return
       setLoading(true)
-      setError(null)
+      setError(false)
     })
     const acceptState = (state: PrayerRepositoryState) => {
       if (!active) return
@@ -196,17 +196,17 @@ export function App({
     void services.initialize().then((result) => {
       if (!active) return
       if (!result.ok) {
-        setError(t('appLoadError'))
+        setError(true)
         return
       }
       acceptState(result.value)
       refresh()
-    }).catch(() => active && setError(t('appLoadError')))
+    }).catch(() => active && setError(true))
       .finally(() => active && setLoading(false))
     window.addEventListener('online', refresh)
     window.addEventListener('pageshow', refresh)
     return () => { active = false; unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('pageshow', refresh); void services.invalidateAndDrain() }
-  }, [retryCount, services, restore, resetting, t])
+  }, [retryCount, services, restore, resetting])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -268,7 +268,7 @@ export function App({
     return (
       <AppShell>
         <Screen label={t('eventLoadError')} contentClassName="screen-center">
-          <p role="alert">{error}</p>
+          <p role="alert">{t('appLoadError')}</p>
           <ActionButton onClick={() => setRetryCount((count) => count + 1)}>
             {t('retryAgain')}
           </ActionButton>
