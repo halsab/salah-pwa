@@ -50,17 +50,18 @@ export interface CalculationSettings {
 
 export interface CalculationProfileOption {
   id: CalculationProfileId
-  label: string
 }
+
+export type CalculationCapabilityReason = 'ummAlQuraUnavailable'
 
 export type CalculationProfileCapability =
   | { supported: true }
-  | { supported: false; reason: string }
+  | { supported: false; reason: CalculationCapabilityReason }
 
 export class UnsupportedCalculationProfileError extends Error {
   readonly profile: CalculationProfileId
 
-  constructor(profile: CalculationProfileId, reason: string) {
+  constructor(profile: CalculationProfileId, reason: CalculationCapabilityReason) {
     super(reason)
     this.name = 'UnsupportedCalculationProfileError'
     this.profile = profile
@@ -68,13 +69,13 @@ export class UnsupportedCalculationProfileError extends Error {
 }
 
 export const CALCULATION_PROFILES: readonly CalculationProfileOption[] = [
-  { id: 'dumRt', label: 'ДУМ РТ' },
-  { id: 'dumRf', label: 'ДУМ РФ' },
-  { id: 'turkey', label: 'Турция · Diyanet' },
-  { id: 'muslimWorldLeague', label: 'Muslim World League' },
-  { id: 'karachi', label: 'Карачи' },
-  { id: 'northAmerica', label: 'ISNA' },
-  { id: 'ummAlQura', label: 'Умм аль-Кура' },
+  { id: 'dumRt' },
+  { id: 'dumRf' },
+  { id: 'turkey' },
+  { id: 'muslimWorldLeague' },
+  { id: 'karachi' },
+  { id: 'northAmerica' },
+  { id: 'ummAlQura' },
 ]
 
 export const DEFAULT_CALCULATION_SETTINGS: CalculationSettings = {
@@ -100,8 +101,7 @@ interface LocationCoordinates {
 const MINUTE = 60_000
 const DIRECT_ANGLE_MARGIN = 1_000
 const UMM_AL_QURA_CALENDAR = 'islamic-umalqura'
-export const UMM_AL_QURA_UNAVAILABLE_REASON =
-  'Профиль «Умм аль-Кура» недоступен: календарь islamic-umalqura не поддерживается этим браузером.'
+export const UMM_AL_QURA_UNAVAILABLE_REASON = 'ummAlQuraUnavailable' as const
 
 function dateFromIso(date: string): Date {
   const [year = 0, month = 0, day = 0] = date.split('-').map(Number)
@@ -114,7 +114,7 @@ function dateFromIso(date: string): Date {
     result.getMonth() !== month - 1 ||
     result.getDate() !== day
   ) {
-    throw new Error('Некорректная дата для расчёта')
+    throw new RangeError('invalid-calculation-date')
   }
   return result
 }
@@ -314,7 +314,7 @@ export function calculatePrayerSchedule(
   timeZone: string,
   settings: CalculationSettings = DEFAULT_CALCULATION_SETTINGS,
 ): CalculatedPrayerSchedule {
-  if (!isCalculationSettings(settings)) throw new RangeError('Некорректные параметры расчёта')
+  if (!isCalculationSettings(settings)) throw new RangeError('invalid-calculation-settings')
   const locationClock = createLocationClock(timeZone)
   const calendarDate = dateFromIso(date)
   const coordinates = new Coordinates(location.latitude, location.longitude)

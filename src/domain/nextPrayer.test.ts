@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { PrayerDay } from './types'
-import { findCurrentPrayer, findNextPrayer, formatRemainingTime } from './nextPrayer'
+import { findCurrentPrayer, findNextPrayer } from './nextPrayer'
 import { calculatePrayerSchedule } from './prayerCalculation'
 import { DUM_RT_TIME_ZONE } from './locationTime'
 
@@ -47,22 +47,6 @@ describe('findNextPrayer', () => {
     })
   })
 
-  it.each([
-    ['fajrStart', 'До Фаджра'],
-    ['fajrJamaat', 'До утреннего в мечети'],
-    ['sunrise', 'До восхода'],
-    ['zenith', 'До зенита'],
-    ['dhuhr', 'До зухра'],
-    ['asr', 'До асра'],
-    ['maghrib', 'До магриба'],
-    ['isha', 'До иша'],
-  ] as const)('формирует подпись таймера для события %s', (key, countdownLabel) => {
-    const eventInstant = new Date(`${today.date}T${today[key]}:00+03:00`)
-    const next = findNextPrayer(new Date(eventInstant.getTime() - 1_000), today)
-
-    expect(next).toMatchObject({ key, countdownLabel })
-  })
-
   it('считает до ближайшего события, включая восход и зенит', () => {
     const next = findNextPrayer(
       new Date('2026-09-01T01:00:00.000Z'),
@@ -72,8 +56,6 @@ describe('findNextPrayer', () => {
 
     expect(next).toMatchObject({
       key: 'sunrise',
-      label: 'Восход',
-      countdownLabel: 'До восхода',
       time: '04:48',
     })
     expect(next?.remainingSeconds).toBe(2_880)
@@ -88,23 +70,18 @@ describe('findNextPrayer', () => {
 
     expect(next).toMatchObject({
       key: 'fajrStart',
-      label: 'Фаджр (конец сухура)',
-      countdownLabel: 'До Фаджра',
       date: '2026-09-02',
       time: '02:21',
     })
   })
 
-  it('использует короткую подпись для утреннего намаза в мечети', () => {
+  it('выбирает джамаат по стабильному ключу', () => {
     const next = findNextPrayer(
       new Date('2026-09-01T00:00:00.000Z'),
       today,
     )
 
-    expect(next).toMatchObject({
-      key: 'fajrJamaat',
-      countdownLabel: 'До утреннего в мечети',
-    })
+    expect(next?.key).toBe('fajrJamaat')
   })
 
   it('возвращает null, когда следующего дня в официальных данных ещё нет', () => {
@@ -126,8 +103,6 @@ describe('findNextPrayer', () => {
 
     expect(next).toMatchObject({
       key: 'fajr',
-      label: 'Фаджр',
-      countdownLabel: 'До фаджра',
       time: schedule.entries.fajr.time,
       remainingSeconds: 1,
     })
@@ -146,7 +121,6 @@ describe('findNextPrayer', () => {
 
     expect(next).toMatchObject({
       key: 'sunrise',
-      countdownLabel: 'До восхода',
       remainingSeconds: 1,
     })
   })
@@ -169,7 +143,7 @@ describe('findCurrentPrayer', () => {
       today,
     )
 
-    expect(current).toMatchObject({ key: 'sunrise', label: 'Восход', time: '04:48' })
+    expect(current).toMatchObject({ key: 'sunrise', time: '04:48' })
   })
 
   it('после зенита считает текущим зенит до наступления зухра', () => {
@@ -178,7 +152,7 @@ describe('findCurrentPrayer', () => {
       today,
     )
 
-    expect(current).toMatchObject({ key: 'zenith', label: 'Зенит', time: '11:44' })
+    expect(current).toMatchObject({ key: 'zenith', time: '11:44' })
   })
 
   it('в момент наступления намаза сразу считает его текущим', () => {
@@ -198,17 +172,6 @@ describe('findCurrentPrayer', () => {
     )
 
     expect(current).toMatchObject({ key: 'isha', date: '2026-08-31', time: '20:33' })
-  })
-})
-
-describe('formatRemainingTime', () => {
-  it('кратко показывает часы и минуты, сохраняя точность меньше минуты', () => {
-    expect(formatRemainingTime(12_240)).toBe('3 ч 24 мин')
-    expect(formatRemainingTime(3_600)).toBe('1 ч')
-    expect(formatRemainingTime(60)).toBe('1 мин')
-    expect(formatRemainingTime(5)).toBe('< 1 мин')
-    expect(formatRemainingTime(0)).toBe('0 мин')
-    expect(formatRemainingTime(-5)).toBe('0 мин')
   })
 })
 

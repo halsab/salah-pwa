@@ -124,9 +124,9 @@ describe('новые настройки', () => {
     expect(onChange).toHaveBeenLastCalledWith(manualCalculation(draft))
   })
   it('показывает неподдерживаемый профиль недоступным', () => {
-    render(<SettingsScreens {...defaults} screen="profiles" preferences={automaticPreferences()} onChange={vi.fn()} getCapability={profile => profile === 'ummAlQura' ? { supported: false, reason: 'Нет календаря' } : { supported: true }} />)
+    render(<SettingsScreens {...defaults} screen="profiles" preferences={automaticPreferences()} onChange={vi.fn()} getCapability={profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true }} />)
     expect(screen.getByRole('button', { name: 'Умм аль-Кура' })).toBeDisabled()
-    expect(screen.getByText('Нет календаря')).toBeVisible()
+    expect(screen.getByText(/Профиль «Умм аль-Кура» недоступен/)).toBeVisible()
   })
   it('позволяет открыть все пункты меню без дополнительных разделов', async () => {
     const onOpen = vi.fn<(screen: AppScreen) => void>()

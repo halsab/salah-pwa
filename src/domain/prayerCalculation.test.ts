@@ -159,7 +159,7 @@ describe('calculatePrayerSchedule', () => {
       withSettings({ profile: 'northAmerica' }),
     )
 
-    expect(CALCULATION_PROFILES).toContainEqual({ id: 'dumRf', label: 'ДУМ РФ' })
+    expect(CALCULATION_PROFILES.map(profile => profile.id)).toContain('dumRf')
     expect(dumRf.profile).toBe('dumRf')
     expect(dumRf.entries.fajr.instant).toBeGreaterThan(dumRt.entries.fajr.instant)
     expect(dumRf.entries.fajr.instant).toBeLessThan(isna.entries.fajr.instant)
@@ -237,8 +237,7 @@ describe('calculatePrayerSchedule', () => {
   })
 
   it('явно отклоняет Умм аль-Кура, если точный календарь недоступен', () => {
-    const reason =
-      'Профиль «Умм аль-Кура» недоступен: календарь islamic-umalqura не поддерживается этим браузером.'
+    const reason = 'ummAlQuraUnavailable' as const
     const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions
     vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(
       function (this: Intl.DateTimeFormat) {
@@ -295,5 +294,5 @@ it('applies explicit angles and Isha interval while retaining profile and polar 
   }
 })
 it('rejects non-finite custom settings before generating an invalid instant', () => {
-  expect(() => calculatePrayerSchedule(KAZAN, '2026-01-01', 'Europe/Moscow', withSettings({ adjustments: { fajr: Infinity } }))).toThrow('Некорректные параметры')
+  expect(() => calculatePrayerSchedule(KAZAN, '2026-01-01', 'Europe/Moscow', withSettings({ adjustments: { fajr: Infinity } }))).toThrow('invalid-calculation-settings')
 })
