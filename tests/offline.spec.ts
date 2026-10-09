@@ -35,6 +35,15 @@ test('сохранённое расписание и поиск города р�
     await page.getByRole('button', { name: 'Найти город' }).click()
     await page.getByRole('searchbox').fill('Москва')
     await expect(page.getByRole('button', { name: 'Москва, Москва, Россия', exact: true })).toBeVisible()
+
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await expectSchedule(page, 7)
+    await page.locator('#home-date').click()
+    await page.getByRole('button', { name: 'Праздники и события' }).click()
+    await expect(page.locator('.religious-event-list-row').first()).toBeVisible()
+    await page.locator('.religious-event-list-row').first().click()
+    await expect(page.locator('.markdown-article h1')).toBeVisible()
+    await expect(page.getByRole('region').filter({ has: page.locator('.markdown-article') })).toBeVisible()
   } finally {
     await context.setOffline(false)
   }

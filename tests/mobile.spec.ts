@@ -34,6 +34,7 @@ test('поиск города остаётся доступным при уме�
       offsetTop: { configurable: true, value: 30 },
     })
     viewport.dispatchEvent(new Event('resize'))
+    return new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
   })
 
   await expect(search).toBeVisible()
@@ -48,4 +49,33 @@ test('поиск города остаётся доступным при уме�
   expect(withinVisualViewport).toBe(true)
   await city.click()
   await expect(page.locator('#home-location')).toHaveAccessibleName(/^Москва(?: \d{2}:\d{2})?$/)
+})
+
+test('интерактивные элементы не попадают под системные safe-area', async ({ page }) => {
+  await page.goto('./')
+  await choosePlace(page)
+  await expectSchedule(page)
+
+  const safeArea = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)'
+    document.body.append(probe)
+    const style = getComputedStyle(probe)
+    const insets = { top: parseFloat(style.paddingTop), bottom: parseFloat(style.paddingBottom) }
+    probe.remove()
+    return insets
+  })
+  const controls = await page.evaluate(() => {
+    const top = document.querySelector('#home-location')
+    const bottom = document.querySelector('#home-settings')
+    if (!(top instanceof HTMLElement) || !(bottom instanceof HTMLElement)) throw new Error('Не найдены основные действия')
+    return {
+      top: top.getBoundingClientRect().top,
+      bottom: bottom.getBoundingClientRect().bottom,
+      height: window.innerHeight,
+    }
+  })
+
+  expect(controls.top).toBeGreaterThanOrEqual(safeArea.top)
+  expect(controls.bottom).toBeLessThanOrEqual(controls.height - safeArea.bottom)
 })

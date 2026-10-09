@@ -29,6 +29,8 @@ test('production CSP allows the app and blocks a third-party connection', async 
   const html = await response.text()
   const tags = html.match(/<meta\b[^>]*http-equiv=["']Content-Security-Policy["'][^>]*>/gi) ?? []
   expect(tags).toHaveLength(1)
+  const firstResourceTag = html.search(/<(?:script|link)\b/i)
+  expect(html.indexOf(tags[0])).toBeLessThan(firstResourceTag)
 
   await page.addInitScript(() => {
     const runtimeWindow = window as Window & { __cspViolations?: CspViolation[] }
