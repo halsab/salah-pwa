@@ -6,8 +6,9 @@ import {
   resolveLocale,
   restoreLanguagePreference,
 } from './locale'
-import { formatCivilDate, formatClockTime, formatDateTime, formatNumber, interpolate, pluralCategory } from './formatters'
+import { formatCivilDate, formatClockTime, formatDateTime, formatLocaleDate, formatNumber, interpolate, pluralCategory } from './formatters'
 import { translate, validateCatalog } from './messages'
+import { formatLocalizedGregorianDate, formatLocalizedGregorianNightRange } from './calendar'
 
 describe('локализация', () => {
   it('регистрирует только полностью поддержанный русский интерфейс', () => {
@@ -39,6 +40,20 @@ describe('локализация', () => {
     expect(formatDateTime(instant, 'Europe/Moscow')).toContain('15:00')
     expect(formatCivilDate('2026-09-01')).toBe('1 сентября')
     expect(formatNumber(1_234.5)).toBe('1 234,5')
+  })
+
+  it.each(['th-TH-u-ca-buddhist', 'ar-SA-u-ca-islamic-umalqura'])('явно форматирует Gregorian даты для locale %s', locale => {
+    const formatYear = (year: number) => new Intl.NumberFormat(locale, { useGrouping: false }).format(year)
+    expect(formatLocaleDate('2026-01-02', locale, { year: 'numeric' })).toContain(formatYear(2026))
+    expect(formatLocaleDate('2026-01-02', locale, { day: 'numeric', month: 'numeric', year: 'numeric' })).not.toContain(formatYear(1447))
+    expect(formatLocalizedGregorianDate('2026-01-02', locale)).toContain(formatYear(2026))
+    expect(formatLocalizedGregorianNightRange('2026-01-03', '2026-01-02', locale)).toContain(formatYear(2026))
+  })
+
+  it('сохраняет civil day и час Place на границе календарного года', () => {
+    expect(formatLocaleDate('2026-12-31', 'ru', { day: 'numeric', month: 'numeric', year: 'numeric' })).toBe('31.12.2026')
+    expect(formatDateTime(new Date('2026-12-31T23:30:00.000Z'), 'Europe/Moscow')).toContain('01.01.2027')
+    expect(formatClockTime(new Date('2026-12-31T23:30:00.000Z'), 'Europe/Moscow')).toBe('02:30')
   })
 
   it('безопасно восстанавливает сохранённое значение', () => {

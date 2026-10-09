@@ -44,10 +44,10 @@ export function formatLocalizedCalendarDate(
 
 export function formatLocalizedGregorianDate(
   date: string,
-  locale: SupportedLocale = 'ru',
+  locale: string = 'ru',
 ): string {
   const parts = new Intl.DateTimeFormat(locale, {
-    timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
+    calendar: 'gregory', timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
   }).formatToParts(new Date(`${date}T12:00:00.000Z`))
   const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? ''
   return `${value('day')} ${value('month')} ${value('year')}`
@@ -56,11 +56,11 @@ export function formatLocalizedGregorianDate(
 export function formatLocalizedGregorianNightRange(
   targetDate: string,
   previousDate: string,
-  locale: SupportedLocale = 'ru',
+  locale: string = 'ru',
 ): string {
   const dateParts = (date: string) => {
     const parts = new Intl.DateTimeFormat(locale, {
-      timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
+      calendar: 'gregory', timeZone: 'UTC', day: 'numeric', month: 'long', year: 'numeric',
     }).formatToParts(new Date(`${date}T12:00:00.000Z`))
     const value = (type: Intl.DateTimeFormatPartTypes) => parts.find(part => part.type === type)?.value ?? ''
     return { day: value('day'), month: value('month'), year: value('year') }
