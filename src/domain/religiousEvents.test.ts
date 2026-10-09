@@ -36,32 +36,31 @@ function resolve(date: string, options: Partial<Parameters<typeof resolveReligio
 }
 
 describe('реестр религиозных событий', () => {
-  it('фиксирует стабильные id, titles, kinds и локальный contentId', () => {
+  it('фиксирует стабильные id, kinds и локальный contentId без display-текста', () => {
     expect(RELIGIOUS_EVENT_IDS).toEqual([
       'hijri-new-year', 'ashura', 'mawlid', 'raghaib', 'isra-miraj', 'baraat',
       'ramadan', 'eid-al-fitr', 'dhul-hijjah-first-ten', 'arafa', 'eid-al-adha', 'tashriq',
     ])
-    expect(RELIGIOUS_EVENTS.map(({ id, title, kind, contentId }) => ({ id, title, kind, contentId }))).toEqual([
-      { id: 'hijri-new-year', title: 'Новый год по хиджре', kind: 'day', contentId: 'hijri-new-year' },
-      { id: 'ashura', title: 'День Ашура', kind: 'day', contentId: 'ashura' },
-      { id: 'mawlid', title: 'Мавлид ан-Наби ﷺ', kind: 'day', contentId: 'mawlid' },
-      { id: 'raghaib', title: 'Ночь Рагаиб', kind: 'night', contentId: 'raghaib' },
-      { id: 'isra-miraj', title: 'Исра и Ми‘радж', kind: 'night', contentId: 'isra-miraj' },
-      { id: 'baraat', title: 'Ночь Бараат', kind: 'night', contentId: 'baraat' },
-      { id: 'ramadan', title: 'Рамадан', kind: 'period', contentId: 'ramadan' },
-      { id: 'eid-al-fitr', title: 'Ураза-байрам', kind: 'day', contentId: 'eid-al-fitr' },
-      { id: 'dhul-hijjah-first-ten', title: 'Первые 10 дней Зуль-хиджи', kind: 'period', contentId: 'dhul-hijjah-first-ten' },
-      { id: 'arafa', title: 'День Арафа', kind: 'day', contentId: 'arafa' },
-      { id: 'eid-al-adha', title: 'Курбан-байрам', kind: 'day', contentId: 'eid-al-adha' },
-      { id: 'tashriq', title: 'Дни ташрика', kind: 'period', contentId: 'tashriq' },
+    expect(RELIGIOUS_EVENTS.map(({ id, kind, contentId }) => ({ id, kind, contentId }))).toEqual([
+      { id: 'hijri-new-year', kind: 'day', contentId: 'hijri-new-year' },
+      { id: 'ashura', kind: 'day', contentId: 'ashura' },
+      { id: 'mawlid', kind: 'day', contentId: 'mawlid' },
+      { id: 'raghaib', kind: 'night', contentId: 'raghaib' },
+      { id: 'isra-miraj', kind: 'night', contentId: 'isra-miraj' },
+      { id: 'baraat', kind: 'night', contentId: 'baraat' },
+      { id: 'ramadan', kind: 'period', contentId: 'ramadan' },
+      { id: 'eid-al-fitr', kind: 'day', contentId: 'eid-al-fitr' },
+      { id: 'dhul-hijjah-first-ten', kind: 'period', contentId: 'dhul-hijjah-first-ten' },
+      { id: 'arafa', kind: 'day', contentId: 'arafa' },
+      { id: 'eid-al-adha', kind: 'day', contentId: 'eid-al-adha' },
+      { id: 'tashriq', kind: 'period', contentId: 'tashriq' },
     ])
+    expect(RELIGIOUS_EVENTS.every(event => !('title' in event) && !('listTitle' in event))).toBe(true)
     expect(isReligiousEventId('arafa')).toBe(true)
     expect(isReligiousEventId('laylat-al-qadr')).toBe(false)
   })
 
-  it('задаёт отдельные названия списка и скрывает в нём только дни ташрика', () => {
-    expect(RELIGIOUS_EVENTS.find(event => event.id === 'ramadan')).toMatchObject({ listTitle: 'Начало Рамадана' })
-    expect(RELIGIOUS_EVENTS.find(event => event.id === 'dhul-hijjah-first-ten')).toMatchObject({ listTitle: 'Начало Зуль-хиджи' })
+  it('скрывает в списке только дни ташрика', () => {
     expect(RELIGIOUS_EVENTS.find(event => event.id === 'tashriq')).toMatchObject({ showInEventsList: false })
   })
 })
@@ -76,16 +75,16 @@ describe('listReligiousEventOccurrences', () => {
 
   it('перечисляет reference dates, начала периодов и target dates ночей', () => {
     const occurrences = list('2025-12-25', '2026-06-17')
-    expect(occurrences.map(({ eventId, civilDate, title }) => ({ eventId, civilDate, title }))).toEqual([
-      { eventId: 'raghaib', civilDate: '2025-12-26', title: 'Ночь Рагаиб' },
-      { eventId: 'isra-miraj', civilDate: '2026-01-16', title: 'Исра и Ми‘радж' },
-      { eventId: 'baraat', civilDate: '2026-02-03', title: 'Ночь Бараат' },
-      { eventId: 'ramadan', civilDate: '2026-02-18', title: 'Начало Рамадана' },
-      { eventId: 'eid-al-fitr', civilDate: '2026-03-20', title: 'Ураза-байрам' },
-      { eventId: 'dhul-hijjah-first-ten', civilDate: '2026-05-18', title: 'Начало Зуль-хиджи' },
-      { eventId: 'arafa', civilDate: '2026-05-26', title: 'День Арафа' },
-      { eventId: 'eid-al-adha', civilDate: '2026-05-27', title: 'Курбан-байрам' },
-      { eventId: 'hijri-new-year', civilDate: '2026-06-16', title: 'Новый год по хиджре' },
+    expect(occurrences.map(({ eventId, civilDate }) => ({ eventId, civilDate }))).toEqual([
+      { eventId: 'raghaib', civilDate: '2025-12-26' },
+      { eventId: 'isra-miraj', civilDate: '2026-01-16' },
+      { eventId: 'baraat', civilDate: '2026-02-03' },
+      { eventId: 'ramadan', civilDate: '2026-02-18' },
+      { eventId: 'eid-al-fitr', civilDate: '2026-03-20' },
+      { eventId: 'dhul-hijjah-first-ten', civilDate: '2026-05-18' },
+      { eventId: 'arafa', civilDate: '2026-05-26' },
+      { eventId: 'eid-al-adha', civilDate: '2026-05-27' },
+      { eventId: 'hijri-new-year', civilDate: '2026-06-16' },
     ])
     expect(occurrences.find(event => event.eventId === 'baraat')?.hijriDate).toEqual({ year: 1447, month: 8, day: 15 })
     expect(occurrences.some(event => event.eventId === 'tashriq')).toBe(false)
@@ -134,7 +133,7 @@ describe('resolveReligiousBanner', () => {
     ['2026-05-28', 'tashriq'],
     ['2026-05-30', 'tashriq'],
   ])('разрешает reference date %s как %s', (date, eventId) => {
-    expect(resolve(date)).toMatchObject({ eventId, secondaryText: null })
+    expect(resolve(date)).toMatchObject({ eventId, secondary: null })
   })
 
   it('применяет correction -1/0/+1 к дате события', () => {
@@ -144,38 +143,38 @@ describe('resolveReligiousBanner', () => {
   })
 
   it('удерживает Рамадан до фактического конца месяца и показывает приближение Ураза-байрама', () => {
-    expect(resolve('2026-03-16')).toMatchObject({ eventId: 'ramadan', secondaryText: null })
-    expect(resolve('2026-03-17')).toMatchObject({ eventId: 'ramadan', secondaryText: 'Ураза-байрам через 3 дня' })
-    expect(resolve('2026-03-18')).toMatchObject({ eventId: 'ramadan', secondaryText: 'Ураза-байрам через 2 дня' })
-    expect(resolve('2026-03-19')).toMatchObject({ eventId: 'ramadan', secondaryText: 'Ураза-байрам завтра' })
-    expect(resolve('2026-03-20')).toMatchObject({ eventId: 'eid-al-fitr', secondaryText: null })
+    expect(resolve('2026-03-16')).toMatchObject({ eventId: 'ramadan', secondary: null })
+    expect(resolve('2026-03-17')).toMatchObject({ eventId: 'ramadan', secondary: { type: 'event-days', eventId: 'eid-al-fitr', count: 3 } })
+    expect(resolve('2026-03-18')).toMatchObject({ eventId: 'ramadan', secondary: { type: 'event-days', eventId: 'eid-al-fitr', count: 2 } })
+    expect(resolve('2026-03-19')).toMatchObject({ eventId: 'ramadan', secondary: { type: 'event-days', eventId: 'eid-al-fitr', count: 1 } })
+    expect(resolve('2026-03-20')).toMatchObject({ eventId: 'eid-al-fitr', secondary: null })
   })
 
   it('сохраняет period, а concrete day заменяет его только в день события', () => {
-    expect(resolve('2026-05-23')).toMatchObject({ eventId: 'dhul-hijjah-first-ten', secondaryText: 'День Арафа через 3 дня' })
-    expect(resolve('2026-05-25')).toMatchObject({ eventId: 'dhul-hijjah-first-ten', secondaryText: 'День Арафа завтра' })
-    expect(resolve('2026-05-26')).toMatchObject({ eventId: 'arafa', secondaryText: null })
-    expect(resolve('2026-05-27')).toMatchObject({ eventId: 'eid-al-adha', secondaryText: null })
-    expect(resolve('2026-05-28')).toMatchObject({ eventId: 'tashriq', secondaryText: null })
+    expect(resolve('2026-05-23')).toMatchObject({ eventId: 'dhul-hijjah-first-ten', secondary: { type: 'event-days', eventId: 'arafa', count: 3 } })
+    expect(resolve('2026-05-25')).toMatchObject({ eventId: 'dhul-hijjah-first-ten', secondary: { type: 'event-days', eventId: 'arafa', count: 1 } })
+    expect(resolve('2026-05-26')).toMatchObject({ eventId: 'arafa', secondary: null })
+    expect(resolve('2026-05-27')).toMatchObject({ eventId: 'eid-al-adha', secondary: null })
+    expect(resolve('2026-05-28')).toMatchObject({ eventId: 'tashriq', secondary: null })
   })
 
   it('показывает ближайшее событие только в пределах трёх civil days', () => {
     expect(resolve('2026-06-12')).toBeNull()
-    expect(resolve('2026-06-13')).toMatchObject({ eventId: 'hijri-new-year', secondaryText: 'через 3 дня' })
-    expect(resolve('2026-06-14')).toMatchObject({ eventId: 'hijri-new-year', secondaryText: 'через 2 дня' })
-    expect(resolve('2026-06-15')).toMatchObject({ eventId: 'hijri-new-year', secondaryText: 'завтра' })
+    expect(resolve('2026-06-13')).toMatchObject({ eventId: 'hijri-new-year', secondary: { type: 'days', count: 3 } })
+    expect(resolve('2026-06-14')).toMatchObject({ eventId: 'hijri-new-year', secondary: { type: 'days', count: 2 } })
+    expect(resolve('2026-06-15')).toMatchObject({ eventId: 'hijri-new-year', secondary: { type: 'days', count: 1 } })
   })
 
   it('вычисляет Рагаиб как ночь перед первой пятницей Раджаба', () => {
-    expect(resolve('2025-12-25', { schedules: nightSchedules('2025-12-25') })).toMatchObject({ eventId: 'raghaib', secondaryText: null })
-    expect(resolve('2025-12-22', { schedules: nightSchedules('2025-12-25') })).toMatchObject({ eventId: 'raghaib', secondaryText: 'через 3 дня' })
+    expect(resolve('2025-12-25', { schedules: nightSchedules('2025-12-25') })).toMatchObject({ eventId: 'raghaib', secondary: null })
+    expect(resolve('2025-12-22', { schedules: nightSchedules('2025-12-25') })).toMatchObject({ eventId: 'raghaib', secondary: { type: 'days', count: 3 } })
   })
 
   it.each([
     ['2026-01-15', 'isra-miraj'],
     ['2026-02-02', 'baraat'],
   ])('разрешает fixed night anchor %s как %s', (anchor, eventId) => {
-    expect(resolve(anchor, { schedules: nightSchedules(anchor) })).toMatchObject({ eventId, secondaryText: null })
+    expect(resolve(anchor, { schedules: nightSchedules(anchor) })).toMatchObject({ eventId, secondary: null })
   })
 
   it('держит ночь от anchor day до точного Фаджра и использует official fajrStart', () => {

@@ -41,7 +41,6 @@ it('оставляет occurrence без статьи неинтерактивн
   const occurrence: ReligiousEventOccurrence = {
     eventId: 'ashura',
     kind: 'day',
-    title: 'День Ашура',
     civilDate: '2026-06-25',
     hijriDate: { year: 1448, month: 1, day: 10 },
     contentId: null,
@@ -60,7 +59,6 @@ it.each([
   expect(formatReligiousEventOccurrenceDate({
     eventId: 'baraat',
     kind: kind as 'night',
-    title: 'Ночь Бараат',
     civilDate,
     hijriDate: civilDate === '2026-02-03'
       ? { year: 1447, month: 8, day: 15 }

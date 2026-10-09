@@ -1,4 +1,4 @@
-import { UMM_AL_QURA_UNAVAILABLE_REASON, type AsrMethod, type CalculationProfileCapability, type CalculationProfileId, type HighLatitudeMethod } from '../domain/prayerCalculation'
+import type { AsrMethod, CalculationProfileCapability, CalculationProfileId, HighLatitudeMethod } from '../domain/prayerCalculation'
 import type { CalculatedPrayerKey } from '../domain/types'
 import type { MessageKey, Translator } from '../localization/messages'
 
@@ -25,7 +25,5 @@ export const PROFILE_LABEL_KEYS: Record<CalculationProfileId, MessageKey> = {
 
 export function calculationCapabilityMessage(profile: CalculationProfileId, capability: CalculationProfileCapability, t: Translator): string | null {
   if (capability.supported) return null
-  return profile === 'ummAlQura' && capability.reason === UMM_AL_QURA_UNAVAILABLE_REASON
-    ? t('unsupportedProfile', { profile: t(PROFILE_LABEL_KEYS[profile]) })
-    : capability.reason
+  return t('unsupportedProfile', { profile: t(PROFILE_LABEL_KEYS[profile]) })
 }

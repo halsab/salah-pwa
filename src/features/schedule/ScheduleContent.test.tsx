@@ -146,10 +146,15 @@ describe('новое расписание', () => {
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     expect(screen.queryByRole('list')).not.toBeInTheDocument()
     expect(screen.getByText('Загружаем расписание…')).toBeVisible()
-    rerender(<ScheduleContent {...base} scheduleError="Ошибка данных" />)
+    rerender(<ScheduleContent {...base} scheduleError={{ code: 'load-failed' }} />)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    expect(screen.getByRole('alert')).toHaveTextContent('Ошибка данных')
+    expect(screen.getByRole('alert')).toHaveTextContent('Не удалось загрузить расписание. Попробуйте ещё раз.')
     expect(screen.getByRole('button', { name: 'Повторить' })).toBeVisible()
+  })
+
+  it('локализует ошибку профиля в presentation по стабильному id', () => {
+    render(<ScheduleContent {...base} scheduleError={{ code: 'unsupported-profile', profile: 'ummAlQura' }} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Профиль «Умм аль-Кура» недоступен')
   })
 
   it('для другого дня не показывает текущую метку и живой отсчёт', () => {

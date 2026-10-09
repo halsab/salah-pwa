@@ -3,14 +3,13 @@ import { getEffectiveParameters } from '../../domain/prayerCalculation'
 import type { DatasetMeta } from '../../storage/database'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
-import { formatCompactDateLabel, formatDateLabel } from '../../domain/date'
 import { ASR_METHOD_KEYS, EVENT_LABEL_KEYS, HIGH_LATITUDE_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
 import { markdownLink, markdownText } from '../../ui/markdownContent'
 import type { CalculatedPrayerKey } from '../../domain/types'
-import { formatDateTime, formatLocaleDate, useLocalization } from '../../localization'
+import { formatCompactDateLabel, formatDateLabel, formatDateTime, formatLocaleDate, useLocalization } from '../../localization'
 
 export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel, checkedAt, updateFailed, onOpenMethodology }: {
   open: boolean; onClose: () => void; context: ScheduleContext; schedule: PrayerSchedule
@@ -20,10 +19,11 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   if (!open) return null
   const official = context.source === 'official'
   const provider = official ? PRAYER_PROVIDERS.find(item => item.id === context.provider) : null
+  const providerName = provider?.id === 'dumRt' ? t('dumRt') : t('provider')
   const calculated = 'entries' in schedule ? schedule : null
   const params = context.source === 'calculated' ? getEffectiveParameters(context.settings, context.date, context.timeZone) : null
   const lateFajrStart = buildScheduleEvents(schedule).find(event => event.key === 'fajrStart' && event.dayOffset === -1)
-  const title = official ? provider?.label ?? t('officialTable') : t('calculatedSourceTitle')
+  const title = official ? provider ? providerName : t('officialTable') : t('calculatedSourceTitle')
   const facts: [string, string][] = [[t('timezone'), context.timeZone]]
   if (official) facts.push(
     [t('dataPoint'), meta?.locations.find(location => location.id === context.localityId)?.name ?? t('publishedPoint')],
@@ -59,7 +59,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     context.mode === 'automatic' ? t('automaticCoverage') : '',
     official ? `## ${t('sourceFacts')}` : `## ${t('sourceParameters')}`,
     facts.map(([label, value]) => `- **${label}:** ${markdownText(value)}`).join('\n'),
-    official ? markdownLink(t('primarySource', { name: provider?.label ?? t('provider') }), meta?.source.url ?? provider?.bundled.source.url ?? '') : '',
+    official ? markdownLink(t('primarySource', { name: provider ? providerName : t('provider') }), meta?.source.url ?? provider?.bundled.source.url ?? '') : '',
     `## ${t('important')}`,
     ...important,
     official ? '' : markdownLink(t('adhanProfilesLink'), 'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md'),

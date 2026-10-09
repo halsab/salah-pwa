@@ -3,11 +3,11 @@ export * from './formatters'
 export * from './messages'
 
 import { useMemo } from 'react'
-import { translate, type Translator } from './messages'
+import { createTranslator } from './messages'
 import { useLocalizationSnapshot } from './locale'
 
 export function useLocalization() {
   const { locale, preference } = useLocalizationSnapshot()
-  const t = useMemo<Translator>(() => (key, ...args) => translate(locale, key, ...args), [locale])
+  const t = useMemo(() => createTranslator(locale), [locale])
   return { locale, preference, t }
 }

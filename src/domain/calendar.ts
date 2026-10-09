@@ -1,4 +1,4 @@
-import { addDays, formatCompactDateLabel } from './date'
+import { addDays } from './date'
 
 export type CalendarKind = 'gregorian' | 'hijri'
 export type DateCorrection = -1 | 0 | 1
@@ -6,9 +6,6 @@ export interface CalendarPreferences { calendar: CalendarKind; correction: DateC
 export interface CalendarDate { year: number; month: number; day: number }
 
 export const DEFAULT_CALENDAR_PREFERENCES: CalendarPreferences = { calendar: 'gregorian', correction: 0 }
-export const GREGORIAN_MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'] as const
-export const HIJRI_MONTHS = ['мухаррам', 'сафар', 'раби аль-авваль', 'раби ас-сани', 'джумада аль-уля', 'джумада ас-сания', 'раджаб', 'шаабан', 'рамадан', 'шавваль', 'зуль-када', 'зуль-хиджа'] as const
-const COMPACT_HIJRI_MONTHS = ['мухаррам', 'сафар', 'раби I', 'раби II', 'джумада I', 'джумада II', 'раджаб', 'шаабан', 'рамадан', 'шавваль', 'зуль-када', 'зуль-хиджа'] as const
 const DAY_MS = 86_400_000
 let hijriFormatter: Intl.DateTimeFormat | undefined
 
@@ -17,7 +14,7 @@ function getHijriFormatter() {
     calendar: 'islamic-umalqura', numberingSystem: 'latn', timeZone: 'UTC',
     year: 'numeric', month: 'numeric', day: 'numeric',
   })
-  if (hijriFormatter.resolvedOptions().calendar !== 'islamic-umalqura') throw new Error('Календарь хиджры недоступен')
+  if (hijriFormatter.resolvedOptions().calendar !== 'islamic-umalqura') throw new Error('hijri-calendar-unavailable')
   return hijriFormatter
 }
 
@@ -67,7 +64,7 @@ function monthStart(year: number, month: number, calendar: CalendarKind): number
     else high = middle
   }
   const found = hijriParts(new Date(low * DAY_MS))
-  if (found.year !== year || found.month !== month || found.day !== 1) throw new RangeError('Дата вне диапазона календаря')
+  if (found.year !== year || found.month !== month || found.day !== 1) throw new RangeError('calendar-date-out-of-range')
   return low
 }
 
@@ -79,10 +76,4 @@ export function civilDateFromCalendar({ year, month, day }: CalendarDate, calend
   const clampedDay = Math.max(1, Math.min(day, daysInCalendarMonth(year, month, calendar)))
   const offset = calendar === 'hijri' ? correction : 0
   return new Date((monthStart(year, month, calendar) + clampedDay - 1 - offset) * DAY_MS).toISOString().slice(0, 10)
-}
-
-export function formatCalendarDate(date: string, { calendar, correction }: CalendarPreferences): string {
-  if (calendar === 'gregorian') return formatCompactDateLabel(date)
-  const parts = calendarDateFromCivil(date, calendar, correction)
-  return `${parts.day} ${COMPACT_HIJRI_MONTHS[parts.month - 1]}`
 }

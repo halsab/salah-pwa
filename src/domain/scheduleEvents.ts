@@ -8,20 +8,18 @@ export type EventKind = 'prayer' | 'jamaat' | 'marker'
 
 interface EventDefinition {
   kind: EventKind
-  label: string
-  countdownLabel: string
 }
 
 const EVENT_DEFINITIONS: Record<SchedulePrayerKey, EventDefinition> = {
-  fajrStart: { kind: 'prayer', label: 'Фаджр (конец сухура)', countdownLabel: 'До Фаджра' },
-  fajrJamaat: { kind: 'jamaat', label: 'Утренний намаз в мечетях', countdownLabel: 'До утреннего в мечети' },
-  fajr: { kind: 'prayer', label: 'Фаджр', countdownLabel: 'До фаджра' },
-  sunrise: { kind: 'marker', label: 'Восход', countdownLabel: 'До восхода' },
-  zenith: { kind: 'marker', label: 'Зенит', countdownLabel: 'До зенита' },
-  dhuhr: { kind: 'prayer', label: 'Зухр', countdownLabel: 'До зухра' },
-  asr: { kind: 'prayer', label: 'Аср', countdownLabel: 'До асра' },
-  maghrib: { kind: 'prayer', label: 'Магриб', countdownLabel: 'До магриба' },
-  isha: { kind: 'prayer', label: 'Иша', countdownLabel: 'До иша' },
+  fajrStart: { kind: 'prayer' },
+  fajrJamaat: { kind: 'jamaat' },
+  fajr: { kind: 'prayer' },
+  sunrise: { kind: 'marker' },
+  zenith: { kind: 'marker' },
+  dhuhr: { kind: 'prayer' },
+  asr: { kind: 'prayer' },
+  maghrib: { kind: 'prayer' },
+  isha: { kind: 'prayer' },
 }
 
 interface EventSource extends EventDefinition {

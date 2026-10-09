@@ -28,8 +28,6 @@ type ReligiousEventRule =
 
 export interface ReligiousEventDefinition {
   readonly id: ReligiousEventId
-  readonly title: string
-  readonly listTitle?: string
   readonly showInEventsList?: boolean
   readonly kind: ReligiousEventKind
   readonly rule: ReligiousEventRule
@@ -41,18 +39,18 @@ function event(definition: ReligiousEventDefinition): Readonly<ReligiousEventDef
 }
 
 export const RELIGIOUS_EVENTS: readonly Readonly<ReligiousEventDefinition>[] = Object.freeze([
-  event({ id: 'hijri-new-year', title: 'Новый год по хиджре', kind: 'day', rule: { type: 'fixed', month: 1, day: 1 }, contentId: 'hijri-new-year' }),
-  event({ id: 'ashura', title: 'День Ашура', kind: 'day', rule: { type: 'fixed', month: 1, day: 10 }, contentId: 'ashura' }),
-  event({ id: 'mawlid', title: 'Мавлид ан-Наби ﷺ', kind: 'day', rule: { type: 'fixed', month: 3, day: 12 }, contentId: 'mawlid' }),
-  event({ id: 'raghaib', title: 'Ночь Рагаиб', kind: 'night', rule: { type: 'ragaib' }, contentId: 'raghaib' }),
-  event({ id: 'isra-miraj', title: 'Исра и Ми‘радж', kind: 'night', rule: { type: 'fixed', month: 7, day: 27 }, contentId: 'isra-miraj' }),
-  event({ id: 'baraat', title: 'Ночь Бараат', kind: 'night', rule: { type: 'fixed', month: 8, day: 15 }, contentId: 'baraat' }),
-  event({ id: 'ramadan', title: 'Рамадан', listTitle: 'Начало Рамадана', kind: 'period', rule: { type: 'month', month: 9 }, contentId: 'ramadan' }),
-  event({ id: 'eid-al-fitr', title: 'Ураза-байрам', kind: 'day', rule: { type: 'fixed', month: 10, day: 1 }, contentId: 'eid-al-fitr' }),
-  event({ id: 'dhul-hijjah-first-ten', title: 'Первые 10 дней Зуль-хиджи', listTitle: 'Начало Зуль-хиджи', kind: 'period', rule: { type: 'range', month: 12, startDay: 1, endDay: 10 }, contentId: 'dhul-hijjah-first-ten' }),
-  event({ id: 'arafa', title: 'День Арафа', kind: 'day', rule: { type: 'fixed', month: 12, day: 9 }, contentId: 'arafa' }),
-  event({ id: 'eid-al-adha', title: 'Курбан-байрам', kind: 'day', rule: { type: 'fixed', month: 12, day: 10 }, contentId: 'eid-al-adha' }),
-  event({ id: 'tashriq', title: 'Дни ташрика', showInEventsList: false, kind: 'period', rule: { type: 'range', month: 12, startDay: 11, endDay: 13 }, contentId: 'tashriq' }),
+  event({ id: 'hijri-new-year', kind: 'day', rule: { type: 'fixed', month: 1, day: 1 }, contentId: 'hijri-new-year' }),
+  event({ id: 'ashura', kind: 'day', rule: { type: 'fixed', month: 1, day: 10 }, contentId: 'ashura' }),
+  event({ id: 'mawlid', kind: 'day', rule: { type: 'fixed', month: 3, day: 12 }, contentId: 'mawlid' }),
+  event({ id: 'raghaib', kind: 'night', rule: { type: 'ragaib' }, contentId: 'raghaib' }),
+  event({ id: 'isra-miraj', kind: 'night', rule: { type: 'fixed', month: 7, day: 27 }, contentId: 'isra-miraj' }),
+  event({ id: 'baraat', kind: 'night', rule: { type: 'fixed', month: 8, day: 15 }, contentId: 'baraat' }),
+  event({ id: 'ramadan', kind: 'period', rule: { type: 'month', month: 9 }, contentId: 'ramadan' }),
+  event({ id: 'eid-al-fitr', kind: 'day', rule: { type: 'fixed', month: 10, day: 1 }, contentId: 'eid-al-fitr' }),
+  event({ id: 'dhul-hijjah-first-ten', kind: 'period', rule: { type: 'range', month: 12, startDay: 1, endDay: 10 }, contentId: 'dhul-hijjah-first-ten' }),
+  event({ id: 'arafa', kind: 'day', rule: { type: 'fixed', month: 12, day: 9 }, contentId: 'arafa' }),
+  event({ id: 'eid-al-adha', kind: 'day', rule: { type: 'fixed', month: 12, day: 10 }, contentId: 'eid-al-adha' }),
+  event({ id: 'tashriq', showInEventsList: false, kind: 'period', rule: { type: 'range', month: 12, startDay: 11, endDay: 13 }, contentId: 'tashriq' }),
 ])
 
 const RELIGIOUS_EVENT_ID_SET = new Set<string>(RELIGIOUS_EVENT_IDS)
@@ -63,8 +61,7 @@ export function isReligiousEventId(value: unknown): value is ReligiousEventId {
 
 export interface ReligiousBannerState {
   eventId: ReligiousEventId
-  title: string
-  secondaryText: string | null
+  secondary: { type: 'days'; count: number } | { type: 'event-days'; eventId: ReligiousEventId; count: number } | null
   contentId: ReligiousEventId | null
 }
 
@@ -86,7 +83,6 @@ interface UpcomingEvent {
 export interface ReligiousEventOccurrence {
   eventId: ReligiousEventId
   kind: ReligiousEventKind
-  title: string
   civilDate: string
   hijriDate: CalendarDate
   contentId: ReligiousEventId | null
@@ -137,7 +133,6 @@ export function listReligiousEventOccurrences(input: ListReligiousEventOccurrenc
       occurrences.push({
         eventId: definition.id,
         kind: definition.kind,
-        title: definition.listTitle ?? definition.title,
         civilDate: date,
         hijriDate: hijriDate(date, input.correction),
         contentId: definition.contentId ?? null,
@@ -147,15 +142,10 @@ export function listReligiousEventOccurrences(input: ListReligiousEventOccurrenc
   return occurrences.sort((left, right) => left.civilDate.localeCompare(right.civilDate) || left.eventId.localeCompare(right.eventId))
 }
 
-function countdown(offset: number): string {
-  return offset === 1 ? 'завтра' : `через ${offset} дня`
-}
-
-function banner(definition: Readonly<ReligiousEventDefinition>, secondaryText: string | null): ReligiousBannerState {
+function banner(definition: Readonly<ReligiousEventDefinition>, secondary: ReligiousBannerState['secondary']): ReligiousBannerState {
   return {
     eventId: definition.id,
-    title: definition.title,
-    secondaryText,
+    secondary,
     contentId: definition.contentId ?? null,
   }
 }
@@ -223,12 +213,12 @@ export function resolveReligiousBanner(input: ResolveReligiousBannerInput): Reli
     .sort(compareDefinitions)[0]
   if (period) {
     const upcomingConcrete = upcomingEvents(input, ['day', 'night'])[0]
-    const secondary = upcomingConcrete
-      ? `${upcomingConcrete.definition.title} ${countdown(upcomingConcrete.offset)}`
+    const secondary: ReligiousBannerState['secondary'] = upcomingConcrete
+      ? { type: 'event-days', eventId: upcomingConcrete.definition.id, count: upcomingConcrete.offset }
       : null
     return banner(period, secondary)
   }
 
   const upcoming = upcomingEvents(input, ['day', 'night', 'period'])[0]
-  return upcoming ? banner(upcoming.definition, countdown(upcoming.offset)) : null
+  return upcoming ? banner(upcoming.definition, { type: 'days', count: upcoming.offset }) : null
 }

@@ -59,6 +59,7 @@ describe('хронология расписания', () => {
 
   it('разделяет джамаат, начало Фаджра и дополнительные отметки', () => {
     const events = buildScheduleEvents(apastovo)
+    expect(events.every(event => !('label' in event) && !('countdownLabel' in event))).toBe(true)
     expect(events.find(({ key }) => key === 'fajrJamaat')?.kind).toBe('jamaat')
     expect(events.find(({ key }) => key === 'dhuhr')?.kind).toBe('prayer')
     expect(events.find(({ key }) => key === 'fajrStart')?.kind).toBe('prayer')

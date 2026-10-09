@@ -6,7 +6,6 @@ import type { DatasetMeta } from '../storage/database'
 
 export interface PrayerProvider {
   id: string
-  label: string
   priority: number
   timeZone: string
   coverage: string
@@ -14,7 +13,7 @@ export interface PrayerProvider {
   bundled: DatasetMeta
 }
 export const dumRtProvider: PrayerProvider = {
-  id: 'dumRt', label: 'ДУМ РТ', priority: 10, timeZone: DUM_RT_TIME_ZONE, coverage: 'RU-TA',
+  id: 'dumRt', priority: 10, timeZone: DUM_RT_TIME_ZONE, coverage: 'RU-TA',
   manifestUrl: `${import.meta.env.BASE_URL}data/prayer-times-manifest.json`,
   bundled: { ...coverage, identity: { ...coverage.identity, url: 'prayer-times-current.json' } },
 }

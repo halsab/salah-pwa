@@ -18,6 +18,7 @@ import {
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
+import { setLanguagePreference } from './localization'
 
 const kazanToday: PrayerDay = {
   locationId: 'kazan',
@@ -141,6 +142,24 @@ function createServices(
 }
 
 describe('Salah', () => {
+  it('не повторяет инициализацию и не сбрасывает текущий экран при смене языкового предпочтения', async () => {
+    const services = createServices()
+    render(<App services={services} />)
+    await screen.findByRole('timer')
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    const initializationCount = vi.mocked(services.initialize).mock.calls.length
+    const refreshCount = vi.mocked(services.refresh).mock.calls.length
+
+    try {
+      act(() => setLanguagePreference('ru'))
+      expect(await screen.findByRole('combobox', { name: 'Календарь' })).toBeVisible()
+      expect(services.initialize).toHaveBeenCalledTimes(initializationCount)
+      expect(services.refresh).toHaveBeenCalledTimes(refreshCount)
+    } finally {
+      act(() => setLanguagePreference('auto'))
+    }
+  })
+
   it('показывает icon-only кнопку настроек с доступным именем', async () => {
     render(<App services={createServices()} />)
     const settings = await screen.findByRole('button', { name: 'Настройки' })
@@ -504,9 +523,9 @@ describe('Salah', () => {
   })
 
   it('восстанавливается после смены неподдерживаемого профиля', async () => {
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'ummAlQura', overrides: {} }) })), getCalculationProfileCapability: profile => profile === 'ummAlQura' ? { supported: false, reason: 'Календарь профиля недоступен' } : { supported: true } })
+    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'ummAlQura', overrides: {} }) })), getCalculationProfileCapability: profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true } })
     render(<App services={services} />)
-    expect(await screen.findByRole('alert')).toHaveTextContent('Календарь профиля недоступен')
+    expect(await screen.findByRole('alert')).toHaveTextContent('Профиль «Умм аль-Кура» недоступен')
     await openSource()
     await userEvent.click(screen.getByRole('button', { name: /Профиль/ }))
     expect(screen.getByRole('button', { name: /Умм аль-Кура/ })).toBeDisabled()

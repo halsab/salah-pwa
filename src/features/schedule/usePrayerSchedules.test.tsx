@@ -206,6 +206,7 @@ describe('окно событий и гонки источников', () => {
     vi.mocked(initial.services.getDays).mockResolvedValueOnce([day('A', '2026-08-31'), day('B', '2026-09-01'), day('A', '2026-09-02')])
     const hook = observe(initial)
     await waitFor(() => expect(hook.result.current.scheduleError).not.toBeNull())
+    expect(hook.result.current.scheduleError).toEqual({ code: 'load-failed' })
     expect(hook.result.current.schedules).toEqual([])
     act(() => hook.result.current.retrySchedule())
     await waitFor(() => expect(hook.result.current.schedule).toMatchObject({ locationId: 'A' }))
