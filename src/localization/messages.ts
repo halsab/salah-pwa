@@ -10,6 +10,7 @@ type MinutesAfterSunsetParams = { minutes: number }
 type SourceValuesParams = { values: string }
 type SourceNameParams = { name: string }
 type LateFajrParams = { time: string; date: string }
+type EventCountdownParams = { event: string; count: number }
 
 export const RU_MESSAGES = Object.freeze({
   appLoading: 'Открываем расписание…',
@@ -200,6 +201,8 @@ export const RU_MESSAGES = Object.freeze({
   countdownAria: ({ label, remaining }: CountdownParams) => `${label}, осталось ${remaining}`,
   tomorrow: 'завтра',
   inDays: ({ count }: CountParams) => `через ${count} ${pluralCategory(count, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })}`,
+  eventCountdown: ({ event, count }: EventCountdownParams) => `${event} ${translate('ru', 'inDays', { count })}`,
+  eventCountdownTomorrow: ({ event }: { event: string }) => `${event} ${translate('ru', 'tomorrow')}`,
   eventHijriNewYear: 'Новый год по хиджре',
   eventAshura: 'День Ашура',
   eventMawlid: 'Мавлид ан-Наби ﷺ',

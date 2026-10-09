@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest'
 
 import { ReligiousEventBanner } from './ReligiousEventBanner'
 
-const state = { eventId: 'arafa', title: 'День Арафа', secondaryText: 'завтра', contentId: 'arafa' } as const
+const state = { eventId: 'arafa', secondary: { type: 'days', count: 1 }, contentId: 'arafa' } as const
 
 it('рендерит content banner кнопкой со стабильным id и остаётся центрированным блоком', async () => {
   const onOpen = vi.fn()
@@ -21,4 +21,13 @@ it('рендерит banner без content обычным неинтеракти
   render(<ReligiousEventBanner state={{ ...state, contentId: null }} onOpen={vi.fn()} />)
   expect(screen.queryByRole('button')).not.toBeInTheDocument()
   expect(screen.getByText('День Арафа').parentElement).not.toHaveAttribute('role', 'button')
+})
+
+it('рендерит локализованное название события и countdown из структурированных данных', () => {
+  render(<ReligiousEventBanner state={{
+    eventId: 'ramadan',
+    secondary: { type: 'event-days', eventId: 'eid-al-fitr', count: 2 },
+    contentId: 'ramadan',
+  }} onOpen={vi.fn()} />)
+  expect(screen.getByRole('button', { name: 'Рамадан Ураза-байрам через 2 дня' })).toBeVisible()
 })
