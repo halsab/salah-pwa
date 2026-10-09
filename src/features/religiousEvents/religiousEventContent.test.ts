@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { RELIGIOUS_EVENTS } from '../../domain/religiousEvents'
+import { localizedEventTitle } from '../../localization/religiousEvents'
 import { RELIGIOUS_EVENT_CONTENT } from './religiousEventContent'
 
 describe('локальные статьи религиозных событий', () => {
@@ -10,8 +11,9 @@ describe('локальные статьи религиозных событий'
       if (!event.contentId) throw new Error(`Нет contentId для ${event.id}`)
       const content = RELIGIOUS_EVENT_CONTENT[event.contentId]
       const headings = content.match(/^# .+$/gm) ?? []
-      expect(headings).toEqual([`# ${event.title}`])
-      expect(content.startsWith(`# ${event.title}\n`)).toBe(true)
+      const title = localizedEventTitle(event.id, 'ru')
+      expect(headings).toEqual([`# ${title}`])
+      expect(content.startsWith(`# ${title}\n`)).toBe(true)
     }
   })
 
