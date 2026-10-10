@@ -236,6 +236,25 @@ function toIsoDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+export function calculateSolarZenith(
+  location: LocationCoordinates,
+  date: string,
+  timeZone: string,
+): { time: PrayerTime; instant: number } | null {
+  try {
+    const clock = createLocationClock(timeZone)
+    const parameters = CalculationMethod.Other()
+    parameters.polarCircleResolution = PolarCircleResolution.Unresolved
+    parameters.rounding = Rounding.None
+    const transit = new PrayerTimes(new Coordinates(location.latitude, location.longitude), dateFromIso(date), parameters).dhuhr
+    if (!Number.isFinite(transit.getTime()) || clock.getCivilDate(transit) !== date) return null
+    const time = clock.getTime(transit)
+    return { time, instant: clock.toInstant(date, time).getTime() }
+  } catch {
+    return null
+  }
+}
+
 function angleIsAvailable(
   coordinates: Coordinates,
   date: string,

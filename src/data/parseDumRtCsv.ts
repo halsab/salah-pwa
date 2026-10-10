@@ -116,7 +116,10 @@ export function validateSchedule(
     if (dates.has(day.date)) {
       throw new Error(`${context} [date]: повторяется дата`)
     }
-    for (const field of OFFICIAL_TIME_FIELDS) parseTime(day[field], context, field)
+    for (const field of OFFICIAL_TIME_FIELDS) {
+      const value = day[field]
+      if (value !== undefined) parseTime(value, context, field)
+    }
     dates.add(day.date)
   }
 

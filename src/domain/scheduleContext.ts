@@ -1,6 +1,6 @@
 import { calculationSettingsKey } from './calculationSettings'
 import type { CalculationSettings } from './prayerCalculation'
-import type { PrayerDataset, PrayerDatasetManifest } from './types'
+import type { PrayerDataset, PrayerDatasetManifest, PrayerDatasetProvider } from './types'
 
 interface ScheduleContextBase {
   mode?: 'automatic' | 'manual'
@@ -16,14 +16,17 @@ export type ScheduleContext = ScheduleContextBase & (
 
 type DatasetDescriptor = Pick<PrayerDataset, 'schemaVersion'> & {
   source?: PrayerDataset['source']
-  provider?: string
+  provider?: string | PrayerDatasetProvider
+  providerInfo?: PrayerDatasetProvider
   identity?: Pick<PrayerDatasetManifest, 'version' | 'sha256' | 'url' | 'sequence'>
 }
 
 export function getDatasetRevision(meta: DatasetDescriptor): string {
   // Для старого офлайн-кеша без manifest остаётся идентичность опубликованного источника.
   return JSON.stringify([
-    meta.provider ?? 'dumRt', meta.schemaVersion, meta.identity?.version, meta.identity?.sha256,
+    (typeof meta.provider === 'string' ? meta.provider : meta.provider?.id) ?? meta.providerInfo?.id ?? 'dumRt',
+    meta.providerInfo?.revision, meta.providerInfo?.timeZone, meta.providerInfo?.coverage,
+    meta.schemaVersion, meta.identity?.version, meta.identity?.sha256,
     meta.identity?.url, meta.identity?.sequence, meta.source?.url, meta.source?.updatedAt, meta.source?.years,
   ])
 }

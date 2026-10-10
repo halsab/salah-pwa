@@ -50,7 +50,7 @@ export function resolvePrayerTimeSource(
     if (manual?.kind === 'official' && manual.provider !== dataset.provider) continue
     const locality = location.region?.code === dataset.coverage ? officialLocationForPlace(location, dataset.locations) : null
     if (!locality || !dataset.years.includes(Number((typeof date === 'string' ? date : getCivilDate(date, dataset.timeZone)).slice(0, 4)))) continue
-    return { kind: 'official', status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: dataset.timeZone }
+    return { kind: 'official', status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: locality.timeZone ?? dataset.timeZone }
   }
   if (manual?.kind === 'official') {
     return { kind: 'official', status: 'not-covered', provider: manual.provider, version: null, revision: null, coverage: null, locationId: null, timeZone: datasets.find(d => d.provider === manual.provider)?.timeZone ?? location.timeZone }

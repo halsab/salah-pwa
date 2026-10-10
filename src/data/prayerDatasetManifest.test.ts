@@ -19,7 +19,7 @@ const manifest: PrayerDatasetManifest = {
 const dataset = completeDataset()
 
 describe('prayer dataset manifest', () => {
-  it('принимает только schema 1, производную version, точное имя и lowercase SHA-256', () => {
+  it('принимает schema 1 и provider-relative dataset URLs с производной version и lowercase SHA-256', () => {
     expect(validatePrayerDatasetManifest(manifest)).toEqual({
       ok: true,
       value: manifest,
@@ -29,7 +29,10 @@ describe('prayer dataset manifest', () => {
       { ...manifest, schemaVersion: 2 },
       { ...manifest, version: `2-${'b'.repeat(16)}` },
       { ...manifest, version: `v2-${HASH.slice(0, 16)}` },
-      { ...manifest, url: 'other.json' },
+      { ...manifest, url: '../other.json' },
+      { ...manifest, url: '/other.json' },
+      { ...manifest, url: 'https://example.com/other.json' },
+      { ...manifest, provider: '../dumRt' },
       { ...manifest, sha256: 'A'.repeat(64) },
       { ...manifest, sha256: 'a'.repeat(63) },
     ]

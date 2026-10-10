@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { completeDataset } from '../test/prayerDataset'
 import { deleteSalahDatabase, getDatasetMeta, replaceDataset } from '../storage/database'
 import { createPrayerRepository } from './prayerRepository'
-import type { PrayerDatasetManifest } from '../domain/types'
+import type { PrayerDataset, PrayerDatasetManifest } from '../domain/types'
+import type { PrayerProvider } from './prayerProviders'
 
 const dataset = completeDataset()
 function manifest(hash = 'a', sequence = 1): PrayerDatasetManifest {
@@ -100,4 +101,50 @@ it('corrupt local rows can be replaced even when their stored hash matches the m
   const repo = createPrayerRepository({ fetch: update(), digest: () => Promise.resolve('a'.repeat(64)) })
   expect(await repo.initialize()).toMatchObject({ value: { dataState: 'invalid' } })
   expect(await repo.refresh()).toMatchObject({ dataState: 'ready', update: { status: 'idle' } })
+})
+
+it('refreshes independent provider manifests without replacing the other provider data', async () => {
+  const makeProviderDataset = (id: string, timeZone: string, fajrStart: '02:21' | '02:45'): PrayerDataset => ({
+    ...dataset,
+    schemaVersion: 3,
+    provider: { id, revision: 'revision-1', timeZone, coverage: {
+      geographic: `SYN-${id.toUpperCase()}`, startDate: '2026-01-01', endDate: '2026-12-31',
+    } },
+    locations: dataset.locations.map(location => ({ ...location, timeZone })),
+    days: dataset.days.map(({ fajrJamaat: _fajrJamaat, zenith: _zenith, ...day }, index) => ({
+      ...day, fajrStart: index === 0 ? fajrStart : day.fajrStart,
+    })),
+  })
+  const firstDataset = makeProviderDataset('synthetic-a', 'Asia/Almaty', '02:21')
+  const secondDataset = makeProviderDataset('synthetic-b', 'Europe/Istanbul', '02:45')
+  const identity = (provider: string, hash: string, sequence: number): PrayerDatasetManifest => ({
+    schemaVersion: 1, version: `3-${hash.slice(0, 16)}`, url: 'prayer-times-current.json', sha256: hash,
+    sequence, provider,
+  })
+  const hashA = 'a'.repeat(64), hashB = 'b'.repeat(64)
+  const provider = (id: string, timeZone: string): PrayerProvider => ({
+    id, priority: 10, timeZone, coverage: `SYN-${id.toUpperCase()}`,
+    manifestUrl: `https://example.test/${id}/prayer-times-manifest.json`,
+    bundled: { schemaVersion: 3, source: dataset.source, locations: dataset.locations, provider: id },
+  })
+  const firstProvider = provider('synthetic-a', 'Asia/Almaty')
+  const secondProvider = provider('synthetic-b', 'Europe/Istanbul')
+  await replaceDataset(secondDataset, identity('synthetic-b', hashB, 1), {
+    revision: null, isCurrent: () => true, provider: 'synthetic-b',
+  })
+  const firstFetch = vi.fn().mockResolvedValueOnce(response(identity('synthetic-a', hashA, 1)))
+    .mockResolvedValueOnce(new Response(JSON.stringify(firstDataset)))
+  const secondFetch = vi.fn().mockResolvedValueOnce(response(identity('synthetic-b', 'c'.repeat(64), 2)))
+    .mockResolvedValueOnce(new Response('invalid'))
+  const firstRepo = createPrayerRepository({ fetch: firstFetch, digest: () => Promise.resolve(hashA) }, firstProvider)
+  const secondRepo = createPrayerRepository({ fetch: secondFetch, digest: () => Promise.resolve('c'.repeat(64)) }, secondProvider)
+  const [firstResult, secondResult] = await Promise.all([firstRepo.refresh(), secondRepo.refresh()])
+  expect(firstResult).toMatchObject({ dataState: 'ready', update: { status: 'idle' } })
+  expect(secondResult).toMatchObject({ dataState: 'ready', update: { status: 'failed', reason: 'invalid' } })
+  expect(await getDatasetMeta('synthetic-a')).toMatchObject({ value: { identity: { sequence: 1 }, provider: 'synthetic-a' } })
+  expect(await getDatasetMeta('synthetic-b')).toMatchObject({ value: { identity: { sequence: 1 }, provider: 'synthetic-b' } })
+  expect(firstFetch.mock.calls[0]?.[0]).toBe(firstProvider.manifestUrl)
+  expect(secondFetch.mock.calls[0]?.[0]).toBe(secondProvider.manifestUrl)
+  expect(firstResult.meta?.providerInfo?.timeZone).toBe('Asia/Almaty')
+  expect(secondResult.meta?.providerInfo?.timeZone).toBe('Europe/Istanbul')
 })

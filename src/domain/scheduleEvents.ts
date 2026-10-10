@@ -1,10 +1,14 @@
 import { createLocationClock, DUM_RT_TIME_ZONE } from './locationTime'
 import { addDays } from './date'
-import type { CalculatedPrayerSchedule } from './prayerCalculation'
-import type { PrayerDay, PrayerTime, SchedulePrayerKey } from './types'
+import { calculateSolarZenith, type CalculatedPrayerSchedule } from './prayerCalculation'
+import type { PrayerDay, PrayerKey, PrayerTime, SchedulePrayerKey } from './types'
 
 export type PrayerSchedule = PrayerDay | CalculatedPrayerSchedule
 export type EventKind = 'prayer' | 'jamaat' | 'marker'
+
+function isCalculatedSchedule(schedule: PrayerSchedule): schedule is CalculatedPrayerSchedule {
+  return 'entries' in schedule
+}
 
 interface EventDefinition {
   kind: EventKind
@@ -13,6 +17,10 @@ interface EventDefinition {
 const EVENT_DEFINITIONS: Record<SchedulePrayerKey, EventDefinition> = {
   fajrStart: { kind: 'prayer' },
   fajrJamaat: { kind: 'jamaat' },
+  dhuhrJamaat: { kind: 'jamaat' },
+  asrJamaat: { kind: 'jamaat' },
+  maghribJamaat: { kind: 'jamaat' },
+  ishaJamaat: { kind: 'jamaat' },
   fajr: { kind: 'prayer' },
   sunrise: { kind: 'marker' },
   zenith: { kind: 'marker' },
@@ -31,33 +39,56 @@ interface EventSource extends EventDefinition {
 
 export interface ResolvedScheduleEvent extends EventSource {
   status: 'resolved'
+  provenance: 'published' | 'calculated'
   instant: number
   date: string
   dayOffset: number
 }
 
-export type ScheduleEvent = ResolvedScheduleEvent
+export interface UnavailableScheduleEvent extends EventDefinition {
+  key: 'zenith'
+  status: 'unavailable'
+  reason: 'calculation-failed'
+  provenance: 'calculated'
+  scheduleDate: string
+  timeZone: string
+}
+
+export type ScheduleEvent = ResolvedScheduleEvent | UnavailableScheduleEvent
 
 export function buildScheduleEvents(schedule: PrayerSchedule): ScheduleEvent[] {
-  const calculated = 'entries' in schedule
-  const timeZone = calculated ? schedule.timeZone : DUM_RT_TIME_ZONE
+  const calculated = isCalculatedSchedule(schedule)
+  const timeZone = calculated ? schedule.timeZone : schedule.timeZone ?? DUM_RT_TIME_ZONE
   const clock = createLocationClock(timeZone)
   const keys = (Object.keys(EVENT_DEFINITIONS) as SchedulePrayerKey[])
-    .filter((key) => calculated ? key in schedule.entries : key in schedule)
+    .filter((key) => calculated ? key in schedule.entries : key in schedule && schedule[key as keyof PrayerDay] !== undefined)
+  if (!calculated && !keys.includes('zenith')) keys.push('zenith')
 
   return keys.map((key): ScheduleEvent => {
     const entry = calculated && key in schedule.entries
       ? schedule.entries[key as keyof typeof schedule.entries]
       : null
-    const time = entry?.time ?? (schedule as PrayerDay)[key as keyof Omit<PrayerDay, 'date' | 'locationId'>]
+    const day = calculated ? null : schedule
+    const officialTime = day && key !== 'fajr' ? day[key] : undefined
+    let time: PrayerTime | undefined = entry?.time ?? officialTime
+    let instant = entry?.instant
+    let provenance: ResolvedScheduleEvent['provenance'] = calculated ? 'calculated' : day?.provenance?.[key as PrayerKey] ?? 'published'
+    if (key === 'zenith' && !time && !calculated) {
+      const transit = day?.coordinates ? calculateSolarZenith(day.coordinates, day.date, timeZone) : null
+      if (!transit) return { ...EVENT_DEFINITIONS.zenith, key: 'zenith', status: 'unavailable', reason: 'calculation-failed', provenance: 'calculated', scheduleDate: schedule.date, timeZone }
+      time = transit.time
+      instant = transit.instant
+      provenance = 'calculated'
+    }
+    if (!time) return { ...EVENT_DEFINITIONS.zenith, key: 'zenith', status: 'unavailable', reason: 'calculation-failed', provenance: 'calculated', scheduleDate: schedule.date, timeZone }
     const source: EventSource = { ...EVENT_DEFINITIONS[key], key, scheduleDate: schedule.date, timeZone, time }
     // Позднее начало Фаджра наступает накануне: дата строки обозначает следующий день поста.
     const eventDate = !calculated && key === 'fajrStart' && Number(time.split(':')[0]) >= 12
       ? addDays(schedule.date, -1) : schedule.date
-    const instant = entry?.instant ?? clock.toInstant(eventDate, time).getTime()
-    const date = clock.getCivilDate(new Date(instant))
+    const resolvedInstant = instant ?? clock.toInstant(eventDate, time).getTime()
+    const date = clock.getCivilDate(new Date(resolvedInstant))
     const dayOffset = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${schedule.date}T00:00:00Z`)) / 86_400_000
-    return { ...source, status: 'resolved', instant, date, dayOffset }
+    return { ...source, status: 'resolved', provenance, instant: resolvedInstant, date, dayOffset }
   })
 }
 
@@ -78,6 +109,7 @@ export function selectEventPair(now: Date, events: readonly ScheduleEvent[]): {
   let next: ResolvedScheduleEvent | null = null
   const nowInstant = now.getTime()
   for (const event of events) {
+    if (event.status !== 'resolved') continue
     if (event.instant > nowInstant) {
       if (!next || event.instant < next.instant
         || (event.instant === next.instant && tieBreak(event, next) < 0)) next = event

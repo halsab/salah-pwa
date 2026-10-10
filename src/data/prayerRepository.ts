@@ -12,12 +12,11 @@ import {
   clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getStoredDataset,
   replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance,
 } from '../storage/database'
-import { DEFAULT_OFFICIAL_LOCATIONS, dumRtProvider } from './prayerProviders'
+import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
 import { restoreThemeFamily, type ThemeFamily } from '../domain/theme'
 import { restoreLanguagePreference, type LanguagePreference } from '../localization/locale'
 
-const MANIFEST_URL = dumRtProvider.manifestUrl
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 export type DatasetUpdate = { status: 'idle' | 'refreshing' } | { status: 'failed'; reason: 'network' | 'timeout' | 'invalid' | 'storage' | 'superseded' }
 export interface PrayerRepositorySnapshot {
@@ -41,8 +40,8 @@ export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & 
   replace?: typeof replaceDataset
 }
 
-async function readLocalSnapshot(): Promise<Result<PrayerRepositorySnapshot, StorageFailure>> {
-  const stored = await getStoredDataset()
+async function readLocalSnapshot(provider: PrayerProvider): Promise<Result<PrayerRepositorySnapshot, StorageFailure>> {
+  const stored = await getStoredDataset(provider.id)
   if (!stored.ok) {
     if (stored.error.kind === 'data') return success({ meta: null, dataState: 'invalid', update: { status: 'idle' }, checkedAt: null })
     return failure(stored.error)
@@ -62,9 +61,9 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   if (!location) throw new Error('Не задано начальное место')
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
-export async function initializePrayerRepository(): Promise<Result<PrayerRepositoryState, StorageFailure>> {
+export async function initializePrayerRepository(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
   const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, calendarPreferences, languagePreference] = await Promise.all([
-    readLocalSnapshot(), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('themeFamily'),
+    readLocalSnapshot(provider), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('themeFamily'),
     getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('languagePreference'),
   ])
   if (!snapshot.ok) return snapshot
@@ -76,7 +75,7 @@ export async function initializePrayerRepository(): Promise<Result<PrayerReposit
   if (!recentPlaces.ok) return recentPlaces
   if (!calendarPreferences.ok) return calendarPreferences
   if (!languagePreference.ok) return languagePreference
-  const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta)
+  const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta ?? provider.bundled)
   return success({ ...snapshot.value, locationChoice,
     calendarPreferences: restoreCalendarPreferences(calendarPreferences.value),
     recentPlaces: restoreRecentPlaces(recentPlaces.value, locationChoice?.place?.id),
@@ -86,7 +85,7 @@ export async function initializePrayerRepository(): Promise<Result<PrayerReposit
     preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
 
-export function createPrayerRepository(operations: PrayerRepositoryOperations = {}) {
+export function createPrayerRepository(operations: PrayerRepositoryOperations = {}, provider: PrayerProvider = dumRtProvider) {
   const listeners = new Set<(snapshot: PrayerRepositorySnapshot) => void>()
   let pending: Promise<PrayerRepositorySnapshot> | null = null
   let controller: AbortController | null = null
@@ -107,10 +106,10 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     const isCurrent = () => operation === epoch && !signal.aborted
     let timedOut = false
     const task = async (): Promise<PrayerRepositorySnapshot> => {
-      const local = await readLocalSnapshot()
+      const local = await readLocalSnapshot(provider)
       if (!isCurrent()) return latest
       if (local.ok) latest = { ...local.value, checkedAt: latest.checkedAt }
-      const initialMeta = await getDatasetMeta()
+      const initialMeta = await getDatasetMeta(provider.id)
       if (!isCurrent()) return latest
       const revision = initialMeta.ok && initialMeta.value ? getDatasetRevision(initialMeta.value) : null
       emit({ ...latest, update: { status: 'refreshing' } })
@@ -123,20 +122,22 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       })
       // Таймаут охватывает тело ответа и digest; даже fetch, игнорирующий signal, не держит refresh открытым.
       const download = async () => {
-        const manifestResponse = await fetcher(MANIFEST_URL, { cache: 'no-store', signal })
+        const manifestResponse = await fetcher(provider.manifestUrl, { cache: 'no-store', signal })
         if (!manifestResponse.ok) return 'network' as const
         const manifest = validatePrayerDatasetManifest(await manifestResponse.json() as unknown)
         if (!manifest.ok) return 'invalid' as const
+        if ((provider.id !== 'dumRt' && manifest.value.provider !== provider.id)
+          || (manifest.value.provider !== undefined && manifest.value.provider !== provider.id)) return 'invalid' as const
         if (!isCurrent()) return 'superseded' as const
         if (latest.meta?.identity?.sha256 === manifest.value.sha256 && latest.meta.identity.sequence === manifest.value.sequence) return null
-        const response = await fetcher(resolvePrayerDatasetUrl(MANIFEST_URL, manifest.value), { cache: 'no-store', signal })
+        const response = await fetcher(resolvePrayerDatasetUrl(provider.manifestUrl, manifest.value), { cache: 'no-store', signal })
         if (!response.ok) return 'network' as const
         const verified = await verifyPrayerDatasetBytes(new Uint8Array(await response.arrayBuffer()), manifest.value, operations)
         if (!verified.ok) return verified.error.reason === 'invalid' ? 'invalid' as const : 'network' as const
         if (!isCurrent()) return 'superseded' as const
         const { schemaVersion: _schema, ...identity } = manifest.value
         // Внутри транзакции повторно проверяется revision: другая вкладка могла уже установить новый набор.
-        installation = (operations.replace ?? replaceDataset)(verified.value, identity, { revision, isCurrent, provider: dumRtProvider.id, generation: dataGeneration })
+        installation = (operations.replace ?? replaceDataset)(verified.value, identity, { revision, isCurrent, provider: provider.id, generation: dataGeneration })
         const replacement = await installation
         if (!replacement.ok) return replacement.error.kind === 'data' ? 'superseded' as const : 'storage' as const
         return null
@@ -145,7 +146,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       catch { reason = timedOut ? 'timeout' : 'network' }
       finally { clearTimeout(timeout) }
       if (operation !== epoch) return latest
-      const installed = await readLocalSnapshot()
+      const installed = await readLocalSnapshot(provider)
       if (operation !== epoch) return latest
       const snapshot: PrayerRepositorySnapshot = { ...(installed.ok ? installed.value : latest),
         checkedAt: reason ? latest.checkedAt : Date.now(), update: reason ? { status: 'failed', reason } : { status: 'idle' } }
@@ -161,13 +162,13 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     return running
   }
   return {
-    initialize: async () => { generation = await getDataGeneration(); return initializePrayerRepository() },
+    initialize: async () => { generation = await getDataGeneration(); return initializePrayerRepository(provider) },
     clearAppData,
     getDataGeneration,
     refresh,
     subscribe: (listener: (snapshot: PrayerRepositorySnapshot) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     invalidateAndDrain: async () => { epoch += 1; controller?.abort(); await pending; await installation; latest = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null } },
-    getDays: getPrayerDays,
+    getDays: (locationId: string, dates: readonly string[], revision: string) => getPrayerDays(locationId, dates, revision, provider.id),
     saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean): Promise<Result<void, StorageFailure | DataFailure>> => {
       if (patch.calendarPreferences && !isCalendarPreferences(patch.calendarPreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
@@ -180,4 +181,13 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     },
   }
 }
-export const prayerRepository = createPrayerRepository()
+export function createPrayerRepositories(
+  providers: readonly PrayerProvider[],
+  operationsForProvider: (provider: PrayerProvider) => PrayerRepositoryOperations = () => ({}),
+): ReadonlyMap<string, ReturnType<typeof createPrayerRepository>> {
+  if (new Set(providers.map(provider => provider.id)).size !== providers.length) throw new Error('Повторяется идентификатор источника расписания')
+  return new Map(providers.map(provider => [provider.id, createPrayerRepository(operationsForProvider(provider), provider)]))
+}
+
+export const prayerRepositories = createPrayerRepositories(PRAYER_PROVIDERS)
+export const prayerRepository = prayerRepositories.get(dumRtProvider.id) ?? createPrayerRepository()
