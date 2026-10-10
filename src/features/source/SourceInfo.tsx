@@ -42,7 +42,11 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   if (adjustments) facts.push([t('previousAdjustments'), adjustments])
 
   const lateFajrNote = lateFajrStart ? t('lateFajrNote', { time: markdownText(lateFajrStart.time), date: markdownText(formatDateLabel(lateFajrStart.date, locale)) }) : ''
+  const zenithEvent = buildScheduleEvents(schedule).find(event => event.key === 'zenith')
+  const calculatedZenith = official && zenithEvent?.provenance === 'calculated'
+    ? t(zenithEvent.status === 'resolved' ? 'calculatedZenithInfo' : 'calculatedZenithUnavailableInfo') : ''
   const runtimeNotes = [
+    calculatedZenith,
     calculated?.estimatedPrayers.length ? t('estimatedRule', { values: markdownText(calculated.estimatedPrayers.map(key => t(EVENT_LABEL_KEYS[key])).join(', ')) }) : '',
     calculated?.polarResolutionApplied ? t('polarResolution') : '',
     lateFajrNote,

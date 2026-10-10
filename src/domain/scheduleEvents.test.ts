@@ -77,7 +77,7 @@ describe('хронология расписания', () => {
     const zenith = events.find(event => event.key === 'zenith')
     expect(zenith).toMatchObject({ status: 'resolved', provenance: 'calculated', timeZone: 'Asia/Novosibirsk' })
     if (!zenith || zenith.status !== 'resolved') throw new Error('Зенит не рассчитан')
-    expect(zenith.instant).toBe(zonedDateTimeToInstant(schedule.date, zenith.time, 'Asia/Novosibirsk').getTime())
+    expect(Math.abs(zenith.instant - zonedDateTimeToInstant(schedule.date, zenith.time, 'Asia/Novosibirsk').getTime())).toBeLessThan(60_000)
     expect(buildScheduleEvents(apastovo).find(event => event.key === 'zenith')).toMatchObject({
       status: 'resolved', time: '12:01', provenance: 'published',
     })

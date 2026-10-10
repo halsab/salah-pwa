@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { getZonedTime } from './locationTime'
+import { getZonedTime, zonedDateTimeToInstant } from './locationTime'
 import {
   CALCULATION_PROFILES,
   UnsupportedCalculationProfileError,
   calculatePrayerSchedule,
+  calculateSolarZenith,
   getCalculationProfileCapability,
   type CalculationSettings,
 } from './prayerCalculation'
@@ -263,6 +264,25 @@ describe('calculatePrayerSchedule', () => {
 
     expect(thrown).toBeInstanceOf(UnsupportedCalculationProfileError)
     expect(thrown).toMatchObject({ profile: 'ummAlQura', message: reason })
+  })
+})
+
+describe('расчёт солнечного транзита', () => {
+  it.each([
+    [{ latitude: -13.83, longitude: -171.76 }, 'Pacific/Apia', '2026-01-15'],
+    [{ latitude: 1.87, longitude: -157.4 }, 'Pacific/Kiritimati', '2026-01-15'],
+    [{ latitude: 40.71, longitude: -74.01 }, 'America/New_York', '2026-03-08'],
+  ] as const)('возвращает зенит внутри местной даты %s %s', (coordinates, timeZone, date) => {
+    const zenith = calculateSolarZenith(coordinates, date, timeZone)
+    expect(zenith).not.toBeNull()
+    if (!zenith) throw new Error('Не удалось рассчитать зенит')
+    expect(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(zenith.instant)))
+      .toBe(date)
+    expect(Math.abs(zenith.instant - zonedDateTimeToInstant(date, zenith.time, timeZone).getTime())).toBeLessThan(60_000)
+  })
+
+  it('сохраняет явную недоступность для пропущенной гражданской даты', () => {
+    expect(calculateSolarZenith({ latitude: -13.83, longitude: -171.76 }, '2011-12-30', 'Pacific/Apia')).toBeNull()
   })
 })
 

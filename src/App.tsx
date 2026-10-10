@@ -11,7 +11,7 @@ import {
 
 import type { CityCatalogService } from './data/cityCatalog'
 import { cityCatalogService } from './data/cityCatalogClient'
-import { prayerRepository, type PrayerRepositoryState, type PrayerRepositorySnapshot } from './data/prayerRepository'
+import { prayerRepositories, prayerRepository, type PrayerRepositoryState, type PrayerRepositorySnapshot } from './data/prayerRepository'
 import { loadLocalGeography } from './data/localGeography'
 import type { CoverageGeometry } from './domain/localGeography'
 import { PRAYER_PROVIDERS, DEFAULT_OFFICIAL_LOCATIONS, officialDatasets } from './data/prayerProviders'
@@ -31,6 +31,7 @@ import {
 } from './domain/prayerCalculation'
 import { getDeviceTimeZone, getUtcOffset, getZonedTime } from './domain/locationTime'
 import type { Result } from './domain/result'
+import { failure } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
@@ -68,7 +69,8 @@ import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
 
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
-export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'getDays' | 'saveSettings' | 'invalidateAndDrain'> {
+export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
+  getDays: (locationId: string, dates: readonly string[], revision: string, provider: string) => ReturnType<typeof prayerRepository.getDays>
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
   getPermission: () => Promise<GeolocationPermission>
@@ -84,6 +86,11 @@ export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clea
 
 const defaultServices: AppServices = {
   ...prayerRepository,
+  getDays: (locationId, dates, revision, provider) => {
+    const repository = prayerRepositories.get(provider)
+    return repository ? repository.getDays(locationId, dates, revision)
+      : Promise.resolve(failure({ kind: 'data', reason: 'unavailable' }))
+  },
   cities: cityCatalogService,
   loadGeography: loadLocalGeography,
   getPermission: getGeolocationPermission,
@@ -222,8 +229,8 @@ export function App({
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
     : preferences.calculationDraft ? effectiveCalculationSettings(preferences.calculationDraft) : DEFAULT_CALCULATION_SETTINGS
   const scheduleServices = useMemo(() => ({
-    getDays: async (nextLocationId: string, dates: readonly string[], datasetRevision: string) => {
-      const result = await services.getDays(nextLocationId, dates, datasetRevision)
+    getDays: async (nextLocationId: string, dates: readonly string[], datasetRevision: string, provider: string) => {
+      const result = await services.getDays(nextLocationId, dates, datasetRevision, provider)
       if (!result.ok) throw new Error(result.error.reason)
       return result.value
     },

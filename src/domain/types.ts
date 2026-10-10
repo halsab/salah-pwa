@@ -115,6 +115,10 @@ export const OPTIONAL_OFFICIAL_TIME_FIELDS = [
   'fajrJamaat', 'dhuhrJamaat', 'asrJamaat', 'maghribJamaat', 'ishaJamaat', 'zenith',
 ] as const satisfies readonly PrayerKey[]
 
+export const REQUIRED_LEGACY_OFFICIAL_TIME_FIELDS = [
+  'fajrJamaat', 'zenith',
+] as const satisfies readonly PrayerKey[]
+
 export const OFFICIAL_TIME_FIELDS = [
   'fajrStart', 'fajrJamaat', 'sunrise', 'zenith', 'dhuhr', 'dhuhrJamaat', 'asr', 'asrJamaat',
   'maghrib', 'maghribJamaat', 'isha', 'ishaJamaat',

@@ -86,6 +86,15 @@ describe('новое расписание', () => {
     expect(screen.getByRole('timer')).toHaveAccessibleName(/^До зенита/)
   })
 
+  it('помечает рассчитанный зенит в официальном расписании', () => {
+    const { zenith: _zenith, ...withoutZenith } = day
+    const schedule = { ...withoutZenith, coordinates: { latitude: 55.79, longitude: 49.12 } }
+    render(<ScheduleContent {...base} schedule={schedule} schedules={[schedule]} />)
+    const zenith = screen.getByText('Зенит').closest('li')
+    expect(zenith).toHaveTextContent('расчётное')
+    expect(zenith).toHaveTextContent('11:')
+  })
+
   it('при переводе часов назад принимает новое текущее время после границы события', () => {
     vi.useFakeTimers()
     try {

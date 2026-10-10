@@ -99,6 +99,7 @@ interface LocationCoordinates {
 }
 
 const MINUTE = 60_000
+const DAY = 24 * 60 * MINUTE
 const DIRECT_ANGLE_MARGIN = 1_000
 const UMM_AL_QURA_CALENDAR = 'islamic-umalqura'
 export const UMM_AL_QURA_UNAVAILABLE_REASON = 'ummAlQuraUnavailable' as const
@@ -246,10 +247,19 @@ export function calculateSolarZenith(
     const parameters = CalculationMethod.Other()
     parameters.polarCircleResolution = PolarCircleResolution.Unresolved
     parameters.rounding = Rounding.None
-    const transit = new PrayerTimes(new Coordinates(location.latitude, location.longitude), dateFromIso(date), parameters).dhuhr
-    if (!Number.isFinite(transit.getTime()) || clock.getCivilDate(transit) !== date) return null
-    const time = clock.getTime(transit)
-    return { time, instant: clock.toInstant(date, time).getTime() }
+    const adhanTransit = new PrayerTimes(new Coordinates(location.latitude, location.longitude), dateFromIso(date), parameters).dhuhr
+    if (!Number.isFinite(adhanTransit.getTime())) return null
+    // Adhan stores transit's UTC clock components on the requested civil date; locate that instant inside the place's actual civil day.
+    let transit = adhanTransit
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const civilDate = clock.getCivilDate(transit)
+      if (civilDate === date) {
+        const time = clock.getTime(transit)
+        return { time, instant: transit.getTime() }
+      }
+      transit = new Date(transit.getTime() + (civilDate < date ? DAY : -DAY))
+    }
+    return null
   } catch {
     return null
   }

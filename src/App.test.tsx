@@ -146,6 +146,7 @@ describe('Salah', () => {
     const services = createServices()
     render(<App services={services} />)
     await screen.findByRole('timer')
+    expect(services.getDays).toHaveBeenCalledWith('kazan', expect.any(Array), expect.any(String), 'dumRt')
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     const initializationCount = vi.mocked(services.initialize).mock.calls.length
     const refreshCount = vi.mocked(services.refresh).mock.calls.length
@@ -572,7 +573,7 @@ describe('Salah', () => {
     const base = createServices()
     const chelny = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
     const apastovo = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ meta: { ...initializedState.meta, locations: [...initializedState.meta.locations, { id: 'apastovo', name: 'Апастово', latitude: 55.2, longitude: 48.5 }] } })), getDays: vi.fn<AppServices['getDays']>((id, dates, revision) => id === 'naberezhnye-chelny' ? chelny.promise : id === 'apastovo' ? apastovo.promise : base.getDays(id, dates, revision)) })
+    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ meta: { ...initializedState.meta, locations: [...initializedState.meta.locations, { id: 'apastovo', name: 'Апастово', latitude: 55.2, longitude: 48.5 }] } })), getDays: vi.fn<AppServices['getDays']>((id, dates, revision, provider) => id === 'naberezhnye-chelny' ? chelny.promise : id === 'apastovo' ? apastovo.promise : base.getDays(id, dates, revision, provider)) })
     render(<App services={services} />)
     await screen.findByRole('timer')
     await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)

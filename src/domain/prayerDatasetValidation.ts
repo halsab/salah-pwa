@@ -1,5 +1,5 @@
 import { isValidTimeZone } from './locationTime'
-import { OFFICIAL_TIME_FIELDS, OPTIONAL_OFFICIAL_TIME_FIELDS, REQUIRED_OFFICIAL_TIME_FIELDS, type PrayerDataset, type PrayerDay } from './types'
+import { OFFICIAL_TIME_FIELDS, OPTIONAL_OFFICIAL_TIME_FIELDS, REQUIRED_LEGACY_OFFICIAL_TIME_FIELDS, REQUIRED_OFFICIAL_TIME_FIELDS, type PrayerDataset, type PrayerDay } from './types'
 
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 
@@ -9,18 +9,32 @@ function isCivilDate(value: unknown): value is string {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
-export function isPrayerDay(value: unknown): value is PrayerDay {
+export function isPrayerDay(value: unknown, schemaVersion = 0): value is PrayerDay {
   if (!value || typeof value !== 'object') return false
   const day = value as Partial<PrayerDay>
-  const provenance: unknown = (value as Record<string, unknown>).provenance
+  const record = value as Record<string, unknown>
+  const provenance: unknown = record.provenance
   if ('suhurEnd' in value || typeof day.locationId !== 'string' || !day.locationId || !isCivilDate(day.date)) return false
-  const validTimes = REQUIRED_OFFICIAL_TIME_FIELDS.every(key => typeof day[key] === 'string' && TIME_PATTERN.test(day[key]))
+  const requiredFields = schemaVersion === 1 || schemaVersion === 2
+    ? [...REQUIRED_OFFICIAL_TIME_FIELDS, ...REQUIRED_LEGACY_OFFICIAL_TIME_FIELDS]
+    : REQUIRED_OFFICIAL_TIME_FIELDS
+  const validTimes = requiredFields.every(key => typeof day[key] === 'string' && TIME_PATTERN.test(day[key]))
     && OPTIONAL_OFFICIAL_TIME_FIELDS.every(key => day[key] === undefined || typeof day[key] === 'string' && TIME_PATTERN.test(day[key]))
   if (!validTimes) return false
-  if (provenance === undefined) return true
+  if (provenance === undefined) {
+    return schemaVersion < 3 || (!OPTIONAL_OFFICIAL_TIME_FIELDS.some(key => key.endsWith('Jamaat') && day[key] !== undefined)
+      && day.zenith === undefined)
+  }
   if (typeof provenance !== 'object' || provenance === null || Array.isArray(provenance)) return false
-  return Object.entries(provenance as Record<string, unknown>).every(([key, origin]) => OFFICIAL_TIME_FIELDS.includes(key as typeof OFFICIAL_TIME_FIELDS[number])
-    && (origin === 'published' || origin === 'calculated'))
+  return Object.entries(provenance as Record<string, unknown>).every(([key, origin]) => {
+    if (!OFFICIAL_TIME_FIELDS.includes(key as typeof OFFICIAL_TIME_FIELDS[number])
+      || record[key] === undefined
+      || (origin !== 'published' && origin !== 'calculated')) return false
+    if (origin === 'calculated' && key !== 'zenith') return false
+    if (schemaVersion === 3 && key.endsWith('Jamaat') && origin !== 'published') return false
+    return true
+  }) && OPTIONAL_OFFICIAL_TIME_FIELDS.filter(key => key.endsWith('Jamaat') && day[key] !== undefined)
+    .every(key => (provenance as Record<string, unknown>)[key] === 'published' || schemaVersion < 3)
 }
 
 export function normalizeStoredPrayerDay(value: unknown, schemaVersion: number): PrayerDay | null {
@@ -30,11 +44,11 @@ export function normalizeStoredPrayerDay(value: unknown, schemaVersion: number):
   const hasSuhurEnd = Object.hasOwn(record, 'suhurEnd')
   if (hasFajrStart && hasSuhurEnd) return null
   if (schemaVersion === 3 && hasSuhurEnd) return null
-  if ((schemaVersion === 2 || schemaVersion === 3) && hasFajrStart && isPrayerDay(record)) return record
+  if ((schemaVersion === 2 || schemaVersion === 3) && hasFajrStart && isPrayerDay(record, schemaVersion)) return record
   if (!hasSuhurEnd || hasFajrStart || typeof record.suhurEnd !== 'string') return null
   const { suhurEnd, ...rest } = record
   const normalized = { ...rest, fajrStart: suhurEnd }
-  return isPrayerDay(normalized) ? normalized : null
+  return isPrayerDay(normalized, schemaVersion) ? normalized : null
 }
 
 export function normalizeStoredPrayerDataset(value: unknown): PrayerDataset | null {
@@ -47,19 +61,33 @@ export function normalizeStoredPrayerDataset(value: unknown): PrayerDataset | nu
     if (!normalized) return null
     days.push(normalized)
   }
-  const canonical = { ...stored, schemaVersion: stored.schemaVersion === 3 ? 3 : 2, days }
+  let source = stored.source
+  if (stored.schemaVersion === 1) {
+    if (!source || typeof source !== 'object') return null
+    const legacySource = source as unknown as Record<string, unknown>
+    const year = legacySource.year
+    const existingYears = legacySource.years
+    if (year !== undefined && (typeof year !== 'number' || !Number.isInteger(year) || year < 1000 || year > 9999
+      || existingYears !== undefined && (!Array.isArray(existingYears) || existingYears.length !== 1 || existingYears[0] !== year))) return null
+    const years = existingYears ?? (typeof year === 'number' ? [year] : undefined)
+    const { year: _year, ...rest } = legacySource
+    source = (years ? { ...rest, years } : rest) as PrayerDataset['source']
+  }
+  const canonical = { ...stored, source, schemaVersion: stored.schemaVersion === 3 ? 3 : 2, days }
   return isPrayerDataset(canonical) ? canonical : null
 }
 
 export function isPrayerDataset(value: unknown): value is PrayerDataset {
   if (!value || typeof value !== 'object') return false
   const d = value as Partial<PrayerDataset>
-  if ((d.schemaVersion !== 2 && d.schemaVersion !== 3) || !d.source || typeof d.source.name !== 'string' || !d.source.name
-    || typeof d.source.url !== 'string' || !/^https:\/\//.test(d.source.url)
+  if ((d.schemaVersion !== 2 && d.schemaVersion !== 3) || !d.source || typeof d.source.name !== 'string' || !d.source.name.trim()
+    || typeof d.source.url !== 'string' || !isHttpsSourceUrl(d.source.url)
     || typeof d.source.updatedAt !== 'string' || !Number.isFinite(Date.parse(d.source.updatedAt)) || !Array.isArray(d.source.years) || !d.source.years.length
     || !d.source.years.every(y => Number.isInteger(y) && y >= 1000 && y <= 9999)
     || new Set(d.source.years).size !== d.source.years.length
     || !Array.isArray(d.locations) || !d.locations.length || !Array.isArray(d.days)) return false
+  if (d.schemaVersion === 2 && (d.source.name !== 'ДУМ Республики Татарстан'
+    || d.source.url !== 'https://dumrt.ru/ru/help-info/prayertime/')) return false
   const locations = new Set<string>()
   for (const item of d.locations) {
     const location = item as typeof item | null
@@ -81,6 +109,9 @@ export function isPrayerDataset(value: unknown): value is PrayerDataset {
       || typeof providerCoverage.geographic !== 'string' || !providerCoverage.geographic.trim()
       || !isCivilDate(providerCoverage.startDate) || !isCivilDate(providerCoverage.endDate)
       || providerCoverage.startDate > providerCoverage.endDate) return false
+    if (provider.id === 'dumRt' && (d.source.name !== 'ДУМ Республики Татарстан'
+      || d.source.url !== 'https://dumrt.ru/ru/help-info/prayertime/'
+      || provider.timeZone !== 'Europe/Moscow' || providerCoverage.geographic !== 'RU-TA')) return false
     const startDate = providerCoverage.startDate
     const endDate = providerCoverage.endDate
     if (!d.source.years.every(year => year >= Number(startDate.slice(0, 4))
@@ -92,7 +123,7 @@ export function isPrayerDataset(value: unknown): value is PrayerDataset {
     : d.source.years.reduce((total, year) => total + (Date.UTC(year + 1, 0, 1) - Date.UTC(year, 0, 1)) / 86_400_000, 0)
   if (d.days.length !== count * locations.size) return false
   for (const day of d.days) {
-    if (!isPrayerDay(day) || !locations.has(day.locationId) || !d.source.years.includes(Number(day.date.slice(0, 4)))) return false
+    if (!isPrayerDay(day, d.schemaVersion) || !locations.has(day.locationId) || !d.source.years.includes(Number(day.date.slice(0, 4)))) return false
     if (d.schemaVersion === 3 && (day.date < (d.provider?.coverage.startDate ?? '') || day.date > (d.provider?.coverage.endDate ?? ''))) return false
     const key = `${day.locationId}:${day.date}`
     if (dates.has(key)) return false
@@ -106,4 +137,13 @@ export function isPrayerDataset(value: unknown): value is PrayerDataset {
     }
   }
   return true
+}
+
+function isHttpsSourceUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && Boolean(url.hostname) && !url.username && !url.password
+  } catch {
+    return false
+  }
 }
