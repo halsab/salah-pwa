@@ -1,4 +1,5 @@
 import { CALCULATION_PROFILES, type AsrMethod, type CalculationProfileId, type CalculationSettings, type HighLatitudeMethod } from './prayerCalculation'
+import type { Place } from './place'
 import type { CalculatedPrayerKey } from './types'
 
 export type IshaMethod = { kind: 'angle'; angle: number } | { kind: 'interval'; minutes: number }
@@ -74,8 +75,15 @@ export function profileDefaults(profile: CalculationProfileId): CalculationSetti
     highLatitudeRule: profile === 'dumRt' ? 'dumRt' : 'twilightAngle',
   }
 }
-export function automaticCalculationDefaults(region: string | undefined): AutomaticCalculationDefaults {
-  const country = region === 'RU-TA' || region === 'RU.73' ? 'RU-TA' : region?.split('.')[0]
+export function automaticCalculationDefaults(
+  place: Pick<Place, 'selection' | 'region' | 'coverage'> | undefined,
+): AutomaticCalculationDefaults {
+  const regionCode = place?.region?.code
+  const country = place?.coverage === 'inside' && regionCode === 'RU-TA'
+    ? 'RU-TA'
+    : place?.selection === 'city' && regionCode && /^[A-Z]{2}(?:[.-][A-Z0-9]{1,3})?$/.test(regionCode)
+      ? regionCode.slice(0, 2)
+      : undefined
   const recommended = AUTOMATIC_CALCULATION_DEFAULTS[country ?? ''] ?? AUTOMATIC_CALCULATION_DEFAULTS.default
   if (!recommended) throw new RangeError('missing-automatic-calculation-defaults')
   return { ...recommended }

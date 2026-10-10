@@ -35,7 +35,27 @@ describe('calculation defaults', () => {
     ['KW.01', 'kuwait', 'standard'], ['EG.C', 'egyptian', 'standard'],
     ['ZA.11', 'muslimWorldLeague', 'standard'],
   ] as const)('provides future automatic defaults for %s without changing resolver behavior', (region, profile, asrMethod) => {
-    expect(automaticCalculationDefaults(region)).toMatchObject({ profile, asrMethod })
+    const confirmedTatarstan = region === 'RU-TA'
+    expect(automaticCalculationDefaults({
+      selection: 'city',
+      region: { code: region, name: region },
+      coverage: confirmedTatarstan ? 'inside' : 'outside',
+    })).toMatchObject({ profile, asrMethod })
+  })
+
+  it('does not treat an ambiguous Russian region code as confirmed Tatarstan coverage', () => {
+    expect(automaticCalculationDefaults({
+      selection: 'city', region: { code: 'RU.73', name: 'unknown region' }, coverage: 'outside',
+    })).toMatchObject({ profile: 'dumRf', asrMethod: 'standard' })
+    expect(automaticCalculationDefaults({
+      selection: 'city', region: { code: 'RU-TA', name: 'Tatarstan' }, coverage: 'outside',
+    })).toMatchObject({ profile: 'dumRf', asrMethod: 'standard' })
+  })
+
+  it('uses the regional recommendation only for a Place with confirmed Tatarstan coverage', () => {
+    expect(automaticCalculationDefaults({
+      selection: 'gps', region: { code: 'RU-TA', name: 'Tatarstan' }, coverage: 'inside',
+    })).toMatchObject({ profile: 'dumRt', asrMethod: 'hanafi' })
   })
 
   it('preserves explicit manual Asr, polar, custom-angle, interval, and adjustment overrides', () => {

@@ -250,28 +250,32 @@ function hasPolarGap(
   )
 }
 
-function getAstronomicalDate(
+function getCivilDateTransits(
   coordinates: Coordinates,
   civilDate: string,
   locationClock: ReturnType<typeof createLocationClock>,
-): string {
+): { date: string; transit: Date }[] {
+  // При несовпадении координат и часовой зоны полдень может оказаться на два дня от гражданской даты.
   const parameters = CalculationMethod.Other()
   parameters.polarCircleResolution = PolarCircleResolution.Unresolved
   parameters.rounding = Rounding.None
-  const matchingDates: string[] = []
+  const matchingTransits: { date: string; transit: Date }[] = []
   for (let offset = -2; offset <= 2; offset += 1) {
     const candidate = addDays(civilDate, offset)
     const transit = new PrayerTimes(coordinates, dateFromIso(candidate), parameters).dhuhr
     if (Number.isFinite(transit.getTime()) && locationClock.getCivilDate(transit) === civilDate) {
-      matchingDates.push(candidate)
+      matchingTransits.push({ date: candidate, transit })
     }
   }
-  if (matchingDates.length === 0) throw new RangeError('unresolved-astronomical-date')
-  return matchingDates.reduce((nearest, candidate) => {
-    const candidateDistance = Math.abs(Date.parse(`${candidate}T12:00:00Z`) - Date.parse(`${civilDate}T12:00:00Z`))
-    const nearestDistance = Math.abs(Date.parse(`${nearest}T12:00:00Z`) - Date.parse(`${civilDate}T12:00:00Z`))
-    return candidateDistance < nearestDistance ? candidate : nearest
-  })
+  return matchingTransits
+}
+
+function distanceFromLocalNoon(
+  transit: Date,
+  locationClock: ReturnType<typeof createLocationClock>,
+): number {
+  const [hours = 0, minutes = 0] = locationClock.getTime(transit).split(':').map(Number)
+  return Math.abs(hours * 60 + minutes - 12 * 60)
 }
 
 export function calculateSolarZenith(
@@ -281,25 +285,15 @@ export function calculateSolarZenith(
 ): { time: PrayerTime; instant: number } | null {
   try {
     const clock = createLocationClock(timeZone)
-    const parameters = CalculationMethod.Other()
-    parameters.polarCircleResolution = PolarCircleResolution.Unresolved
-    parameters.rounding = Rounding.None
     const coordinates = new Coordinates(location.latitude, location.longitude)
-    const transits: Date[] = []
     // Сдвиг timezone и долготы может разнести гражданскую и расчётную даты на двое суток.
-    for (let offset = -2; offset <= 2; offset += 1) {
-      const astronomicalDate = addDays(date, offset)
-      const transit = new PrayerTimes(coordinates, dateFromIso(astronomicalDate), parameters).dhuhr
-      if (Number.isFinite(transit.getTime()) && clock.getCivilDate(transit) === date) transits.push(transit)
-    }
+    const transits = getCivilDateTransits(coordinates, date, clock)
     if (transits.length === 0) return null
 
-    const distanceFromLocalNoon = (candidate: Date): number => {
-      const [hours = 0, minutes = 0] = clock.getTime(candidate).split(':').map(Number)
-      return Math.abs(hours * 60 + minutes - 12 * 60)
-    }
-    const transit = transits.reduce((nearest, candidate) =>
-      distanceFromLocalNoon(candidate) < distanceFromLocalNoon(nearest) ? candidate : nearest)
+    const { transit } = transits.reduce((nearest, candidate) =>
+      distanceFromLocalNoon(candidate.transit, clock) < distanceFromLocalNoon(nearest.transit, clock)
+        ? candidate
+        : nearest)
     return { time: clock.getTime(transit), instant: transit.getTime() }
   } catch {
     return null
@@ -388,7 +382,12 @@ export function calculatePrayerSchedule(
   const locationClock = createLocationClock(timeZone)
   dateFromIso(date)
   const coordinates = new Coordinates(location.latitude, location.longitude)
-  const astronomicalDate = getAstronomicalDate(coordinates, date, locationClock)
+  const transits = getCivilDateTransits(coordinates, date, locationClock)
+  if (transits.length === 0) throw new RangeError('unresolved-astronomical-date')
+  const { date: astronomicalDate, transit } = transits.reduce((nearest, candidate) =>
+    distanceFromLocalNoon(candidate.transit, locationClock) < distanceFromLocalNoon(nearest.transit, locationClock)
+      ? candidate
+      : nearest)
   const calendarDate = dateFromIso(astronomicalDate)
   const parameters = profileParameters(settings.profile, date, timeZone)
   applyUserRules(parameters, settings)
@@ -433,16 +432,6 @@ export function calculatePrayerSchedule(
     ishaEstimated = true
   }
 
-  const transitParameters = CalculationMethod.Other()
-  transitParameters.polarCircleResolution = parameters.polarCircleResolution
-  transitParameters.rounding =
-    settings.profile === 'dumRt' ? Rounding.None : parameters.rounding
-  const transit = new PrayerTimes(
-    coordinates,
-    calendarDate,
-    transitParameters,
-  ).dhuhr
-
   if (settings.profile === 'dumRt') {
     fajr = roundMinute(fajr, 'nearest')
     isha = roundMinute(isha, 'up')
@@ -451,7 +440,9 @@ export function calculatePrayerSchedule(
   const sunrise =
     settings.profile === 'dumRt' ? roundMinute(times.sunrise, 'up') : times.sunrise
   const zenith =
-    settings.profile === 'dumRt' ? roundMinute(transit, 'up') : transit
+    settings.profile === 'dumRt' ? roundMinute(transit, 'up')
+      : parameters.rounding === Rounding.None ? transit
+        : roundMinute(transit, parameters.rounding === Rounding.Up ? 'up' : 'nearest')
   const dhuhr =
     settings.profile === 'dumRt'
       ? roundMinute(addMinutes(transit, 1), 'up')
