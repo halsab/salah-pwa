@@ -517,6 +517,20 @@ describe('independent institutional comparisons', () => {
     )
     expect(deviations).toEqual(expectedDeviations)
   })
+
+  it('compares Kuwait City with the Ministry of Awqaf Ramadan 1437 timetable', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 29.3759, longitude: 47.9774 }, '2016-06-06', 'Asia/Kuwait',
+      { profile: 'kuwait', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+    const published = ['03:14', '04:48', '11:47', '15:21', '18:45', '20:16']
+    const deviations = keys.map((key, index) =>
+      minutes(schedule.entries[key].time) - minutes(published[index] ?? ''),
+    )
+    // Ministry of Awqaf, Kuwait: local Kuwait City Ramadan 1437 timetable, 1 Ramadan / 2016-06-06.
+    // https://content.awqaf.gov.kw/BasicPages/2020/9/bcc62a0167664473ac725715b92ef6fd.pdf
+    expect(deviations).toEqual([0, 0, 0, 0, 1, 1])
+  })
 })
 
 it('applies adjustments to absolute instants across midnight and countdown chronology', async () => {
