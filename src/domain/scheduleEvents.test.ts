@@ -83,6 +83,23 @@ describe('хронология расписания', () => {
     })
   })
 
+  it('сохраняет правильный транзит в событии для даты на линии перемены дат', () => {
+    const { fajrJamaat: _fajr, zenith: _zenith, ...published } = apastovo
+    const schedule = {
+      ...published,
+      date: '2026-01-01',
+      timeZone: 'Pacific/Apia',
+      coordinates: { latitude: -13.83, longitude: -171.76 },
+    }
+    const event = buildScheduleEvents(schedule).find(({ key }) => key === 'zenith')
+    expect(event).toMatchObject({
+      status: 'resolved', provenance: 'calculated', time: '12:30',
+      scheduleDate: '2026-01-01', date: '2026-01-01', dayOffset: 0,
+    })
+    if (!event || event.status !== 'resolved') throw new Error('Зенит не рассчитан')
+    expect(Math.abs(event.instant - Date.parse('2025-12-31T23:30:22.000Z'))).toBeLessThanOrEqual(5_000)
+  })
+
   it('поддерживает опубликованные congregation события для каждого применимого намаза', () => {
     const events = buildScheduleEvents({
       ...apastovo, dhuhrJamaat: '12:30', asrJamaat: '15:00', maghribJamaat: '16:45', ishaJamaat: '18:30',

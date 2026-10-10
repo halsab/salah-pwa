@@ -269,6 +269,24 @@ describe('calculatePrayerSchedule', () => {
 
 describe('расчёт солнечного транзита', () => {
   it.each([
+    ['Pacific/Apia на границе года', { latitude: -13.83, longitude: -171.76 }, 'Pacific/Apia', '2026-01-01', '2025-12-31T23:30:22.000Z', '12:30'],
+    ['Pacific/Kiritimati на границе года', { latitude: 1.87, longitude: -157.4 }, 'Pacific/Kiritimati', '2026-01-01', '2025-12-31T22:32:54.000Z', '12:32'],
+    ['Pacific/Kiritimati перед UTC-сменой года', { latitude: 1.87, longitude: -157.4 }, 'Pacific/Kiritimati', '2026-12-31', '2026-12-30T22:32:19.000Z', '12:32'],
+    ['New York при начале DST', { latitude: 40.71, longitude: -74.01 }, 'America/New_York', '2026-03-08', '2026-03-08T17:06:44.000Z', '13:06'],
+    ['New York при окончании DST', { latitude: 40.71, longitude: -74.01 }, 'America/New_York', '2026-11-01', '2026-11-01T16:39:34.000Z', '11:39'],
+    ['обычный пояс Europe/Moscow', { latitude: 55.79, longitude: 49.12 }, 'Europe/Moscow', '2026-06-21', '2026-06-21T08:45:19.000Z', '11:45'],
+  ] as const)('совпадает с независимым солнечным транзитом NOAA: %s', (_label, coordinates, timeZone, date, reference, localTime) => {
+    const zenith = calculateSolarZenith(coordinates, date, timeZone)
+    expect(zenith).not.toBeNull()
+    if (!zenith) throw new Error('Не удалось рассчитать зенит')
+    // Эталонные UTC-моменты рассчитаны по уравнениям NOAA: https://gml.noaa.gov/grad/solcalc/solareqns.PDF
+    expect(Math.abs(zenith.instant - Date.parse(reference))).toBeLessThanOrEqual(5_000)
+    expect(zenith.time).toBe(localTime)
+    expect(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(zenith.instant)))
+      .toBe(date)
+  })
+
+  it.each([
     [{ latitude: -13.83, longitude: -171.76 }, 'Pacific/Apia', '2026-01-15'],
     [{ latitude: 1.87, longitude: -157.4 }, 'Pacific/Kiritimati', '2026-01-15'],
     [{ latitude: 40.71, longitude: -74.01 }, 'America/New_York', '2026-03-08'],

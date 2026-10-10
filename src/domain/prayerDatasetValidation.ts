@@ -26,7 +26,11 @@ export function isPrayerDay(value: unknown, schemaVersion = 0): value is PrayerD
       && day.zenith === undefined)
   }
   if (typeof provenance !== 'object' || provenance === null || Array.isArray(provenance)) return false
-  return Object.entries(provenance as Record<string, unknown>).every(([key, origin]) => {
+  const provenanceEntries = provenance as Record<string, unknown>
+  if (schemaVersion === 3 && day.zenith !== undefined
+    && (!Object.hasOwn(provenanceEntries, 'zenith')
+      || (provenanceEntries.zenith !== 'published' && provenanceEntries.zenith !== 'calculated'))) return false
+  return Object.entries(provenanceEntries).every(([key, origin]) => {
     if (!OFFICIAL_TIME_FIELDS.includes(key as typeof OFFICIAL_TIME_FIELDS[number])
       || record[key] === undefined
       || (origin !== 'published' && origin !== 'calculated')) return false
@@ -34,7 +38,7 @@ export function isPrayerDay(value: unknown, schemaVersion = 0): value is PrayerD
     if (schemaVersion === 3 && key.endsWith('Jamaat') && origin !== 'published') return false
     return true
   }) && OPTIONAL_OFFICIAL_TIME_FIELDS.filter(key => key.endsWith('Jamaat') && day[key] !== undefined)
-    .every(key => (provenance as Record<string, unknown>)[key] === 'published' || schemaVersion < 3)
+    .every(key => provenanceEntries[key] === 'published' || schemaVersion < 3)
 }
 
 export function normalizeStoredPrayerDay(value: unknown, schemaVersion: number): PrayerDay | null {

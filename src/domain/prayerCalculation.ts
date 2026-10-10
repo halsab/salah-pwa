@@ -99,7 +99,6 @@ interface LocationCoordinates {
 }
 
 const MINUTE = 60_000
-const DAY = 24 * 60 * MINUTE
 const DIRECT_ANGLE_MARGIN = 1_000
 const UMM_AL_QURA_CALENDAR = 'islamic-umalqura'
 export const UMM_AL_QURA_UNAVAILABLE_REASON = 'ummAlQuraUnavailable' as const
@@ -247,19 +246,23 @@ export function calculateSolarZenith(
     const parameters = CalculationMethod.Other()
     parameters.polarCircleResolution = PolarCircleResolution.Unresolved
     parameters.rounding = Rounding.None
-    const adhanTransit = new PrayerTimes(new Coordinates(location.latitude, location.longitude), dateFromIso(date), parameters).dhuhr
-    if (!Number.isFinite(adhanTransit.getTime())) return null
-    // Adhan stores transit's UTC clock components on the requested civil date; locate that instant inside the place's actual civil day.
-    let transit = adhanTransit
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const civilDate = clock.getCivilDate(transit)
-      if (civilDate === date) {
-        const time = clock.getTime(transit)
-        return { time, instant: transit.getTime() }
-      }
-      transit = new Date(transit.getTime() + (civilDate < date ? DAY : -DAY))
+    const coordinates = new Coordinates(location.latitude, location.longitude)
+    const transits: Date[] = []
+    // Сдвиг timezone и долготы может разнести гражданскую и расчётную даты на двое суток.
+    for (let offset = -2; offset <= 2; offset += 1) {
+      const astronomicalDate = addDays(date, offset)
+      const transit = new PrayerTimes(coordinates, dateFromIso(astronomicalDate), parameters).dhuhr
+      if (Number.isFinite(transit.getTime()) && clock.getCivilDate(transit) === date) transits.push(transit)
     }
-    return null
+    if (transits.length === 0) return null
+
+    const distanceFromLocalNoon = (candidate: Date): number => {
+      const [hours = 0, minutes = 0] = clock.getTime(candidate).split(':').map(Number)
+      return Math.abs(hours * 60 + minutes - 12 * 60)
+    }
+    const transit = transits.reduce((nearest, candidate) =>
+      distanceFromLocalNoon(candidate) < distanceFromLocalNoon(nearest) ? candidate : nearest)
+    return { time: clock.getTime(transit), instant: transit.getTime() }
   } catch {
     return null
   }

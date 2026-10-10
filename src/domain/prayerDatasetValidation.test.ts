@@ -60,6 +60,64 @@ describe('валидация набора расписаний', () => {
       ? { ...day, provenance: { fajrJamaat: 'published', zenith: 'calculated' } } : day) })).toBe(true)
   })
 
+  it.each([
+    ['published zenith', 'published', true],
+    ['calculated zenith', 'calculated', true],
+    ['missing provenance object', undefined, false],
+    ['empty provenance object', 'empty-object', false],
+    ['incomplete provenance', 'incomplete', false],
+    ['empty zenith provenance', '', false],
+    ['invalid zenith provenance', 'inferred', false],
+  ] as const)('validates schema 3 zenith provenance: %s', (_label, origin, valid) => {
+    const providerDataset = {
+      ...canonical,
+      schemaVersion: 3,
+      provider: { id: 'synthetic-a', revision: 'rev-1', timeZone: 'Asia/Almaty', coverage: {
+        geographic: 'KZ-TEST', startDate: '2026-01-01', endDate: '2026-12-31',
+      } },
+      days: canonical.days.map(({ fajrJamaat: _fajrJamaat, ...day }) => ({
+        ...day,
+        provenance: origin === undefined ? undefined
+          : origin === 'empty-object' ? {}
+            : origin === 'incomplete' ? { fajrStart: 'published' }
+              : { zenith: origin },
+      })),
+    }
+    expect(isPrayerDataset(providerDataset)).toBe(valid)
+    const normalized = normalizeStoredPrayerDataset(providerDataset)
+    expect(normalized !== null).toBe(valid)
+    if (valid) expect(normalized).toEqual(providerDataset)
+  })
+
+  it('не требует provenance зенита при его отсутствии и не принимает осиротевшие или конфликтующие записи', () => {
+    const providerDataset = {
+      ...canonical,
+      schemaVersion: 3,
+      provider: { id: 'synthetic-a', revision: 'rev-1', timeZone: 'Asia/Almaty', coverage: {
+        geographic: 'KZ-TEST', startDate: '2026-01-01', endDate: '2026-12-31',
+      } },
+      days: canonical.days.map(({ fajrJamaat: _fajrJamaat, dhuhrJamaat: _dhuhrJamaat,
+        asrJamaat: _asrJamaat, maghribJamaat: _maghribJamaat, ishaJamaat: _ishaJamaat,
+        zenith: _zenith, ...day }, index) => ({
+        ...day,
+        provenance: index === 0 ? undefined : { sunrise: 'published' },
+      })),
+    }
+    expect(isPrayerDataset(providerDataset)).toBe(true)
+    expect(normalizeStoredPrayerDataset(providerDataset)).toEqual(providerDataset)
+    expect(normalizeStoredPrayerDay({ ...canonicalDay, provenance: { zenith: 'published' } }, 3)).toBeNull()
+    expect(normalizeStoredPrayerDay({ ...canonicalDay, provenance: { zenith: 'published', fajrJamaat: 'calculated' } }, 3)).toBeNull()
+    expect(normalizeStoredPrayerDay({ ...canonicalDay, provenance: { zenith: 'published', missingField: 'published' } }, 3)).toBeNull()
+  })
+
+  it('сохраняет совместимость schema 1/2 и не добавляет provenance при нормализации', () => {
+    for (const schemaVersion of [1, 2]) {
+      const day = legacyDay
+      expect(normalizeStoredPrayerDay(day, schemaVersion)).toEqual(canonicalDay)
+      expect(normalizeStoredPrayerDay({ ...day, provenance: undefined }, schemaVersion)).toEqual(canonicalDay)
+    }
+  })
+
   it('не принимает ложную атрибуцию ДУМ РТ как официальную', () => {
     expect(isPrayerDataset({ ...canonical, source: { ...canonical.source, name: 'Другой поставщик' } })).toBe(false)
     expect(isPrayerDataset({ ...canonical, source: { ...canonical.source, url: 'https://example.invalid/' } })).toBe(false)
