@@ -146,6 +146,7 @@ button.religious-event-banner:active { background: var(--text-primary); color: v
 .event-row { font: var(--font-emphasis); display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 52px; padding-inline: 4px; color: var(--text-primary); }
 .event-row time { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .event-name { min-width: 0; overflow-wrap: anywhere; }
+.event-provenance { margin-inline-start: 6px; color: var(--text-secondary); font: var(--font-footnote); }
 .event-past { color: var(--text-secondary); }
 .event-current {
   margin-left: calc(0px - var(--screen-inset-left));

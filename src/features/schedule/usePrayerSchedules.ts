@@ -24,7 +24,7 @@ export type ScheduleError =
   | { code: 'official-not-loaded' }
 
 interface PrayerScheduleServices {
-  getDays: (locationId: string, dates: readonly string[], datasetRevision: string) => Promise<(PrayerDay | undefined)[]>
+  getDays: (locationId: string, dates: readonly string[], datasetRevision: string, provider: string) => Promise<(PrayerDay | undefined)[]>
 }
 
 interface UsePrayerSchedulesOptions {
@@ -73,15 +73,19 @@ export function usePrayerSchedules({
       const radius = 4
       const dates = Array.from({ length: radius * 2 + 1 }, (_, index) => addDays(context.date, index - radius))
       if (context.source === 'official') {
-        const days = await services.getDays(context.localityId, dates, context.datasetRevision)
+        const days = await services.getDays(context.localityId, dates, context.datasetRevision, context.provider)
         if (days.length !== dates.length || days.some((day, index) => day && (
           !isPrayerDay(day) || day.date !== dates[index] || day.locationId !== context.localityId
         ))) throw new Error('dataset-shape-mismatch')
         if (!days.some(day => day?.date === context.date)) throw new Error('dataset-date-missing')
-        return days.filter((day) => day !== undefined)
+        return days.filter((day) => day !== undefined).map(day => ({
+          ...day,
+          timeZone: context.timeZone,
+          coordinates: { latitude: context.location.latitude, longitude: context.location.longitude },
+        }))
       }
       const days = dates.map((date) => calculatePrayerSchedule(context.location, date, context.timeZone, context.settings))
-      if (days.flatMap(buildScheduleEvents).some((event) => Math.abs(event.dayOffset) > 3)) {
+      if (days.flatMap(buildScheduleEvents).some((event) => event.status === 'resolved' && Math.abs(event.dayOffset) > 3)) {
         throw new Error('schedule-event-outside-window')
       }
       return days

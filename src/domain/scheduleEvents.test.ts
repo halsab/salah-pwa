@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { parseDumRtCsv } from '../data/parseDumRtCsv'
 import { calculatePrayerSchedule } from './prayerCalculation'
+import { zonedDateTimeToInstant } from './locationTime'
 import { buildScheduleEvents, selectEventPair } from './scheduleEvents'
 
 function official(csv: string) {
@@ -66,6 +67,54 @@ describe('хронология расписания', () => {
     expect(events.filter(({ kind }) => kind === 'marker').map(({ key }) => key).sort()).toEqual(['sunrise', 'zenith'])
     const calculated = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2026-09-01', 'Europe/Moscow')
     expect(buildScheduleEvents(calculated).find(({ key }) => key === 'fajr')?.kind).toBe('prayer')
+  })
+
+  it('не создаёт отсутствующие джамааты и рассчитывает отсутствующий зенит с координатами и timezone провайдера', () => {
+    const { fajrJamaat: _fajr, zenith: _zenith, ...published } = apastovo
+    const schedule = { ...published, timeZone: 'Asia/Novosibirsk', coordinates: { latitude: 55.2, longitude: 48.5 } }
+    const events = buildScheduleEvents(schedule)
+    expect(events.some(event => event.key === 'fajrJamaat')).toBe(false)
+    const zenith = events.find(event => event.key === 'zenith')
+    expect(zenith).toMatchObject({ status: 'resolved', provenance: 'calculated', timeZone: 'Asia/Novosibirsk' })
+    if (!zenith || zenith.status !== 'resolved') throw new Error('Зенит не рассчитан')
+    expect(Math.abs(zenith.instant - zonedDateTimeToInstant(schedule.date, zenith.time, 'Asia/Novosibirsk').getTime())).toBeLessThan(60_000)
+    expect(buildScheduleEvents(apastovo).find(event => event.key === 'zenith')).toMatchObject({
+      status: 'resolved', time: '12:01', provenance: 'published',
+    })
+  })
+
+  it('сохраняет правильный транзит в событии для даты на линии перемены дат', () => {
+    const { fajrJamaat: _fajr, zenith: _zenith, ...published } = apastovo
+    const schedule = {
+      ...published,
+      date: '2026-01-01',
+      timeZone: 'Pacific/Apia',
+      coordinates: { latitude: -13.83, longitude: -171.76 },
+    }
+    const event = buildScheduleEvents(schedule).find(({ key }) => key === 'zenith')
+    expect(event).toMatchObject({
+      status: 'resolved', provenance: 'calculated', time: '12:30',
+      scheduleDate: '2026-01-01', date: '2026-01-01', dayOffset: 0,
+    })
+    if (!event || event.status !== 'resolved') throw new Error('Зенит не рассчитан')
+    expect(Math.abs(event.instant - Date.parse('2025-12-31T23:30:22.000Z'))).toBeLessThanOrEqual(5_000)
+  })
+
+  it('поддерживает опубликованные congregation события для каждого применимого намаза', () => {
+    const events = buildScheduleEvents({
+      ...apastovo, dhuhrJamaat: '12:30', asrJamaat: '15:00', maghribJamaat: '16:45', ishaJamaat: '18:30',
+    })
+    expect(events.filter(event => event.kind === 'jamaat').map(event => event.key)).toEqual([
+      'fajrJamaat', 'dhuhrJamaat', 'asrJamaat', 'maghribJamaat', 'ishaJamaat',
+    ])
+  })
+
+  it('возвращает явный сбой зенита без надежных координат и не выбирает его как событие', () => {
+    const { zenith: _zenith, ...withoutZenith } = apastovo
+    const events = buildScheduleEvents(withoutZenith)
+    const zenith = events.find(event => event.key === 'zenith')
+    expect(zenith).toMatchObject({ status: 'unavailable', reason: 'calculation-failed', provenance: 'calculated' })
+    expect(selectEventPair(new Date('2026-02-07T12:00:30+03:00'), events).current?.key).toBe('dhuhr')
   })
 
   it('сохраняет рассчитанный instant и его календарный offset через конец года', () => {

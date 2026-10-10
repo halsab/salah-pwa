@@ -11,6 +11,10 @@ import type {
 export const PRAYER_DATASET_FILE_NAME = 'prayer-times-current.json'
 export const PRAYER_MANIFEST_FILE_NAME = 'prayer-times-manifest.json'
 
+export function prayerDatasetArtifactDirectory(outputDirectory: string, providerId = 'dumRt'): string {
+  return providerId === 'dumRt' ? outputDirectory : path.join(outputDirectory, 'providers', providerId)
+}
+
 export function serializePrayerDataset(dataset: PrayerDataset): Uint8Array {
   return Buffer.from(`${JSON.stringify(dataset)}\n`, 'utf8')
 }
@@ -22,6 +26,7 @@ export function hashPrayerDatasetBytes(bytes: Uint8Array): string {
 export function createPrayerDatasetManifest(
   datasetBytes: Uint8Array,
   datasetSchemaVersion: number,
+  options: { provider?: string; url?: string } = {},
 ): PrayerDatasetManifest {
   if (!Number.isInteger(datasetSchemaVersion) || datasetSchemaVersion < 1) {
     throw new Error('Набор расписаний имеет неизвестную версию схемы')
@@ -31,8 +36,9 @@ export function createPrayerDatasetManifest(
   return {
     schemaVersion: 1,
     version: `${datasetSchemaVersion}-${sha256.slice(0, 16)}`,
-    url: PRAYER_DATASET_FILE_NAME,
+    url: options.url ?? PRAYER_DATASET_FILE_NAME,
     sha256,
+    ...(options.provider ? { provider: options.provider } : {}),
   }
 }
 
@@ -73,19 +79,29 @@ async function withReleaseSequence(manifest: PrayerDatasetManifest, manifestPath
 export async function writePrayerCoverage(datasetPath: string, manifest: PrayerDatasetManifest, outputPath: string): Promise<void> {
   const dataset = JSON.parse(await readFile(datasetPath, 'utf8')) as PrayerDataset
   const { schemaVersion: _manifestSchema, ...identity } = manifest
-  await writeFile(outputPath, `${JSON.stringify({ schemaVersion: dataset.schemaVersion, source: dataset.source, locations: dataset.locations, identity })}\n`)
+  await writeFile(outputPath, `${JSON.stringify({
+    schemaVersion: dataset.schemaVersion,
+    source: dataset.source,
+    locations: dataset.locations,
+    ...(dataset.provider ? { provider: dataset.provider } : {}),
+    identity,
+  })}\n`)
 }
 
 export async function writePrayerDatasetArtifacts(
   outputDirectory: string,
   dataset: PrayerDataset,
 ): Promise<PrayerDatasetManifest> {
+  const providerId = dataset.provider?.id ?? 'dumRt'
+  const artifactDirectory = prayerDatasetArtifactDirectory(outputDirectory, providerId)
   const datasetBytes = serializePrayerDataset(dataset)
-  const manifest = await withReleaseSequence(createPrayerDatasetManifest(datasetBytes, dataset.schemaVersion), path.join(outputDirectory, PRAYER_MANIFEST_FILE_NAME))
-  await mkdir(outputDirectory, { recursive: true })
+  const manifest = await withReleaseSequence(createPrayerDatasetManifest(datasetBytes, dataset.schemaVersion, {
+    ...(dataset.provider ? { provider: providerId } : {}),
+  }), path.join(artifactDirectory, PRAYER_MANIFEST_FILE_NAME))
+  await mkdir(artifactDirectory, { recursive: true })
   await Promise.all([
-    writeFile(path.join(outputDirectory, PRAYER_DATASET_FILE_NAME), datasetBytes),
-    writeFile(path.join(outputDirectory, PRAYER_MANIFEST_FILE_NAME), serializeManifest(manifest)),
+    writeFile(path.join(artifactDirectory, PRAYER_DATASET_FILE_NAME), datasetBytes),
+    writeFile(path.join(artifactDirectory, PRAYER_MANIFEST_FILE_NAME), serializeManifest(manifest)),
   ])
   return manifest
 }
@@ -95,7 +111,10 @@ export async function writePrayerDatasetManifest(
   manifestPath: string,
 ): Promise<PrayerDatasetManifest> {
   const datasetBytes = await readFile(datasetPath)
-  const manifest = await withReleaseSequence(createPrayerDatasetManifest(datasetBytes, readDatasetSchemaVersion(datasetBytes)), manifestPath)
+  const dataset = JSON.parse(Buffer.from(datasetBytes).toString('utf8')) as PrayerDataset
+  const manifest = await withReleaseSequence(createPrayerDatasetManifest(datasetBytes, readDatasetSchemaVersion(datasetBytes), {
+    ...(dataset.provider ? { provider: dataset.provider.id } : {}),
+  }), manifestPath)
   await writeFile(manifestPath, serializeManifest(manifest))
   return manifest
 }

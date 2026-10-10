@@ -3,9 +3,9 @@ import type { DataFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import type { PrayerDataset, PrayerDatasetManifest } from '../domain/types'
 
-const DATASET_FILE_NAME = 'prayer-times-current.json'
 const SHA256_PATTERN = /^[0-9a-f]{64}$/
 const VERSION_PATTERN = /^([1-9]\d*)-([0-9a-f]{16})$/
+const DATASET_URL_PATTERN = /^(?!\/)(?!.*(?:^|\/)\.\.?\/)[A-Za-z0-9][A-Za-z0-9._/-]*\.json$/
 
 export interface PrayerDatasetByteOperations {
   digest: (bytes: Uint8Array) => Promise<string>
@@ -34,8 +34,10 @@ export function validatePrayerDatasetManifest(
 
   if (
     manifest.schemaVersion !== 1
-    || manifest.url !== DATASET_FILE_NAME
+    || typeof manifest.url !== 'string'
+    || !DATASET_URL_PATTERN.test(manifest.url)
     || !SHA256_PATTERN.test(sha256)
+    || (manifest.provider !== undefined && (typeof manifest.provider !== 'string' || !/^[a-z0-9][a-z0-9.-]*$/.test(manifest.provider)))
     || (manifest.sequence !== undefined && (!Number.isSafeInteger(manifest.sequence) || manifest.sequence < 1))
     || !versionMatch
     || versionMatch[2] !== sha256.slice(0, 16)
@@ -46,9 +48,10 @@ export function validatePrayerDatasetManifest(
   return success({
     schemaVersion: 1,
     version,
-    url: DATASET_FILE_NAME,
+    url: manifest.url,
     sha256,
     ...(manifest.sequence === undefined ? {} : { sequence: manifest.sequence }),
+    ...(manifest.provider === undefined ? {} : { provider: manifest.provider }),
   })
 }
 
@@ -95,6 +98,8 @@ export async function verifyPrayerDatasetBytes(
 
   if (
     !isPrayerDataset(value)
+    || (value.schemaVersion === 3 && manifest.provider === undefined)
+    || (manifest.provider !== undefined && manifest.provider !== value.provider?.id)
     || manifest.version !== `${value.schemaVersion}-${digest.slice(0, 16)}`
   ) {
     return failure(invalidData())

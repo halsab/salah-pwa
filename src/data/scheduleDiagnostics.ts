@@ -27,8 +27,9 @@ export function diagnoseOfficialSchedule(days: readonly PrayerDay[]): ScheduleDi
       warn('previous-day-fajr-start', ['fajrStart'], `Фаджр (конец сухура) ${day.fajrStart}: календарная дата ${addDays(day.date, -1)}, накануне дня поста ${day.date}; значение сохранено.`)
     }
     for (const [index, field] of OFFICIAL_TIME_FIELDS.entries()) {
+      if (!day[field]) continue
       for (const other of OFFICIAL_TIME_FIELDS.slice(index + 1)) {
-        if (day[field] === day[other]) {
+        if (day[other] && day[field] === day[other]) {
           warn('equal-times', [field, other], `Совпадающие значения ${day[field]}; события остаются раздельными.`)
         }
       }
@@ -38,6 +39,7 @@ export function diagnoseOfficialSchedule(days: readonly PrayerDay[]): ScheduleDi
       ['zenith', 'dhuhr'], ['dhuhr', 'asr'], ['asr', 'maghrib'], ['maghrib', 'isha'],
     ]
     for (const [earlier, later] of expectedOrder) {
+      if (!day[earlier] || !day[later]) continue
       if (earlier === 'fajrStart' && minutes(day.fajrStart) >= 12 * 60) continue
       if (minutes(day[earlier]) > minutes(day[later])) {
         warn('unusual-order', [earlier, later], `${earlier} ${day[earlier]} позже ${later} ${day[later]}: возможное противоречие или переход суток; значения и даты не исправлены.`)
@@ -45,6 +47,7 @@ export function diagnoseOfficialSchedule(days: readonly PrayerDay[]): ScheduleDi
     }
     if (previous?.locationId === day.locationId && addDays(previous.date, 1) === day.date) {
       for (const field of OFFICIAL_TIME_FIELDS) {
+        if (!previous[field] || !day[field]) continue
         const before = minutes(previous[field])
         const after = minutes(day[field])
         const difference = Math.abs(after - before)

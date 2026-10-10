@@ -2,7 +2,7 @@ import type { ScheduleContext } from '../../domain/scheduleContext'
 import { getEffectiveParameters } from '../../domain/prayerCalculation'
 import type { DatasetMeta } from '../../storage/database'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
-import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
+import { buildScheduleEvents, type PrayerSchedule, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
 import { ASR_METHOD_KEYS, EVENT_LABEL_KEYS, HIGH_LATITUDE_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
@@ -22,7 +22,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   const providerName = provider?.id === 'dumRt' ? t('dumRt') : t('provider')
   const calculated = 'entries' in schedule ? schedule : null
   const params = context.source === 'calculated' ? getEffectiveParameters(context.settings, context.date, context.timeZone) : null
-  const lateFajrStart = buildScheduleEvents(schedule).find(event => event.key === 'fajrStart' && event.dayOffset === -1)
+  const lateFajrStart = buildScheduleEvents(schedule).find((event): event is ResolvedScheduleEvent => event.status === 'resolved' && event.key === 'fajrStart' && event.dayOffset === -1)
   const title = official ? provider ? providerName : t('officialTable') : t('calculatedSourceTitle')
   const facts: [string, string][] = [[t('timezone'), context.timeZone]]
   if (official) facts.push(
@@ -42,7 +42,11 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   if (adjustments) facts.push([t('previousAdjustments'), adjustments])
 
   const lateFajrNote = lateFajrStart ? t('lateFajrNote', { time: markdownText(lateFajrStart.time), date: markdownText(formatDateLabel(lateFajrStart.date, locale)) }) : ''
+  const zenithEvent = buildScheduleEvents(schedule).find(event => event.key === 'zenith')
+  const calculatedZenith = official && zenithEvent?.provenance === 'calculated'
+    ? t(zenithEvent.status === 'resolved' ? 'calculatedZenithInfo' : 'calculatedZenithUnavailableInfo') : ''
   const runtimeNotes = [
+    calculatedZenith,
     calculated?.estimatedPrayers.length ? t('estimatedRule', { values: markdownText(calculated.estimatedPrayers.map(key => t(EVENT_LABEL_KEYS[key])).join(', ')) }) : '',
     calculated?.polarResolutionApplied ? t('polarResolution') : '',
     lateFajrNote,

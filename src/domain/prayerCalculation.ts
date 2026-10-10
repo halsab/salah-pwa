@@ -236,6 +236,38 @@ function toIsoDate(date: Date): string {
   return `${year}-${month}-${day}`
 }
 
+export function calculateSolarZenith(
+  location: LocationCoordinates,
+  date: string,
+  timeZone: string,
+): { time: PrayerTime; instant: number } | null {
+  try {
+    const clock = createLocationClock(timeZone)
+    const parameters = CalculationMethod.Other()
+    parameters.polarCircleResolution = PolarCircleResolution.Unresolved
+    parameters.rounding = Rounding.None
+    const coordinates = new Coordinates(location.latitude, location.longitude)
+    const transits: Date[] = []
+    // Сдвиг timezone и долготы может разнести гражданскую и расчётную даты на двое суток.
+    for (let offset = -2; offset <= 2; offset += 1) {
+      const astronomicalDate = addDays(date, offset)
+      const transit = new PrayerTimes(coordinates, dateFromIso(astronomicalDate), parameters).dhuhr
+      if (Number.isFinite(transit.getTime()) && clock.getCivilDate(transit) === date) transits.push(transit)
+    }
+    if (transits.length === 0) return null
+
+    const distanceFromLocalNoon = (candidate: Date): number => {
+      const [hours = 0, minutes = 0] = clock.getTime(candidate).split(':').map(Number)
+      return Math.abs(hours * 60 + minutes - 12 * 60)
+    }
+    const transit = transits.reduce((nearest, candidate) =>
+      distanceFromLocalNoon(candidate) < distanceFromLocalNoon(nearest) ? candidate : nearest)
+    return { time: clock.getTime(transit), instant: transit.getTime() }
+  } catch {
+    return null
+  }
+}
+
 function angleIsAvailable(
   coordinates: Coordinates,
   date: string,

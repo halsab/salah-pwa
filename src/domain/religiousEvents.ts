@@ -1,6 +1,6 @@
 import { calendarDateFromCivil, type CalendarDate, type DateCorrection } from './calendar'
 import { addDays } from './date'
-import { buildScheduleEvents, type PrayerSchedule } from './scheduleEvents'
+import { buildScheduleEvents, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
 
 export const RELIGIOUS_EVENT_IDS = [
   'hijri-new-year',
@@ -161,9 +161,9 @@ function resolveNightBoundary(
   const anchorSchedule = schedules.find(schedule => schedule.date === anchor)
   const targetSchedule = schedules.find(schedule => schedule.date === target)
   if (!anchorSchedule || !targetSchedule) return null
-  const start = buildScheduleEvents(anchorSchedule).find(item => item.key === 'maghrib')
+  const start = buildScheduleEvents(anchorSchedule).find((item): item is ResolvedScheduleEvent => item.status === 'resolved' && item.key === 'maghrib')
   const endKey = 'entries' in targetSchedule ? 'fajr' : 'fajrStart'
-  const end = buildScheduleEvents(targetSchedule).find(item => item.key === endKey)
+  const end = buildScheduleEvents(targetSchedule).find((item): item is ResolvedScheduleEvent => item.status === 'resolved' && item.key === endKey)
   if (!start || !end || !Number.isFinite(start.instant) || !Number.isFinite(end.instant) || end.instant <= start.instant) return null
   return { startInstant: start.instant, endInstant: end.instant }
 }

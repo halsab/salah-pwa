@@ -14,6 +14,7 @@ import type { LanguagePreference } from '../localization/locale'
 import { failure, success, type Result } from '../domain/result'
 import type {
   PrayerDataset,
+  PrayerDatasetProvider,
   PrayerDatasetManifest,
   PrayerDay,
   PrayerLocation,
@@ -21,7 +22,8 @@ import type {
 } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 11
+const DATABASE_VERSION = 12
+const DEFAULT_PROVIDER_ID = 'dumRt'
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -70,6 +72,7 @@ type StoredSettingRecord = {
 }[StoredSettingKey]
 
 interface PrayerDayRecord extends PrayerDay {
+  provider: string
   key: string
 }
 
@@ -80,6 +83,7 @@ export type DatasetIdentity = Pick<
 
 export interface DatasetMeta {
   provider?: string
+  providerInfo?: PrayerDatasetProvider
   schemaVersion: number
   source: PrayerDataset['source']
   locations: PrayerLocation[]
@@ -91,9 +95,10 @@ interface SalahDatabase extends DBSchema {
   days: {
     key: string
     value: PrayerDayRecord
+    indexes: { provider: string }
   }
   meta: {
-    key: 'current'
+    key: string
     value: DatasetMeta
   }
   settings: {
@@ -234,6 +239,22 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
       if (oldVersion < 11) {
         void transaction.objectStore('settings').put({ key: 'calendarPreferences', value: DEFAULT_CALENDAR_PREFERENCES })
       }
+      if (oldVersion < 12) {
+        const days = transaction.objectStore('days')
+        if (!days.indexNames.contains('provider')) days.createIndex('provider', 'provider')
+        void days.getAll().then(records => {
+          void days.clear()
+          for (const record of records) {
+            void days.put({ ...record, provider: DEFAULT_PROVIDER_ID, key: dayKey(DEFAULT_PROVIDER_ID, record.locationId, record.date) })
+          }
+        }).catch(() => transaction.abort())
+        const meta = transaction.objectStore('meta')
+        void meta.get('current').then(current => {
+          if (!current) return
+          void meta.put(current, DEFAULT_PROVIDER_ID)
+          void meta.delete('current')
+        }).catch(() => transaction.abort())
+      }
     },
   })
   databasePromise = opening
@@ -243,8 +264,8 @@ function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
   return opening
 }
 
-function dayKey(locationId: string, date: string): string {
-  return `${locationId}:${date}`
+function dayKey(provider: string, locationId: string, date: string): string {
+  return `${encodeURIComponent(provider)}:${encodeURIComponent(locationId)}:${date}`
 }
 
 function storageFailure(): StorageFailure {
@@ -268,6 +289,7 @@ export function replaceDataset(
 ): Promise<Result<void, StorageFailure | DataFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
+    const provider = guard?.provider ?? dataset.provider?.id ?? DEFAULT_PROVIDER_ID
     const transaction = database.transaction(['days', 'meta', 'control'], 'readwrite')
     const dayStore = transaction.objectStore('days')
 
@@ -277,7 +299,7 @@ export function replaceDataset(
         return false
       }
       if (guard) {
-        const installed = await transaction.objectStore('meta').get('current')
+        const installed = await transaction.objectStore('meta').get(provider)
         if (!guard.isCurrent() || (installed ? getDatasetRevision(installed) : null) !== guard.revision
           || (installed?.identity?.sequence !== undefined && (identity.sequence === undefined || identity.sequence < installed.identity.sequence || (identity.sequence === installed.identity.sequence && identity.sha256 !== installed.identity.sha256)))
           || (installed && Date.parse(dataset.source.updatedAt) < Date.parse(installed.source.updatedAt))) {
@@ -285,12 +307,14 @@ export function replaceDataset(
           return false
         }
       }
-      await dayStore.clear()
+      const oldKeys = await dayStore.index('provider').getAllKeys(IDBKeyRange.only(provider))
+      for (const key of oldKeys) await dayStore.delete(key)
       const dayWrites: Promise<IDBValidKey>[] = []
       for (const day of dataset.days) {
         const write = dayStore.put({
           ...day,
-          key: dayKey(day.locationId, day.date),
+          provider,
+          key: dayKey(provider, day.locationId, day.date),
         })
         // Обработчик нужен сразу: следующий put может синхронно прервать транзакцию.
         void write.catch(() => undefined)
@@ -300,13 +324,14 @@ export function replaceDataset(
 
       await transaction.objectStore('meta').put(
         {
-          ...(guard?.provider ? { provider: guard.provider } : {}),
+          ...((guard?.provider ?? dataset.provider?.id) ? { provider } : {}),
+          ...(dataset.provider ? { providerInfo: dataset.provider } : {}),
           schemaVersion: dataset.schemaVersion,
           source: dataset.source,
           locations: dataset.locations,
           identity,
         },
-        'current',
+        provider,
       )
       await transaction.done
       return true
@@ -325,13 +350,14 @@ export function replaceDataset(
 export function getPrayerDay(
   locationId: string,
   date: string,
+  provider = DEFAULT_PROVIDER_ID,
 ): Promise<Result<PrayerDay | undefined, StorageFailure | DataFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     const transaction = database.transaction(['days', 'meta'], 'readonly')
     const [meta, record] = await Promise.all([
-      transaction.objectStore('meta').get('current'),
-      transaction.objectStore('days').get(dayKey(locationId, date)),
+      transaction.objectStore('meta').get(provider),
+      transaction.objectStore('days').get(dayKey(provider, locationId, date)),
     ])
     await transaction.done
     return { meta, record }
@@ -340,7 +366,7 @@ export function getPrayerDay(
     const { meta, record } = result.value
     if (!record) return success(undefined)
     if (!meta) return failure({ kind: 'data', reason: 'invalid' })
-    const { key: _key, ...day } = record
+    const { key: _key, provider: _provider, ...day } = record
     const normalized = normalizeStoredPrayerDay(day, meta.schemaVersion)
     return normalized ? success(normalized) : failure({ kind: 'data', reason: 'invalid' })
   })
@@ -350,14 +376,15 @@ export async function getPrayerDays(
   locationId: string,
   dates: readonly string[],
   expectedRevision: string,
+  provider = DEFAULT_PROVIDER_ID,
 ): Promise<Result<(PrayerDay | undefined)[], StorageFailure | DataFailure>> {
   const result = await storageResult(async () => {
     const database = await getDatabase()
     // Метаданные и дни читаются в одном снимке, в том числе при обновлении из другой вкладки.
     const transaction = database.transaction(['days', 'meta'], 'readonly')
     const [meta, records] = await Promise.all([
-      transaction.objectStore('meta').get('current'),
-      Promise.all(dates.map((date) => transaction.objectStore('days').get(dayKey(locationId, date)))),
+      transaction.objectStore('meta').get(provider),
+      Promise.all(dates.map((date) => transaction.objectStore('days').get(dayKey(provider, locationId, date)))),
     ])
     await transaction.done
     return { meta, records }
@@ -373,7 +400,7 @@ export async function getPrayerDays(
       days.push(undefined)
       continue
     }
-    const { key: _key, ...day } = record
+    const { key: _key, provider: _provider, ...day } = record
     const normalized = normalizeStoredPrayerDay(day, meta.schemaVersion)
     if (!normalized) return failure({ kind: 'data', reason: 'invalid' })
     days.push(normalized)
@@ -381,11 +408,9 @@ export async function getPrayerDays(
   return success(days)
 }
 
-export function getDatasetMeta(): Promise<
-  Result<DatasetMeta | undefined, StorageFailure>
-> {
+export function getDatasetMeta(provider = DEFAULT_PROVIDER_ID): Promise<Result<DatasetMeta | undefined, StorageFailure>> {
   return storageResult(() => getDatabase().then((database) =>
-    database.get('meta', 'current')))
+    database.get('meta', provider)))
 }
 
 export function setSetting<Key extends SettingKey>(
@@ -464,13 +489,17 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
   })
 }
 
-export function getStoredDataset(): Promise<Result<{ dataset: PrayerDataset; meta: DatasetMeta } | null, StorageFailure | DataFailure>> {
+export function getStoredDataset(provider = DEFAULT_PROVIDER_ID): Promise<Result<{ dataset: PrayerDataset; meta: DatasetMeta } | null, StorageFailure | DataFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     const transaction = database.transaction(['days', 'meta'], 'readonly')
-    const [meta, records] = await Promise.all([transaction.objectStore('meta').get('current'), transaction.objectStore('days').getAll()])
+    const [meta, records] = await Promise.all([transaction.objectStore('meta').get(provider), transaction.objectStore('days').index('provider').getAll(provider)])
     await transaction.done
-    return meta ? { meta, dataset: { ...meta, days: records.map(({ key: _key, ...day }) => day) } } : null
+    return meta ? { meta, dataset: {
+      schemaVersion: meta.schemaVersion, source: meta.source, locations: meta.locations,
+      ...(meta.providerInfo ? { provider: meta.providerInfo } : {}),
+      days: records.map(({ key: _key, provider: _provider, ...day }) => day),
+    } } : null
   }).then(result => {
     if (!result.ok || !result.value) return result
     const normalized = normalizeStoredPrayerDataset(result.value.dataset)

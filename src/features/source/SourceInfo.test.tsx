@@ -25,6 +25,13 @@ it('показывает факты официальной таблицы и д�
   expect(dialog.textContent).not.toMatch(/secret-|private-id/)
 })
 
+it('объясняет рассчитанный зенит в сведениях официальной таблицы', () => {
+  const { zenith: _zenith, ...withoutZenith } = required(parseDumRtCsv('05.05.2026;02:22;03:17;03:53;11:41;12:00;16:58;19:30;21:00', 'kazan')[0])
+  const schedule = { ...withoutZenith, coordinates: { latitude: 55.79, longitude: 49.12 } }
+  render(<SourceInfo open onClose={() => {}} schedule={schedule} placeLabel="Казань" checkedAt={null} updateFailed={false} context={{ source:'official', provider:'dumRt', mode:'automatic', datasetVersion:'v1', datasetRevision:'hash', localityId:'kazan', coverage:'RU-TA', date:schedule.date, timeZone:'Europe/Moscow', location:{id:'kazan', latitude:55.79, longitude:49.12} }} meta={null} />)
+  expect(screen.getByRole('region', { name:'Сведения об источнике' })).toHaveTextContent('Зенит рассчитан астрономически: таблица не публикует это время.')
+})
+
 it('расчёт показывает эффективные параметры, ручные поправки и приблизительность', () => {
   const settings = {profile:'dumRt',asrMethod:'hanafi',highLatitudeRule:'dumRt',fajrAngle:19,isha:{kind:'interval',minutes:95},adjustments:{asr:12}} as const
   const schedule = calculatePrayerSchedule({latitude:69.65,longitude:18.96},'2026-06-21','Europe/Oslo',settings)

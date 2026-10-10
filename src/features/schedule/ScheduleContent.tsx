@@ -14,11 +14,15 @@ import { useLocalization } from '../../localization'
 import { formatLocalizedCalendarDate } from '../../localization/calendar'
 
 const LABELS: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
-  fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', fajr: 'prayerFajr', sunrise: 'prayerSunrise',
+  fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', dhuhrJamaat: 'prayerDhuhrJamaat',
+  asrJamaat: 'prayerAsrJamaat', maghribJamaat: 'prayerMaghribJamaat', ishaJamaat: 'prayerIshaJamaat',
+  fajr: 'prayerFajr', sunrise: 'prayerSunrise',
   zenith: 'prayerZenith', dhuhr: 'prayerDhuhr', asr: 'prayerAsr', maghrib: 'prayerMaghrib', isha: 'prayerIsha',
 }
 const COUNTDOWN: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
-  fajrStart: 'countdownFajrStart', fajrJamaat: 'countdownFajrJamaat', fajr: 'countdownFajr', sunrise: 'countdownSunrise',
+  fajrStart: 'countdownFajrStart', fajrJamaat: 'countdownFajrJamaat', dhuhrJamaat: 'countdownDhuhrJamaat',
+  asrJamaat: 'countdownAsrJamaat', maghribJamaat: 'countdownMaghribJamaat', ishaJamaat: 'countdownIshaJamaat',
+  fajr: 'countdownFajr', sunrise: 'countdownSunrise',
   zenith: 'countdownZenith', dhuhr: 'countdownDhuhr', asr: 'countdownAsr', maghrib: 'countdownMaghrib', isha: 'countdownIsha',
 }
 
@@ -30,16 +34,21 @@ function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
   schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean; calendarPreferences: CalendarPreferences
 }) {
   const { locale, t } = useLocalization()
-  const events = buildScheduleEvents(schedule).sort((left, right) => left.instant - right.instant)
+  const events = buildScheduleEvents(schedule).sort((left, right) =>
+    (left.status === 'resolved' ? left.instant : Number.POSITIVE_INFINITY)
+      - (right.status === 'resolved' ? right.instant : Number.POSITIVE_INFINITY))
   return <ol className="event-list" aria-label={t('scheduleListLabel')}>
     {events.map(event => {
-      const active = live && event.key === current?.key && event.scheduleDate === current.scheduleDate
-      const past = live && !active && event.instant <= now.getTime()
+      const active = event.status === 'resolved' && live && event.key === current?.key && event.scheduleDate === current.scheduleDate
+      const past = event.status === 'resolved' && live && !active && event.instant <= now.getTime()
       return <li key={event.key} className={`event-row${past ? ' event-past' : ''}${active ? ' event-current' : ''}`} aria-current={active || undefined}>
         <div className="event-name"><span>{t(LABELS[event.key])}</span>
-          {event.dayOffset ? <small className="event-day">{formatLocalizedCalendarDate(event.date, calendarPreferences, locale)}</small> : null}
+          {event.key === 'zenith' && event.provenance === 'calculated' ? <small className="event-provenance">{t('calculatedZenith')}</small> : null}
+          {event.status === 'resolved' && event.dayOffset ? <small className="event-day">{formatLocalizedCalendarDate(event.date, calendarPreferences, locale)}</small> : null}
         </div>
-        <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>
+        {event.status === 'resolved'
+          ? <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>
+          : <span className="event-unavailable" aria-label={t('zenithUnavailable')}>—</span>}
       </li>
     })}
   </ol>

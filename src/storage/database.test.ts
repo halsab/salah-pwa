@@ -10,6 +10,7 @@ import {
   getLocationChoice,
   getPrayerDay,
   getPrayerDays,
+  getStoredDataset,
   getSetting,
   replaceDataset,
   saveLocationChoice,
@@ -146,12 +147,62 @@ const identity: DatasetIdentity = {
   sha256: '560476895b659c27b1e75bfac7269dce3c548efdc283882eb5566bf9d153af9e',
 }
 
+function syntheticDataset(id: string, timeZone: string, fajrStart: PrayerDataset['days'][number]['fajrStart']): PrayerDataset {
+  const sourceDay = dataset.days[0]
+  const location = dataset.locations[0]
+  if (!sourceDay || !location) throw new Error('Не найден тестовый день')
+  const { fajrJamaat: _fajrJamaat, zenith: _zenith, ...day } = sourceDay
+  return {
+    schemaVersion: 3,
+    provider: { id, revision: 'rev-1', timeZone, coverage: {
+      geographic: `SYN-${id.toUpperCase()}`, startDate: sourceDay.date, endDate: sourceDay.date,
+    } },
+    source: { ...dataset.source, years: [2026] },
+    locations: [{ ...location, timeZone }],
+    days: [{ ...day, fajrStart }],
+  }
+}
+
 afterEach(async () => {
   vi.unstubAllGlobals()
   await deleteSalahDatabase()
 })
 
 describe('database', () => {
+  it('изолирует два provider dataset с одинаковыми locality/date и обновляет каждый независимо', async () => {
+    unwrap(await replaceDataset(dataset, identity))
+    const first = syntheticDataset('synthetic-a', 'Asia/Almaty', '02:21')
+    const second = syntheticDataset('synthetic-b', 'Europe/Istanbul', '02:45')
+    unwrap(await replaceDataset(first, identity, { revision: null, isCurrent: () => true, provider: 'synthetic-a' }))
+    unwrap(await replaceDataset(second, identity, { revision: null, isCurrent: () => true, provider: 'synthetic-b' }))
+
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-a'))).toMatchObject({ fajrStart: '02:21' })
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-b'))).toMatchObject({ fajrStart: '02:45' })
+    expect(unwrap(await getStoredDataset('synthetic-a'))?.dataset.provider).toMatchObject({ timeZone: 'Asia/Almaty' })
+    expect(unwrap(await getStoredDataset('synthetic-b'))?.dataset.provider).toMatchObject({ timeZone: 'Europe/Istanbul' })
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toMatchObject({ fajrStart: '02:21', fajrJamaat: '03:17', zenith: '11:44' })
+
+    const firstProvider = first.provider
+    const firstDay = first.days[0]
+    if (!firstProvider || !firstDay) throw new Error('Ожидались provider и prayer day')
+    const replacement = { ...first, provider: { ...firstProvider, revision: 'rev-2' }, source: { ...first.source, updatedAt: '2026-01-03T00:00:00.000Z' }, days: [{ ...firstDay, fajrStart: '02:22' as const }] }
+    const firstMeta = unwrap(await getDatasetMeta('synthetic-a'))
+    if (!firstMeta) throw new Error('Ожидались метаданные synthetic-a')
+    unwrap(await replaceDataset(replacement, { ...identity, version: '3-bbbbbbbbbbbbbbbb', sequence: 2 }, {
+      revision: getDatasetRevision(firstMeta), isCurrent: () => true, provider: 'synthetic-a',
+    }))
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-a'))?.fajrStart).toBe('02:22')
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-b'))?.fajrStart).toBe('02:45')
+
+    const currentMeta = unwrap(await getDatasetMeta('synthetic-a'))
+    if (!currentMeta) throw new Error('Ожидались обновлённые метаданные synthetic-a')
+    const stale = await replaceDataset(first, { ...identity, sequence: 1 }, {
+      revision: getDatasetRevision(currentMeta), isCurrent: () => true, provider: 'synthetic-a',
+    })
+    expect(stale).toMatchObject({ ok: false, error: { kind: 'data', reason: 'superseded' } })
+    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-a'))?.fajrStart).toBe('02:22')
+  })
+
   it('атомарно сохраняет набор данных и читает день по городу и дате', async () => {
     unwrap(await replaceDataset(dataset, identity))
 
@@ -201,7 +252,7 @@ describe('database', () => {
     expect(unwrap(await getSetting('calculationSettings'))).toEqual(
       calculationSettings,
     )
-    expect(await getDatabaseVersion()).toBe(11)
+    expect(await getDatabaseVersion()).toBe(12)
   })
 
   it('читает legacy meta без идентичности артефакта для офлайн-fallback', async () => {
@@ -226,7 +277,7 @@ describe('database', () => {
     })
 
     expect(unwrap(await getPrayerDay('kazan', canonical.date))).toEqual(canonical)
-    expect(await getDatabaseVersion()).toBe(11)
+    expect(await getDatabaseVersion()).toBe(12)
   })
 
   it('возвращает data-invalid для смешанной или неизвестной локальной формы', async () => {
@@ -311,7 +362,7 @@ describe('database', () => {
       coordinates: legacyCoordinates,
       source: 'automatic',
     })
-    expect(await getDatabaseVersion()).toBe(11)
+    expect(await getDatabaseVersion()).toBe(12)
   })
 
   it('мигрирует preset-выбор v4 в ручной calculated-выбор', async () => {
@@ -352,7 +403,7 @@ describe('database', () => {
     await createLegacyVersion4Database([])
 
     expect(unwrap(await getLocationChoice())).toEqual({ mode: 'official', locationId: 'kazan', source: 'default' })
-    expect(await getDatabaseVersion()).toBe(11)
+    expect(await getDatabaseVersion()).toBe(12)
   })
 
   it('возвращает типизированную ошибку недоступного IndexedDB', async () => {
@@ -394,7 +445,7 @@ it('migrates real v6 Nominatim names without requesting the network or deleting 
   expect(choice?.place).toMatchObject({ name: legacy.name, latitude: legacy.latitude, longitude: legacy.longitude,
     selection: 'gps', automaticTimeZone: { id: 'Europe/Moscow', source: 'legacy' } })
   expect(choice?.place).not.toHaveProperty('nameSource')
-  expect(await getDatabaseVersion()).toBe(11)
+  expect(await getDatabaseVersion()).toBe(12)
 })
 
 it('checks operation epoch after opening IndexedDB so obsolete saves do not start', async () => {
@@ -403,7 +454,7 @@ it('checks operation epoch after opening IndexedDB so obsolete saves do not star
 })
 
 it('recovers after a browser rejects opening a newer incompatible database', async () => {
-  await createVersion5Database({}, 12)
+  await createVersion5Database({}, 13)
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
   await deleteSalahDatabase()
   expect(unwrap(await getLocationChoice())).toBeUndefined()
@@ -417,7 +468,7 @@ it.each(['official', 'calculated'] as const)('migrates real v7 %s preferences, r
   expect(unwrap(await getSetting('sourcePreferences'))).toMatchObject({ mode: 'manual', source: { kind: mode }, calculationDraft: { profile: 'dumRf', overrides: { asrMethod: 'standard', highLatitudeRule: 'nearestDay' } } })
   expect(unwrap(await getSetting('calculationSettings'))).toEqual(legacy)
   expect(unwrap(await getLocationChoice())).toEqual(choice)
-  expect(await getDatabaseVersion()).toBe(11)
+  expect(await getDatabaseVersion()).toBe(12)
 })
 it('migrates a manual legacy city without expert settings to automatic source', async () => {
   await createVersion5Database({ settings: [{ key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'manual' } }] }, 7)
@@ -427,8 +478,8 @@ it('migrates a manual legacy city without expert settings to automatic source', 
 
 it('closes an active connection when another tab upgrades instead of blocking it', async () => {
   unwrap(await getSetting('appearance'))
-  const upgraded = await openDB('salah', 12)
-  expect(upgraded.version).toBe(12)
+  const upgraded = await openDB('salah', 13)
+  expect(upgraded.version).toBe(13)
   upgraded.close()
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
 })
@@ -448,7 +499,7 @@ it('migrates v9 with empty recents while preserving the selected place and setti
   expect(unwrap(await getSetting('recentPlaces'))).toEqual([])
   expect(unwrap(await getLocationChoice())).toEqual(choice)
   expect(unwrap(await getSetting('sourcePreferences'))).toEqual({ mode: 'automatic' })
-  expect(await getDatabaseVersion()).toBe(11)
+  expect(await getDatabaseVersion()).toBe(12)
 })
 
 it('добавляет календарь в v10, сохраняя выбор места и поколение сброса', async () => {

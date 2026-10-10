@@ -13,12 +13,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import type { PrayerDataset } from '../src/domain/types'
 import {
+  PRAYER_DATASET_FILE_NAME,
+  PRAYER_MANIFEST_FILE_NAME,
   createPrayerDatasetManifest,
   hashPrayerDatasetBytes,
   serializePrayerDataset,
   writePrayerDatasetArtifacts,
   writePrayerCoverage,
   writePrayerDatasetManifest,
+  prayerDatasetArtifactDirectory,
 } from './prayerDatasetArtifacts'
 
 const dataset: PrayerDataset = {
@@ -98,6 +101,28 @@ describe('prayer dataset artifacts', () => {
     expect(manifest.sha256).toBe(hashPrayerDatasetBytes(datasetBytes))
     expect(manifest.version).toBe(`2-${manifest.sha256.slice(0, 16)}`)
     expect(manifestBytes.toString('utf8').endsWith('\n')).toBe(true)
+  })
+
+  it('публикует manifest и dataset синтетического провайдера в отдельном статическом каталоге', async () => {
+    const directory = await temporaryDirectory()
+    const providerDataset: PrayerDataset = {
+      ...dataset,
+      schemaVersion: 3,
+      provider: { id: 'synthetic-a', revision: 'revision-1', timeZone: 'Asia/Almaty', coverage: {
+        geographic: 'SYN-A', startDate: '2026-01-01', endDate: '2026-12-31',
+      } },
+    }
+    const manifest = await writePrayerDatasetArtifacts(directory, providerDataset)
+    const providerDirectory = prayerDatasetArtifactDirectory(directory, 'synthetic-a')
+    const dataBytes = await readFile(path.join(providerDirectory, PRAYER_DATASET_FILE_NAME))
+    const checkedManifest: unknown = JSON.parse(await readFile(path.join(providerDirectory, PRAYER_MANIFEST_FILE_NAME), 'utf8'))
+    const coveragePath = path.join(providerDirectory, 'coverage.json')
+    await writePrayerCoverage(path.join(providerDirectory, PRAYER_DATASET_FILE_NAME), manifest, coveragePath)
+
+    expect(manifest).toMatchObject({ provider: 'synthetic-a', url: PRAYER_DATASET_FILE_NAME, sequence: 1 })
+    expect(checkedManifest).toEqual(manifest)
+    expect(hashPrayerDatasetBytes(dataBytes)).toBe(manifest.sha256)
+    expect(JSON.parse(await readFile(coveragePath, 'utf8'))).toMatchObject({ provider: providerDataset.provider })
   })
 
   it('офлайн пересоздаёт только manifest и повторный запуск идемпотентен', async () => {
