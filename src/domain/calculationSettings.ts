@@ -1,4 +1,5 @@
 import { CALCULATION_PROFILES, type AsrMethod, type CalculationProfileId, type CalculationSettings, type HighLatitudeMethod } from './prayerCalculation'
+import type { Place } from './place'
 import type { CalculatedPrayerKey } from './types'
 
 export type IshaMethod = { kind: 'angle'; angle: number } | { kind: 'interval'; minutes: number }
@@ -13,6 +14,31 @@ export interface CalculationSelection {
   profile: CalculationProfileId
   overrides: CalculationOverrides
 }
+export interface AutomaticCalculationDefaults {
+  profile: CalculationProfileId
+  asrMethod: AsrMethod
+}
+
+export const AUTOMATIC_CALCULATION_DEFAULTS: Readonly<Record<string, AutomaticCalculationDefaults>> = Object.freeze({
+  'RU-TA': { profile: 'dumRt', asrMethod: 'hanafi' },
+  RU: { profile: 'dumRf', asrMethod: 'standard' },
+  TR: { profile: 'turkey', asrMethod: 'standard' },
+  PK: { profile: 'karachi', asrMethod: 'hanafi' },
+  BD: { profile: 'karachi', asrMethod: 'hanafi' },
+  IN: { profile: 'karachi', asrMethod: 'hanafi' },
+  KZ: { profile: 'muslimWorldLeague', asrMethod: 'hanafi' },
+  KG: { profile: 'muslimWorldLeague', asrMethod: 'hanafi' },
+  UZ: { profile: 'muslimWorldLeague', asrMethod: 'hanafi' },
+  US: { profile: 'northAmerica', asrMethod: 'standard' },
+  CA: { profile: 'canadaFcna', asrMethod: 'standard' },
+  SA: { profile: 'ummAlQura', asrMethod: 'standard' },
+  AE: { profile: 'dubai', asrMethod: 'standard' },
+  QA: { profile: 'qatar', asrMethod: 'standard' },
+  KW: { profile: 'kuwait', asrMethod: 'standard' },
+  EG: { profile: 'egyptian', asrMethod: 'standard' },
+  default: { profile: 'muslimWorldLeague', asrMethod: 'standard' },
+})
+
 export const CALCULATED_KEYS: readonly CalculatedPrayerKey[] = ['fajr', 'sunrise', 'zenith', 'dhuhr', 'asr', 'maghrib', 'isha']
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -48,6 +74,19 @@ export function profileDefaults(profile: CalculationProfileId): CalculationSetti
     asrMethod: profile === 'dumRt' || profile === 'dumRf' || profile === 'karachi' ? 'hanafi' : 'standard',
     highLatitudeRule: profile === 'dumRt' ? 'dumRt' : 'twilightAngle',
   }
+}
+export function automaticCalculationDefaults(
+  place: Pick<Place, 'selection' | 'region' | 'coverage'> | undefined,
+): AutomaticCalculationDefaults {
+  const regionCode = place?.region?.code
+  const country = place?.coverage === 'inside' && regionCode === 'RU-TA'
+    ? 'RU-TA'
+    : place?.selection === 'city' && regionCode && /^[A-Z]{2}(?:[.-][A-Z0-9]{1,3})?$/.test(regionCode)
+      ? regionCode.slice(0, 2)
+      : undefined
+  const recommended = AUTOMATIC_CALCULATION_DEFAULTS[country ?? ''] ?? AUTOMATIC_CALCULATION_DEFAULTS.default
+  if (!recommended) throw new RangeError('missing-automatic-calculation-defaults')
+  return { ...recommended }
 }
 export function effectiveCalculationSettings(selection: CalculationSelection): CalculationSettings {
   if (!isCalculationSelection(selection)) throw new RangeError('Некорректные параметры расчёта')
