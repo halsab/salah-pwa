@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
+import { CalculationMethod, Coordinates, HighLatitudeRule, PolarCircleResolution, PrayerTimes } from 'adhan'
 
 import { getZonedTime, zonedDateTimeToInstant } from './locationTime'
+import { addDays } from './date'
 import {
   CALCULATION_PROFILES,
   UnsupportedCalculationProfileError,
   calculatePrayerSchedule,
   calculateSolarZenith,
   getCalculationProfileCapability,
+  getEffectiveParameters,
   type CalculationSettings,
 } from './prayerCalculation'
 
@@ -140,6 +143,87 @@ describe('calculatePrayerSchedule', () => {
     }
   })
 
+  it.each([
+    ['canadaFcna', 13, 13, 0],
+    ['dubai', 18.2, 18.2, 0],
+    ['qatar', 18, 0, 90],
+    ['kuwait', 18, 17.5, 0],
+    ['egyptian', 19.5, 17.5, 0],
+  ] as const)('сохраняет параметры профиля %s из Adhan 4.4.6', (profile, fajrAngle, ishaAngle, ishaInterval) => {
+    expect(getEffectiveParameters(withSettings({ profile }), '2026-10-09', 'Asia/Riyadh'))
+      .toMatchObject({ fajrAngle, ishaAngle, ishaInterval })
+  })
+
+  it.each([
+    ['dubai', CalculationMethod.Dubai], ['qatar', CalculationMethod.Qatar],
+    ['kuwait', CalculationMethod.Kuwait], ['egyptian', CalculationMethod.Egyptian],
+  ] as const)('сохраняет все встроенные поправки preset-а %s', (profile, preset) => {
+    const coordinates = new Coordinates(25.2854, 51.531)
+    const parameters = preset()
+    parameters.highLatitudeRule = HighLatitudeRule.TwilightAngle
+    parameters.polarCircleResolution = PolarCircleResolution.AqrabBalad
+    const expected = new PrayerTimes(coordinates, new Date(2026, 9, 9, 12), parameters)
+    const actual = calculatePrayerSchedule(
+      { latitude: coordinates.latitude, longitude: coordinates.longitude },
+      '2026-10-09', 'Asia/Qatar',
+      { profile, asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+
+    expect(actual.entries.fajr.instant).toBe(expected.fajr.getTime())
+    expect(actual.entries.sunrise.instant).toBe(expected.sunrise.getTime())
+    expect(actual.entries.dhuhr.instant).toBe(expected.dhuhr.getTime())
+    expect(actual.entries.asr.instant).toBe(expected.asr.getTime())
+    expect(actual.entries.maghrib.instant).toBe(expected.maghrib.getTime())
+    expect(actual.entries.isha.instant).toBe(expected.isha.getTime())
+  })
+
+  it('использует для Qatar фиксированный интервал Иша 90 минут круглый год', () => {
+    for (const date of ['2026-02-18', '2026-06-21']) {
+      const schedule = calculatePrayerSchedule(
+        { latitude: 25.2854, longitude: 51.531 }, date, 'Asia/Qatar',
+        withSettings({ profile: 'qatar' }),
+      )
+      expect(schedule.entries.isha.instant - schedule.entries.maghrib.instant).toBe(90 * MINUTE)
+    }
+  })
+
+  it('не переносит расчётное расписание на соседнюю гражданскую дату у линии перемены даты', () => {
+    const place = { latitude: 1.87, longitude: -157.4 }
+    const date = '2026-01-01'
+    const timeZone = 'Pacific/Kiritimati'
+    const schedule = calculatePrayerSchedule(place, date, timeZone)
+    const civilDates = Object.values(schedule.entries).map(entry =>
+      new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(entry.instant)),
+    )
+
+    expect(civilDates).toEqual(Array(7).fill(date))
+    expect(schedule.entries.zenith.instant).toBe(Date.parse('2025-12-31T22:33:00.000Z'))
+  })
+
+  it('сравнивает профиль Turkey с опубликованной таблицей Diyanet для Стамбула', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 41.0082, longitude: 28.9784 }, '2026-09-11', 'Europe/Istanbul',
+      { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+    const published = { fajr: '05:06', sunrise: '06:33', dhuhr: '13:06', asr: '16:39', maghrib: '19:29', isha: '20:50' }
+    const deviations = Object.fromEntries(Object.entries(published).map(([key, time]) => {
+      const actual = schedule.entries[key as keyof typeof published].time.split(':').map(Number)
+      const reference = time.split(':').map(Number)
+      const actualHour = actual[0] ?? Number.NaN
+      const actualMinute = actual[1] ?? Number.NaN
+      const publishedHour = reference[0] ?? Number.NaN
+      const publishedMinute = reference[1] ?? Number.NaN
+      return [key, actualHour * 60 + actualMinute - publishedHour * 60 - publishedMinute]
+    }))
+    // Primary Diyanet monthly timetable: https://namazvakitleri.diyanet.gov.tr/tr-tr/9541/istanbul-icin-namaz-vakti
+    expect(deviations).toEqual({ fajr: 0, sunrise: 0, dhuhr: 0, asr: -1, maghrib: -2, isha: -1 })
+  })
+
+  it('rejects non-canonical calculation dates', () => {
+    expect(() => calculatePrayerSchedule(KAZAN, '2026-1-15', 'Europe/Moscow')).toThrow('invalid-calculation-date')
+    expect(() => calculatePrayerSchedule(KAZAN, '2026-01-15-extra', 'Europe/Moscow')).toThrow('invalid-calculation-date')
+  })
+
   it('считает профиль ДУМ РФ по углам 16°/15°', () => {
     const dumRf = calculatePrayerSchedule(
       KAZAN,
@@ -214,27 +298,34 @@ describe('calculatePrayerSchedule', () => {
     expect(tokyo.entries.fajr.time).not.toBe(moscow.entries.fajr.time)
   })
 
-  it('использует интервал Иша 120 минут в Рамадан и 90 минут вне Рамадана', () => {
+  it('проверяет границы Рамадана и интервал Иша по локальному календарю Умм аль-Кура', () => {
     const settings = withSettings({ profile: 'ummAlQura' })
-    const ramadan = calculatePrayerSchedule(
-      MECCA,
-      '2026-02-18',
-      'Asia/Riyadh',
-      settings,
-    )
-    const outsideRamadan = calculatePrayerSchedule(
-      MECCA,
-      '2026-03-20',
-      'Asia/Riyadh',
-      settings,
-    )
+    for (const timeZone of ['Asia/Riyadh', 'Asia/Qatar']) {
+      const hijriMonth = (date: string) => Number.parseInt(new Intl.DateTimeFormat(
+        'en-u-ca-islamic-umalqura-nu-latn', { month: 'numeric', timeZone },
+      ).format(zonedDateTimeToInstant(date, '12:00', timeZone)), 10)
+      const dates = Array.from({ length: 80 }, (_, index) => addDays('2026-02-01', index))
+      const firstRamadanIndex = dates.findIndex((date, index) =>
+        hijriMonth(date) === 9 && (index === 0 || hijriMonth(dates[index - 1] ?? date) !== 9),
+      )
+      let lastRamadanIndex = -1
+      for (let index = 0; index < dates.length; index += 1) {
+        const date = dates[index]
+        if (date && hijriMonth(date) === 9) lastRamadanIndex = index
+      }
+      expect(firstRamadanIndex).toBeGreaterThan(0)
+      expect(lastRamadanIndex).toBeGreaterThanOrEqual(firstRamadanIndex)
+      const boundaryDates = [
+        dates[firstRamadanIndex - 1], dates[firstRamadanIndex],
+        dates[lastRamadanIndex], dates[lastRamadanIndex + 1],
+      ].filter((date): date is string => date !== undefined)
 
-    expect(ramadan.entries.isha.instant - ramadan.entries.maghrib.instant).toBe(
-      120 * MINUTE,
-    )
-    expect(
-      outsideRamadan.entries.isha.instant - outsideRamadan.entries.maghrib.instant,
-    ).toBe(90 * MINUTE)
+      for (const date of boundaryDates) {
+        const schedule = calculatePrayerSchedule(MECCA, date, timeZone, settings)
+        const interval = hijriMonth(date) === 9 ? 120 : 90
+        expect(schedule.entries.isha.instant - schedule.entries.maghrib.instant).toBe(interval * MINUTE)
+      }
+    }
   })
 
   it('явно отклоняет Умм аль-Кура, если точный календарь недоступен', () => {

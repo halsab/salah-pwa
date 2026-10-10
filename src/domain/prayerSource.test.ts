@@ -69,6 +69,12 @@ describe('source resolver', () => {
     expect(resolvePrayerTimeSource(place, '2026-09-01', manualCalculation(selection), [official])).toMatchObject({ kind: 'calculated', settings: { profile: 'karachi', fajrAngle: 19, adjustments: { isha: 90 } } })
     expect(resolvePrayerTimeSource(place, '2026-09-01', automaticPreferences(selection), [official]).kind).toBe('official')
   })
+  it.each(['canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian'] as const)(
+    'allows manual calculation with the new profile %s', profile => {
+      const result = resolvePrayerTimeSource(place, '2026-09-01', manualCalculation({ profile, overrides: {} }), [])
+      expect(result).toMatchObject({ kind: 'calculated', status: 'ready', settings: { profile } })
+    },
+  )
 })
 
 describe('preferences and validation', () => {

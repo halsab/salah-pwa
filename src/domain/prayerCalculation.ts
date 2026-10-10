@@ -30,6 +30,11 @@ export type CalculationProfileId =
   | 'karachi'
   | 'northAmerica'
   | 'ummAlQura'
+  | 'canadaFcna'
+  | 'dubai'
+  | 'qatar'
+  | 'kuwait'
+  | 'egyptian'
 
 export type AsrMethod = 'hanafi' | 'standard'
 
@@ -76,6 +81,11 @@ export const CALCULATION_PROFILES: readonly CalculationProfileOption[] = [
   { id: 'karachi' },
   { id: 'northAmerica' },
   { id: 'ummAlQura' },
+  { id: 'canadaFcna' },
+  { id: 'dubai' },
+  { id: 'qatar' },
+  { id: 'kuwait' },
+  { id: 'egyptian' },
 ]
 
 export const DEFAULT_CALCULATION_SETTINGS: CalculationSettings = {
@@ -107,6 +117,7 @@ function dateFromIso(date: string): Date {
   const [year = 0, month = 0, day = 0] = date.split('-').map(Number)
   const result = new Date(year, month - 1, day, 12)
   if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
     !year ||
     !month ||
     !day ||
@@ -171,6 +182,16 @@ function profileParameters(
     karachi: CalculationMethod.Karachi,
     northAmerica: CalculationMethod.NorthAmerica,
     ummAlQura: CalculationMethod.UmmAlQura,
+    canadaFcna: () => {
+      const parameters = CalculationMethod.Other()
+      parameters.fajrAngle = 13
+      parameters.ishaAngle = 13
+      return parameters
+    },
+    dubai: CalculationMethod.Dubai,
+    qatar: CalculationMethod.Qatar,
+    kuwait: CalculationMethod.Kuwait,
+    egyptian: CalculationMethod.Egyptian,
   }[profile]()
 
   if (profile === 'ummAlQura' && isRamadan(date, timeZone)) {
@@ -212,15 +233,15 @@ function applyUserRules(
 
 function hasPolarGap(
   coordinates: Coordinates,
-  date: Date,
+  astronomicalDate: string,
 ): boolean {
   const parameters = CalculationMethod.Other()
   parameters.polarCircleResolution = PolarCircleResolution.Unresolved
   parameters.rounding = Rounding.None
-  const today = new PrayerTimes(coordinates, date, parameters)
+  const today = new PrayerTimes(coordinates, dateFromIso(astronomicalDate), parameters)
   const tomorrow = new PrayerTimes(
     coordinates,
-    dateFromIso(addDays(toIsoDate(date), 1)),
+    dateFromIso(addDays(astronomicalDate, 1)),
     parameters,
   )
 
@@ -229,11 +250,28 @@ function hasPolarGap(
   )
 }
 
-function toIsoDate(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+function getAstronomicalDate(
+  coordinates: Coordinates,
+  civilDate: string,
+  locationClock: ReturnType<typeof createLocationClock>,
+): string {
+  const parameters = CalculationMethod.Other()
+  parameters.polarCircleResolution = PolarCircleResolution.Unresolved
+  parameters.rounding = Rounding.None
+  const matchingDates: string[] = []
+  for (let offset = -2; offset <= 2; offset += 1) {
+    const candidate = addDays(civilDate, offset)
+    const transit = new PrayerTimes(coordinates, dateFromIso(candidate), parameters).dhuhr
+    if (Number.isFinite(transit.getTime()) && locationClock.getCivilDate(transit) === civilDate) {
+      matchingDates.push(candidate)
+    }
+  }
+  if (matchingDates.length === 0) throw new RangeError('unresolved-astronomical-date')
+  return matchingDates.reduce((nearest, candidate) => {
+    const candidateDistance = Math.abs(Date.parse(`${candidate}T12:00:00Z`) - Date.parse(`${civilDate}T12:00:00Z`))
+    const nearestDistance = Math.abs(Date.parse(`${nearest}T12:00:00Z`) - Date.parse(`${civilDate}T12:00:00Z`))
+    return candidateDistance < nearestDistance ? candidate : nearest
+  })
 }
 
 export function calculateSolarZenith(
@@ -348,13 +386,15 @@ export function calculatePrayerSchedule(
 ): CalculatedPrayerSchedule {
   if (!isCalculationSettings(settings)) throw new RangeError('invalid-calculation-settings')
   const locationClock = createLocationClock(timeZone)
-  const calendarDate = dateFromIso(date)
+  dateFromIso(date)
   const coordinates = new Coordinates(location.latitude, location.longitude)
+  const astronomicalDate = getAstronomicalDate(coordinates, date, locationClock)
+  const calendarDate = dateFromIso(astronomicalDate)
   const parameters = profileParameters(settings.profile, date, timeZone)
   applyUserRules(parameters, settings)
   applyPrayerAngles(parameters, settings)
 
-  const polarResolutionApplied = hasPolarGap(coordinates, calendarDate)
+  const polarResolutionApplied = hasPolarGap(coordinates, astronomicalDate)
   if (settings.highLatitudeRule === 'dumRt') {
     // Не ограничиваем существующий сумрак долей ночи: подстановка 120/90 выполняется ниже.
     parameters.nightPortions = () => ({ fajr: 1, isha: 1 })
@@ -363,7 +403,7 @@ export function calculatePrayerSchedule(
   const dumRtNorthRule = settings.highLatitudeRule === 'dumRt'
   const previousNightHasFajr = !polarResolutionApplied && angleIsAvailable(
     coordinates,
-    date,
+    astronomicalDate,
     dumRtNorthRule && settings.fajrAngle === undefined ? 18 : parameters.fajrAngle,
     parameters.polarCircleResolution,
     'fajr',
@@ -372,7 +412,7 @@ export function calculatePrayerSchedule(
     (parameters.ishaInterval > 0) ||
     (!polarResolutionApplied && angleIsAvailable(
       coordinates,
-      date,
+      astronomicalDate,
       dumRtNorthRule && settings.isha === undefined ? 18 : parameters.ishaAngle,
       parameters.polarCircleResolution,
       'isha',
