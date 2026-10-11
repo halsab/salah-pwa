@@ -21,6 +21,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
   const provider = official ? PRAYER_PROVIDERS.find(item => item.id === context.provider) : null
   const providerName = provider?.id === 'dumRt' ? t('dumRt') : t('provider')
   const calculated = 'entries' in schedule ? schedule : null
+  const sourceType = official ? t('officialTable') : context.mode === 'automatic' ? t('calculatedSourceTitle') : t('manualCalculation')
   const params = context.source === 'calculated' ? getEffectiveParameters(context.settings, context.date, context.timeZone) : null
   const lateFajrStart = buildScheduleEvents(schedule).find((event): event is ResolvedScheduleEvent => event.status === 'resolved' && event.key === 'fajrStart' && event.dayOffset === -1)
   const title = official ? provider ? providerName : t('officialTable') : t('calculatedSourceTitle')
@@ -57,7 +58,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
 
   const article = [
     `# ${markdownText(title)}`,
-    official ? t('officialTable') : t('manualCalculation'),
+    sourceType === title ? '' : sourceType,
     `- **${t('placeLabel')}:** ${markdownText(placeLabel)}\n- **${t('dateLabel')}:** ${markdownText(formatCompactDateLabel(context.date, locale))}`,
     official ? t('officialTimes') : t('calculatedTimes'),
     context.mode === 'automatic' ? t('automaticCoverage') : '',

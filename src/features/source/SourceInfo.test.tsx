@@ -12,6 +12,7 @@ it('показывает факты официальной таблицы и д�
   expect(within(dialog).getByRole('heading', { level: 1, name: 'ДУМ РТ' })).toBeVisible()
   expect(within(dialog).getByRole('heading', { level: 2, name: 'Сведения' })).toBeVisible()
   expect(within(dialog).getByRole('heading', { level: 2, name: 'Важно' })).toBeVisible()
+  expect(within(dialog).getByText('Официальная таблица', { exact:true })).toBeVisible()
   expect(dialog.querySelectorAll('ul')).toHaveLength(2)
   expect(dialog.querySelector('ul')?.querySelectorAll('li')).toHaveLength(2)
   expect(dialog.querySelectorAll('ul')[1]?.querySelectorAll('li')).toHaveLength(4)
@@ -47,8 +48,22 @@ it('расчёт показывает эффективные параметры,
   expect(dialog.querySelector('blockquote')).toHaveTextContent('Время рассчитано по выбранной методике и может отличаться от расписания местной религиозной организации.')
   expect(dialog.querySelectorAll('blockquote')).toHaveLength(1)
   expect(within(dialog).getByText('Расчётное время', { exact:true })).toBeVisible()
+  expect(within(dialog).getByText('Ручной расчёт', { exact:true })).toBeVisible()
   expect(dialog).toHaveTextContent('19°')
   expect(dialog).toHaveTextContent('95 мин после заката')
   expect(dialog).toHaveTextContent('Аср +12 мин')
   expect(dialog).toHaveTextContent('≈ По северному правилу')
+})
+
+it('называет автоматический расчёт расчётным временем и сохраняет оговорку без повторного заголовка', () => {
+  const schedule = calculatePrayerSchedule(
+    { latitude: 25.2854, longitude: 51.531 }, '2026-06-08', 'Asia/Qatar',
+    { profile:'qatar', asrMethod:'standard', highLatitudeRule:'twilightAngle' },
+  )
+  render(<SourceInfo open onClose={() => {}} schedule={schedule} placeLabel="Доха" checkedAt={null} updateFailed={false} meta={null} context={{source:'calculated',mode:'automatic',settings:{profile:'qatar',asrMethod:'standard',highLatitudeRule:'twilightAngle'},date:schedule.date,timeZone:schedule.timeZone,location:{id:null,latitude:25.2854,longitude:51.531}}} />)
+  const dialog = screen.getByRole('region', { name:'Сведения об источнике' })
+  expect(within(dialog).getByText('Расчётное время', { exact:true })).toBeVisible()
+  expect(within(dialog).queryByText('Ручной расчёт', { exact:true })).toBeNull()
+  expect(dialog.querySelector('blockquote')).toHaveTextContent('Время рассчитано по выбранной методике и может отличаться от расписания местной религиозной организации.')
+  expect(dialog.querySelectorAll('blockquote')).toHaveLength(1)
 })
