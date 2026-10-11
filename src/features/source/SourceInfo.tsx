@@ -67,7 +67,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     `## ${t('important')}`,
     ...important,
     official ? '' : markdownLink(t('adhanProfilesLink'), 'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md'),
-    `> ${t('disclaimer')}`,
+    official ? '' : `> ${t('disclaimer')}`,
   ].filter(Boolean).join('\n\n')
 
   return <Screen label={t('sourceDetails')} top={<BackButton onClick={onClose} />}

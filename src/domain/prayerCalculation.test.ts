@@ -531,6 +531,49 @@ describe('independent institutional comparisons', () => {
     // https://content.awqaf.gov.kw/BasicPages/2020/9/bcc62a0167664473ac725715b92ef6fd.pdf
     expect(deviations).toEqual([0, 0, 0, 0, 1, 1])
   })
+
+  it('compares Doha with the Qatar Ministry of Awqaf 8 June 2026 timetable', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 25.2854, longitude: 51.531 }, '2026-06-08', 'Asia/Qatar',
+      { profile: 'qatar', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+    const published = ['03:13', '04:43', '11:33', '14:56', '18:25', '19:55']
+    const deviations = keys.map((key, index) =>
+      minutes(schedule.entries[key].time) - minutes(published[index] ?? ''),
+    )
+    // Министерство указывает местное время Дохи и шесть полей; данные поддерживает Дар ат-Таквим аль-Катари.
+    // https://www.islam.gov.qa/news/details/f8fdcb6f-d4ed-4ea1-83da-5c3b7662123c/
+    expect(deviations).toEqual([1, 0, 0, 0, -2, -2])
+    expect(schedule.entries.isha.instant - schedule.entries.maghrib.instant).toBe(90 * MINUTE)
+  })
+
+  it('compares Kuwait City with the Ministry of Awqaf Ramadan 1444 timetable', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 29.3759, longitude: 47.9774 }, '2023-03-23', 'Asia/Kuwait',
+      { profile: 'kuwait', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+    const published = ['04:30', '05:49', '11:55', '15:23', '18:01', '19:18']
+    const deviations = keys.map((key, index) =>
+      minutes(schedule.entries[key].time) - minutes(published[index] ?? ''),
+    )
+    // Таблица Министерства вакфов: 1 рамадан 1444 соответствует 23 марта 2023 по местному времени Kuwait City.
+    // https://content.awqaf.gov.kw/LatestReleases/2023/4/66c9a677578f41b98fc650d5a75d0aea.pdf
+    expect(deviations).toEqual([0, 0, 0, 0, 0, 0])
+  })
+
+  it('compares a later Kuwait City date in the Ministry of Awqaf Ramadan 1444 timetable', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 29.3759, longitude: 47.9774 }, '2023-04-20', 'Asia/Kuwait',
+      { profile: 'kuwait', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+    const published = ['03:51', '05:17', '11:47', '15:22', '18:17', '19:38']
+    const deviations = keys.map((key, index) =>
+      minutes(schedule.entries[key].time) - minutes(published[index] ?? ''),
+    )
+    // В печатной таблице Министерства вакфов 20 апреля 2023 указано как 29 рамадан.
+    // https://content.awqaf.gov.kw/LatestReleases/2023/4/66c9a677578f41b98fc650d5a75d0aea.pdf
+    expect(deviations).toEqual([3, 0, 0, 0, 0, 1])
+  })
 })
 
 it('applies adjustments to absolute instants across midnight and countdown chronology', async () => {
