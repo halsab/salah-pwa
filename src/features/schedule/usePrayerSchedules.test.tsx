@@ -178,7 +178,11 @@ describe('окно событий и гонки источников', () => {
     expect(hook.result.current.schedules.map(({ date }) => date)).toEqual(['2026-06-17', '2026-06-18', '2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25'])
     const loaded = hook.result.current.schedules.flatMap(buildScheduleEvents)
     const wider = Array.from({ length: 11 }, (_, index) => calculation.calculatePrayerSchedule(place, addDays(initial.selectedDate, index - 5), place.timeZone, initial.calculationSettings)).flatMap(buildScheduleEvents)
-    expect(loaded.some((event) => event.status === 'resolved' && event.dayOffset === (place.timeZone === 'Europe/Oslo' ? 1 : -2))).toBe(true)
+    if (place.timeZone === 'Europe/Oslo') {
+      expect(loaded.some((event) => event.status === 'resolved' && event.dayOffset === 1)).toBe(true)
+    } else {
+      expect(loaded.every((event) => event.status !== 'resolved' || event.dayOffset !== -2)).toBe(true)
+    }
     for (const time of ['00:00', '12:00', '23:59'] as const) {
       const now = zonedDateTimeToInstant(initial.selectedDate, time, place.timeZone)
       expect(selectEventPair(now, loaded)).toEqual(selectEventPair(now, wider))

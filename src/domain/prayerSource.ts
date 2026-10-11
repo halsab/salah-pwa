@@ -20,7 +20,7 @@ export type ResolvedPrayerSource =
   | { kind: 'official'; status: 'ready' | 'not-loaded' | 'invalid' | 'not-covered'; provider: string; version: string | null; revision: string | null; coverage: string | null; locationId: string | null; timeZone: string }
   | { kind: 'calculated'; status: 'ready' | 'unsupported'; settings: CalculationSettings; timeZone: string; strategy: 'manual' | 'regional' | 'default' }
 
-const PORTABLE_PROFILES: readonly CalculationProfileId[] = ['dumRt', 'dumRf', 'turkey', 'muslimWorldLeague', 'karachi', 'northAmerica']
+const PORTABLE_PROFILES: readonly CalculationProfileId[] = ['dumRt', 'dumRf', 'turkey', 'muslimWorldLeague', 'karachi', 'northAmerica', 'canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian']
 function regionProfile(location: Place): CalculationProfileId | undefined {
   if (location.region?.code === 'RU-TA' && location.coverage === 'inside') return 'dumRt'
   const country = location.region?.code.split('.')[0]

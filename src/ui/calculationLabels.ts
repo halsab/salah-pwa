@@ -21,6 +21,8 @@ export const PROFILE_LABEL_KEYS: Record<CalculationProfileId, MessageKey> = {
   dumRt: 'profileDumRt', dumRf: 'profileDumRf', turkey: 'profileTurkey',
   muslimWorldLeague: 'profileMuslimWorldLeague', karachi: 'profileKarachi',
   northAmerica: 'profileNorthAmerica', ummAlQura: 'profileUmmAlQura',
+  canadaFcna: 'profileCanadaFcna', dubai: 'profileDubai', qatar: 'profileQatar',
+  kuwait: 'profileKuwait', egyptian: 'profileEgyptian',
 }
 
 export function calculationCapabilityMessage(profile: CalculationProfileId, capability: CalculationProfileCapability, t: Translator): string | null {
