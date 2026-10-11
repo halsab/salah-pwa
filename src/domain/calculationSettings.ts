@@ -1,5 +1,5 @@
 import { CALCULATION_PROFILES, type AsrMethod, type CalculationProfileId, type CalculationSettings, type HighLatitudeMethod } from './prayerCalculation'
-import type { Place } from './place'
+import { gpsCountryCode, type Place } from './place'
 import type { CalculatedPrayerKey } from './types'
 
 export type IshaMethod = { kind: 'angle'; angle: number } | { kind: 'interval'; minutes: number }
@@ -79,12 +79,13 @@ export function profileDefaults(profile: CalculationProfileId): CalculationSetti
   }
 }
 export function automaticCalculationRecommendation(
-  place: Pick<Place, 'selection' | 'region' | 'coverage'> | undefined,
+  place: (Pick<Place, 'selection' | 'region' | 'coverage'> & Partial<Pick<Place, 'latitude' | 'longitude' | 'nearbyCity'>>) | undefined,
 ): AutomaticCalculationRecommendation {
   const regionCode = place?.region?.code
   const country = place?.coverage === 'inside' && regionCode === 'RU-TA'
     ? 'RU-TA'
-    : place?.selection === 'city' && regionCode && /^[A-Z]{2}(?:[.-][A-Z0-9]{1,3})?$/.test(regionCode)
+    : place?.selection === 'gps' ? gpsCountryCode(place)
+      : place?.selection === 'city' && regionCode && /^[A-Z]{2}(?:[.-][A-Z0-9]{1,3})?$/.test(regionCode)
       ? regionCode.slice(0, 2)
       : undefined
   const policyKey = country && AUTOMATIC_CALCULATION_DEFAULTS[country] ? country : 'default'
@@ -93,7 +94,7 @@ export function automaticCalculationRecommendation(
   return { ...recommended, strategy: policyKey === 'default' ? 'default' : 'regional' }
 }
 export function automaticCalculationDefaults(
-  place: Pick<Place, 'selection' | 'region' | 'coverage'> | undefined,
+  place: (Pick<Place, 'selection' | 'region' | 'coverage'> & Partial<Pick<Place, 'latitude' | 'longitude' | 'nearbyCity'>>) | undefined,
 ): AutomaticCalculationDefaults {
   const { profile, asrMethod } = automaticCalculationRecommendation(place)
   return { profile, asrMethod }

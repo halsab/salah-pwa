@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createCityPlace, createGpsPlace, createOfficialPlace } from './place'
+import { createCityPlace, createGpsPlace, createOfficialPlace, withNearbyCity } from './place'
 import { resolvePrayerTimeSource, type OfficialDatasetAvailability } from './prayerSource'
 import { automaticPreferences, isSourcePreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
 import { automaticCalculationDefaults, effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
@@ -80,6 +80,41 @@ describe('source resolver', () => {
     const gps = createGpsPlace({ latitude: 55.5, longitude: 49.5, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', geometry, 'gps:ta')
     expect(resolvePrayerTimeSource(gps, '2026-09-01', auto, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
     expect(resolvePrayerTimeSource(gps, '2027-09-01', auto, [official])).toMatchObject({ kind: 'calculated', strategy: 'regional', settings: { profile: 'dumRt', asrMethod: 'hanafi' } })
+  })
+  it.each([
+    ['RU', 'dumRf', 'standard'], ['TR', 'turkey', 'standard'], ['KZ', 'muslimWorldLeague', 'hanafi'],
+    ['CA', 'canadaFcna', 'standard'], ['AE', 'dubai', 'standard'], ['ZZ', 'muslimWorldLeague', 'standard'],
+  ] as const)('uses nearest-city country %s only for automatic profile selection', (countryCode, profile, asrMethod) => {
+    const gps = createGpsPlace({ latitude: 55.75, longitude: 37.62, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', null, 'gps:country')
+    const city = withNearbyCity(gps, { id: 1, name: 'Nearest city', countryCode, admin1Code: '', admin1Name: '',
+      latitude: gps.latitude, longitude: gps.longitude, population: 1, timeZone: 'Europe/Moscow' })
+    expect(city).toMatchObject({ latitude: gps.latitude, longitude: gps.longitude, timeZone: 'Europe/Moscow' })
+    const officialData = countryCode === 'RU' ? [official] : []
+    expect(resolvePrayerTimeSource(city, '2026-09-01', auto, officialData)).toMatchObject({
+      kind: 'calculated', strategy: countryCode === 'ZZ' ? 'default' : 'regional', settings: { profile, asrMethod },
+    })
+  })
+  it('does not infer country from a label and uses MWL when nearest-city country is invalid', () => {
+    const gps = createGpsPlace({ latitude: 55.75, longitude: 37.62, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', null, 'gps:invalid-country')
+    const named = withNearbyCity(gps, { id: 1, name: 'Москва', countryCode: 'ru', admin1Code: '', admin1Name: '',
+      latitude: gps.latitude, longitude: gps.longitude, population: 1, timeZone: 'Europe/Moscow' })
+    expect(resolvePrayerTimeSource(named, '2026-09-01', auto, [])).toMatchObject({
+      kind: 'calculated', strategy: 'default', settings: { profile: 'muslimWorldLeague', asrMethod: 'standard' },
+    })
+  })
+  it('keeps confirmed Tatarstan and official timetable priority regardless of nearest-city country', () => {
+    const geometry = { uncertaintyMeters: 0, polygons: [[[[49, 55], [50, 55], [50, 56], [49, 56], [49, 55]]]] } as const
+    const gps = createGpsPlace({ latitude: 55.5, longitude: 49.5, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', geometry, 'gps:ta-cross-border')
+    const withForeignCity = withNearbyCity(gps, { id: 1, name: 'Cross-border city', countryCode: 'CA', admin1Code: '', admin1Name: '',
+      latitude: gps.latitude, longitude: gps.longitude, population: 1, timeZone: 'America/Toronto' })
+    expect(resolvePrayerTimeSource(withForeignCity, '2026-09-01', auto, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
+    expect(resolvePrayerTimeSource(withForeignCity, '2027-09-01', auto, [official])).toMatchObject({
+      kind: 'calculated', strategy: 'regional', settings: { profile: 'dumRt', asrMethod: 'hanafi' },
+    })
+    const outside = { ...withForeignCity, coverage: 'outside' as const, region: null }
+    expect(resolvePrayerTimeSource(outside, '2026-09-01', auto, [official])).toMatchObject({
+      kind: 'calculated', strategy: 'regional', settings: { profile: 'canadaFcna' },
+    })
   })
   it('uses generic fallback when a regional profile is unsupported, without retaining regional Asr', () => {
     const toronto = { ...place, selection: 'city' as const, coverage: 'outside' as const, region: { code: 'CA.ON', name: '' } }

@@ -12,7 +12,14 @@ export interface Place extends SavedCoordinates {
   coverage: Coverage
   automaticTimeZone: { id: string; source: 'city' | 'boundary' | 'device' | 'legacy' }
   timeZoneOverride?: { id: string; source: 'user' }
-  nearbyCity?: { id: number; name: string; distanceKm: number }
+  nearbyCity?: {
+    id: number
+    name: string
+    distanceKm: number
+    countryCode?: string
+    latitude?: number
+    longitude?: number
+  }
 }
 
 type Fix = Pick<SavedCoordinates, 'latitude' | 'longitude' | 'accuracy' | 'timestamp'>
@@ -68,14 +75,89 @@ export function setPlaceTimeZone(place: Place, timeZone: string | null): Place {
 
 export function refineGpsPlace(place: Place, fix: Fix, deviceZone: string, geometry: CoverageGeometry | null): Place {
   const refined = createGpsPlace(fix, deviceZone, geometry, place.id)
-  return place.timeZoneOverride ? setPlaceTimeZone(refined, place.timeZoneOverride.id) : refined
+  const withZone = place.timeZoneOverride ? setPlaceTimeZone(refined, place.timeZoneOverride.id) : refined
+  const city = place.nearbyCity
+  const latitude = city?.latitude
+  const longitude = city?.longitude
+  if (!city || typeof latitude !== 'number' || !Number.isFinite(latitude)
+    || typeof longitude !== 'number' || !Number.isFinite(longitude)
+    || !validPosition({ latitude, longitude, accuracy: null })) return withZone
+  const distanceKm = haversineDistanceKm(fix.latitude, fix.longitude, latitude, longitude)
+  if (distanceKm > 25) return withZone
+  return { ...withZone, name: city.name, nearbyCity: { ...city, distanceKm } }
 }
 
 export function withNearbyCity(place: Place, city: City | null): Place {
   if (!city) return place
   const distanceKm = haversineDistanceKm(place.latitude, place.longitude, city.latitude, city.longitude)
   if (distanceKm > 25) return place
-  return { ...place, name: city.name, nearbyCity: { id: city.id, name: formatCityLabel(city), distanceKm } }
+  const countryCode = /^[A-Z]{2}$/.test(city.countryCode)
+    && validPosition({ latitude: city.latitude, longitude: city.longitude, accuracy: null })
+    ? city.countryCode
+    : undefined
+  return {
+    ...place,
+    name: city.name,
+    nearbyCity: {
+      id: city.id,
+      name: formatCityLabel(city),
+      distanceKm,
+      // Храним координаты города, чтобы перепроверить country hint при восстановлении и GPS refinement.
+      ...(countryCode ? { countryCode, latitude: city.latitude, longitude: city.longitude } : {}),
+    },
+  }
+}
+
+export function restorePlaceMetadata(place: Place): Place {
+  const city = place.nearbyCity
+  if (!city) return place
+  if (city.distanceKm > 25) {
+    const { nearbyCity: _nearbyCity, ...withoutCity } = place
+    return { ...withoutCity, name: '' }
+  }
+  if (!Number.isFinite(city.latitude) || !Number.isFinite(city.longitude)) {
+    if (city.countryCode) {
+      const { countryCode: _countryCode, latitude: _latitude, longitude: _longitude, ...display } = city
+      return { ...place, nearbyCity: display }
+    }
+    return place
+  }
+  const latitude = city.latitude
+  const longitude = city.longitude
+  if (typeof latitude !== 'number' || !Number.isFinite(latitude) || typeof longitude !== 'number' || !Number.isFinite(longitude)) {
+    const { countryCode: _countryCode, latitude: _latitude, longitude: _longitude, ...display } = city
+    return { ...place, nearbyCity: display }
+  }
+  if (!validPosition({ latitude, longitude, accuracy: null })) {
+    const { countryCode: _countryCode, latitude: _latitude, longitude: _longitude, ...display } = city
+    return { ...place, nearbyCity: display }
+  }
+  const distanceKm = haversineDistanceKm(place.latitude, place.longitude, latitude, longitude)
+  if (distanceKm > 25 || !/^[A-Z]{2}$/.test(city.countryCode ?? '')) {
+    const { countryCode: _countryCode, ...display } = city
+    if (distanceKm > 25) {
+      const { nearbyCity: _nearbyCity, ...withoutCity } = place
+      return { ...withoutCity, name: '' }
+    }
+    return { ...place, nearbyCity: { ...display, distanceKm } }
+  }
+  return { ...place, nearbyCity: { ...city, distanceKm } }
+}
+
+export function gpsCountryCode(place: Pick<Place, 'selection'> & Partial<Pick<Place, 'latitude' | 'longitude' | 'nearbyCity'>>): string | undefined {
+  const city = place.nearbyCity
+  const latitude = place.latitude
+  const longitude = place.longitude
+  const cityLatitude = city?.latitude
+  const cityLongitude = city?.longitude
+  if (place.selection !== 'gps' || !city || !/^[A-Z]{2}$/.test(city.countryCode ?? '')
+    || typeof latitude !== 'number' || !Number.isFinite(latitude) || typeof longitude !== 'number' || !Number.isFinite(longitude)
+    || typeof cityLatitude !== 'number' || !Number.isFinite(cityLatitude)
+    || typeof cityLongitude !== 'number' || !Number.isFinite(cityLongitude)
+    || !validPosition({ latitude: cityLatitude, longitude: cityLongitude, accuracy: null })) return undefined
+  return haversineDistanceKm(latitude, longitude, cityLatitude, cityLongitude) <= 25
+    ? city.countryCode
+    : undefined
 }
 
 export function homePlaceLabel(place: Place | null, unknownLabel = 'Местоположение не определено'): string {
