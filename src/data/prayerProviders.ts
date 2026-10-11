@@ -32,7 +32,9 @@ export function officialDatasets(
       provider: provider.id, priority: provider.priority,
       timeZone: data.providerInfo?.timeZone ?? provider.timeZone,
       coverage: data.providerInfo?.coverage.geographic ?? provider.coverage,
-      years: data.source.years, locations: data.locations, state,
+      years: data.source.years, schemaVersion: data.schemaVersion,
+      ...(data.providerInfo ? { startDate: data.providerInfo.coverage.startDate, endDate: data.providerInfo.coverage.endDate } : {}),
+      locations: data.locations, state,
       version: data.identity?.version ?? data.source.updatedAt, revision: getDatasetRevision(data),
     })
     const ready = meta && state.state === 'ready' ? descriptor(meta, 'ready') : null

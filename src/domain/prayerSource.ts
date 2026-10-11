@@ -1,5 +1,5 @@
 import { getCivilDate } from './locationTime'
-import { effectiveCalculationSettings, profileDefaults } from './calculationSettings'
+import { automaticCalculationRecommendation, effectiveCalculationSettings, profileDefaults } from './calculationSettings'
 import { officialLocationForPlace, type Place } from './place'
 import type { CalculationProfileId, CalculationSettings } from './prayerCalculation'
 import type { SourcePreferences } from './sourcePreferences'
@@ -11,6 +11,9 @@ export interface OfficialDatasetAvailability {
   timeZone: string
   coverage: string
   years: readonly number[]
+  schemaVersion?: number
+  startDate?: string
+  endDate?: string
   locations: PrayerLocation[]
   state: 'ready' | 'not-loaded' | 'invalid'
   version: string
@@ -21,15 +24,21 @@ export type ResolvedPrayerSource =
   | { kind: 'calculated'; status: 'ready' | 'unsupported'; settings: CalculationSettings; timeZone: string; strategy: 'manual' | 'regional' | 'default' }
 
 const PORTABLE_PROFILES: readonly CalculationProfileId[] = ['dumRt', 'dumRf', 'turkey', 'muslimWorldLeague', 'karachi', 'northAmerica', 'canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian']
-function regionProfile(location: Place): CalculationProfileId | undefined {
-  if (location.region?.code === 'RU-TA' && location.coverage === 'inside') return 'dumRt'
-  const country = location.region?.code.split('.')[0]
-  if (country === 'RU') return 'dumRf'
-  if (country === 'TR') return 'turkey'
-  if (country === 'PK' || country === 'BD') return 'karachi'
-  if (country === 'US' || country === 'CA') return 'northAmerica'
-  if (country === 'SA') return 'ummAlQura'
-  return undefined
+
+function isCivilDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+}
+
+function coversDate(dataset: OfficialDatasetAvailability, civilDate: string): boolean {
+  if (!isCivilDate(civilDate)) return false
+  const year = Number(civilDate.slice(0, 4))
+  if (dataset.schemaVersion === 3) {
+    return Boolean(dataset.startDate && dataset.endDate
+      && civilDate >= dataset.startDate && civilDate <= dataset.endDate)
+  }
+  return dataset.years.includes(year)
 }
 export function resolvePrayerTimeSource(
   location: Place,
@@ -49,15 +58,20 @@ export function resolvePrayerTimeSource(
   for (const dataset of datasets) {
     if (manual?.kind === 'official' && manual.provider !== dataset.provider) continue
     const locality = location.region?.code === dataset.coverage ? officialLocationForPlace(location, dataset.locations) : null
-    if (!locality || !dataset.years.includes(Number((typeof date === 'string' ? date : getCivilDate(date, dataset.timeZone)).slice(0, 4)))) continue
+    const civilDate = typeof date === 'string' ? date : getCivilDate(date, dataset.timeZone)
+    if (!locality || !coversDate(dataset, civilDate)) continue
     return { kind: 'official', status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: locality.timeZone ?? dataset.timeZone }
   }
   if (manual?.kind === 'official') {
     return { kind: 'official', status: 'not-covered', provider: manual.provider, version: null, revision: null, coverage: null, locationId: null, timeZone: datasets.find(d => d.provider === manual.provider)?.timeZone ?? location.timeZone }
   }
-  const regional = regionProfile(location)
-  const profile = regional && supportedProfiles.includes(regional) ? regional : 'muslimWorldLeague'
-  const settings = profileDefaults(profile)
+  const recommendation = automaticCalculationRecommendation(location)
+  const regional = recommendation.profile
+  const canUseRegional = supportedProfiles.includes(regional)
+  const profile = canUseRegional ? regional : 'muslimWorldLeague'
+  const settings = profile === regional
+    ? { ...profileDefaults(profile), asrMethod: recommendation.asrMethod }
+    : profileDefaults(profile)
   if (profile !== 'dumRt' && Math.abs(location.latitude) > 48) settings.highLatitudeRule = 'seventhOfNight'
-  return { kind: 'calculated', status: supportedProfiles.includes(profile) ? 'ready' : 'unsupported', settings, timeZone: location.timeZone, strategy: regional === profile ? 'regional' : 'default' }
+  return { kind: 'calculated', status: supportedProfiles.includes(profile) ? 'ready' : 'unsupported', settings, timeZone: location.timeZone, strategy: canUseRegional ? recommendation.strategy : 'default' }
 }

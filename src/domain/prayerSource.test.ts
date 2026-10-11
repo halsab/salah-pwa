@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createCityPlace, createGpsPlace, createOfficialPlace } from './place'
 import { resolvePrayerTimeSource, type OfficialDatasetAvailability } from './prayerSource'
 import { automaticPreferences, isSourcePreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
-import { effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
+import { automaticCalculationDefaults, effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
+import { calculatePrayerSchedule } from './prayerCalculation'
 
 const place = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 0)
 const official: OfficialDatasetAvailability = {
@@ -33,8 +34,30 @@ describe('source resolver', () => {
     expect(resolvePrayerTimeSource(place, '2026-09-01', auto, [official, other])).toMatchObject({ provider: 'aaa' })
     expect(resolvePrayerTimeSource(place, '2026-09-01', auto, [official, { ...other, priority: 10 }])).toMatchObject({ provider: 'aaa' })
   })
-  it.each([['TR.34', 'turkey'], ['PK.01', 'karachi'], ['BD.81', 'karachi'], ['US.CA', 'northAmerica'], ['CA.ON', 'northAmerica'], ['RU.48', 'dumRf'], ['ZA.11', 'muslimWorldLeague'], ['XX.1', 'muslimWorldLeague']])('chooses supported regional default %s', (code, profile) => {
-    expect(resolvePrayerTimeSource({ ...place, coverage: 'outside', region: { code, name: '' } }, '2026-09-01', auto, [official])).toMatchObject({ kind: 'calculated', settings: { profile } })
+  it.each([
+    ['RU-TA', 'dumRt', 'hanafi', 'regional', 'gps', 'inside'],
+    ['RU.48', 'dumRf', 'standard', 'regional', 'city', 'outside'],
+    ['TR.34', 'turkey', 'standard', 'regional', 'city', 'outside'],
+    ['PK.01', 'karachi', 'hanafi', 'regional', 'city', 'outside'],
+    ['BD.81', 'karachi', 'hanafi', 'regional', 'city', 'outside'],
+    ['IN.07', 'karachi', 'hanafi', 'regional', 'city', 'outside'],
+    ['KZ.75', 'muslimWorldLeague', 'hanafi', 'regional', 'city', 'outside'],
+    ['KG.01', 'muslimWorldLeague', 'hanafi', 'regional', 'city', 'outside'],
+    ['UZ.13', 'muslimWorldLeague', 'hanafi', 'regional', 'city', 'outside'],
+    ['US.CA', 'northAmerica', 'standard', 'regional', 'city', 'outside'],
+    ['CA.ON', 'canadaFcna', 'standard', 'regional', 'city', 'outside'],
+    ['SA.01', 'ummAlQura', 'standard', 'regional', 'city', 'outside'],
+    ['AE.AZ', 'dubai', 'standard', 'regional', 'city', 'outside'],
+    ['QA.01', 'qatar', 'standard', 'regional', 'city', 'outside'],
+    ['KW.01', 'kuwait', 'standard', 'regional', 'city', 'outside'],
+    ['EG.C', 'egyptian', 'standard', 'regional', 'city', 'outside'],
+    ['ZA.11', 'muslimWorldLeague', 'standard', 'default', 'city', 'outside'],
+    ['XX.1', 'muslimWorldLeague', 'standard', 'default', 'city', 'outside'],
+  ] as const)('uses the approved automatic policy for %s', (code, profile, asrMethod, strategy, selection, coverage) => {
+    const candidate = { ...place, selection, coverage, region: { code, name: '' } }
+    const result = resolvePrayerTimeSource(candidate, '2026-09-01', auto, [], profile === 'ummAlQura' ? ['ummAlQura', 'muslimWorldLeague'] : undefined)
+    expect(result).toMatchObject({ kind: 'calculated', strategy, settings: { profile, asrMethod } })
+    expect(automaticCalculationDefaults(candidate)).toEqual({ profile, asrMethod })
   })
   it.each([
     ['Москва', '48', 55.75, 37.62],
@@ -43,7 +66,7 @@ describe('source resolver', () => {
   ] as const)('выбирает ДУМ РФ для города %s вне Татарстана', (name, admin1Code, latitude, longitude) => {
     const city = createCityPlace({ id: 1, name, countryCode: 'RU', admin1Code, admin1Name: name, latitude, longitude, population: 1, timeZone: 'Europe/Moscow' }, 0)
     expect(resolvePrayerTimeSource(city, '2026-09-01', auto, [official])).toMatchObject({
-      kind: 'calculated', strategy: 'regional', settings: { profile: 'dumRf', asrMethod: 'hanafi', highLatitudeRule: latitude > 48 ? 'seventhOfNight' : 'twilightAngle' },
+      kind: 'calculated', strategy: 'regional', settings: { profile: 'dumRf', asrMethod: 'standard', highLatitudeRule: latitude > 48 ? 'seventhOfNight' : 'twilightAngle' },
     })
     expect(resolvePrayerTimeSource(city, '2026-09-01', manualCalculation({ profile: 'karachi', overrides: {} }), [official])).toMatchObject({ settings: { profile: 'karachi' }, strategy: 'manual' })
   })
@@ -52,13 +75,26 @@ describe('source resolver', () => {
     expect(resolvePrayerTimeSource(city, '2026-09-01', auto, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
     expect(resolvePrayerTimeSource(city, '2027-09-01', auto, [official])).toMatchObject({ kind: 'calculated', settings: { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt' } })
   })
+  it('uses DUM RT for a GPS fix only when the existing geometry confirms Tatarstan', () => {
+    const geometry = { uncertaintyMeters: 0, polygons: [[[[49, 55], [50, 55], [50, 56], [49, 56], [49, 55]]]] } as const
+    const gps = createGpsPlace({ latitude: 55.5, longitude: 49.5, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', geometry, 'gps:ta')
+    expect(resolvePrayerTimeSource(gps, '2026-09-01', auto, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
+    expect(resolvePrayerTimeSource(gps, '2027-09-01', auto, [official])).toMatchObject({ kind: 'calculated', strategy: 'regional', settings: { profile: 'dumRt', asrMethod: 'hanafi' } })
+  })
+  it('uses generic fallback when a regional profile is unsupported, without retaining regional Asr', () => {
+    const toronto = { ...place, selection: 'city' as const, coverage: 'outside' as const, region: { code: 'CA.ON', name: '' } }
+    expect(resolvePrayerTimeSource(toronto, '2026-09-01', auto, [], ['muslimWorldLeague']))
+      .toMatchObject({ kind: 'calculated', strategy: 'default', status: 'ready', settings: { profile: 'muslimWorldLeague', asrMethod: 'standard' } })
+    expect(resolvePrayerTimeSource(toronto, '2026-09-01', auto, [], ['turkey']))
+      .toMatchObject({ kind: 'calculated', strategy: 'default', status: 'unsupported', settings: { profile: 'muslimWorldLeague', asrMethod: 'standard' } })
+  })
   it('не выводит страну GPS из названия или зоны устройства и не использует недоступный профиль', () => {
     const gps = createGpsPlace({ latitude: 55.75, longitude: 37.62, accuracy: 10, timestamp: 0 }, 'Europe/Moscow', null, 'gps:1')
     expect(resolvePrayerTimeSource({ ...gps, name: 'Рядом: Москва' }, '2026-09-01', auto, [])).toMatchObject({ settings: { profile: 'muslimWorldLeague' }, strategy: 'default' })
     expect(resolvePrayerTimeSource({ ...place, region: { code: 'RU.48', name: 'Москва' }, coverage: 'outside' }, '2026-09-01', auto, [], ['muslimWorldLeague'])).toMatchObject({ settings: { profile: 'muslimWorldLeague' }, strategy: 'default' })
   })
   it('requires explicit capability for Umm al-Qura; unsupported manual profile remains unavailable', () => {
-    const sa = { ...place, coverage: 'outside' as const, region: { code: 'SA.01', name: '' } }
+    const sa = { ...place, selection: 'city' as const, coverage: 'outside' as const, region: { code: 'SA.01', name: '' } }
     expect(resolvePrayerTimeSource(sa, '2026-09-01', auto, []).kind).toBe('calculated')
     expect(resolvePrayerTimeSource(sa, '2026-09-01', auto, [])).toMatchObject({ settings: { profile: 'muslimWorldLeague' } })
     expect(resolvePrayerTimeSource(sa, '2026-09-01', auto, [], ['ummAlQura', 'muslimWorldLeague'])).toMatchObject({ settings: { profile: 'ummAlQura' } })
@@ -114,6 +150,29 @@ it('uses the provider calendar year near midnight regardless of a manual place t
 it('uses a confirmed local version ahead of a missing version regardless of descriptor order', () => {
   const missing = { ...official, state: 'not-loaded' as const, version: 'v2', revision: 'r2' }
   expect(resolvePrayerTimeSource(place, '2026-09-01', auto, [missing, official])).toMatchObject({ kind: 'official', status: 'ready', version: 'v1' })
+})
+
+it('uses exact inclusive date ranges for v3 datasets while retaining v2 year coverage', () => {
+  const partial = { ...official, schemaVersion: 3, startDate: '2026-03-15', endDate: '2026-10-20' }
+  expect(resolvePrayerTimeSource(place, '2026-03-14', auto, [partial])).toMatchObject({ kind: 'calculated' })
+  expect(resolvePrayerTimeSource(place, '2026-03-15', auto, [partial])).toMatchObject({ kind: 'official', status: 'ready' })
+  expect(resolvePrayerTimeSource(place, '2026-10-20', auto, [partial])).toMatchObject({ kind: 'official', status: 'ready' })
+  expect(resolvePrayerTimeSource(place, '2026-10-21', auto, [partial])).toMatchObject({ kind: 'calculated' })
+  expect(resolvePrayerTimeSource(place, '2026-12-31', auto, [official])).toMatchObject({ kind: 'official', status: 'ready' })
+  expect(resolvePrayerTimeSource(place, '2026-02-30', auto, [official])).toMatchObject({ kind: 'calculated' })
+  const west = { ...partial, timeZone: 'America/Los_Angeles' }
+  expect(resolvePrayerTimeSource(place, new Date('2026-03-15T00:30:00Z'), auto, [west])).toMatchObject({ kind: 'calculated' })
+  expect(resolvePrayerTimeSource(place, '2026-03-15', auto, [west])).toMatchObject({ kind: 'official' })
+})
+
+it('applies the automatic Asr school to calculated prayer times', () => {
+  const almaty = { ...place, selection: 'city' as const, coverage: 'outside' as const, latitude: 43.2383, longitude: 76.9455, timeZone: 'Asia/Almaty', region: { code: 'KZ.75', name: '' } }
+  const resolution = resolvePrayerTimeSource(almaty, '2026-09-01', auto, [])
+  expect(resolution).toMatchObject({ kind: 'calculated', strategy: 'regional', settings: { profile: 'muslimWorldLeague', asrMethod: 'hanafi' } })
+  if (resolution.kind !== 'calculated') throw new Error('expected calculated source')
+  const automatic = calculatePrayerSchedule(almaty, '2026-09-01', almaty.timeZone, resolution.settings)
+  const standard = calculatePrayerSchedule(almaty, '2026-09-01', almaty.timeZone, { ...resolution.settings, asrMethod: 'standard' })
+  expect(automatic.entries.asr.instant).not.toBe(standard.entries.asr.instant)
 })
 
 it('rejects corrupt saved preferences and never turns invalid expert drafts into effective settings', () => {

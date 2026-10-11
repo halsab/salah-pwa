@@ -31,13 +31,22 @@ export function createGpsPlace(fix: Fix, deviceZone: string, geometry: CoverageG
 
 export function createCityPlace(city: City, timestamp: number): Place {
   if (!isValidTimeZone(city.timeZone)) throw new RangeError('Неизвестная часовая зона города')
-  const tatarstan = isConfirmedTatarstan({ source: 'geonames', countryCode: city.countryCode, admin1Code: city.admin1Code })
+  const countryCode = /^[A-Z]{2}$/.test(city.countryCode) ? city.countryCode : null
+  const admin1Code = typeof city.admin1Code === 'string' && /^[A-Z0-9]{1,3}$/.test(city.admin1Code)
+    ? city.admin1Code
+    : undefined
+  const tatarstan = Boolean(countryCode && isConfirmedTatarstan({ source: 'geonames', countryCode, ...(admin1Code ? { admin1Code } : {}) }))
+  const region = tatarstan
+    ? TATARSTAN
+    : countryCode
+      ? { code: admin1Code ? `${countryCode}.${admin1Code}` : countryCode, name: typeof city.admin1Name === 'string' ? city.admin1Name : '' }
+      : null
   return {
     id: `geonames:${city.id}`, selection: 'city', cityId: city.id,
     name: formatCityLabel(city), latitude: city.latitude, longitude: city.longitude,
     accuracy: null, timestamp, timeZone: city.timeZone,
     automaticTimeZone: { id: city.timeZone, source: 'city' },
-    region: tatarstan ? TATARSTAN : { code: `${city.countryCode}.${city.admin1Code}`, name: city.admin1Name },
+    region,
     coverage: tatarstan ? 'inside' : 'outside',
   }
 }

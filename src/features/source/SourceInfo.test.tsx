@@ -44,7 +44,7 @@ it('расчёт показывает эффективные параметры,
   expect(within(dialog).getByRole('heading', { level: 2, name: 'Параметры' })).toBeVisible()
   expect(within(dialog).getByRole('heading', { level: 2, name: 'Важно' })).toBeVisible()
   expect(dialog.querySelectorAll('ul')).toHaveLength(2)
-  expect(dialog.querySelectorAll('ul')[1]?.querySelectorAll('li')).toHaveLength(6)
+  expect(dialog.querySelectorAll('ul')[1]?.querySelectorAll('li')).toHaveLength(7)
   expect(dialog.querySelector('blockquote')).toHaveTextContent('Время рассчитано по выбранной методике и может отличаться от расписания местной религиозной организации.')
   expect(dialog.querySelectorAll('blockquote')).toHaveLength(1)
   expect(within(dialog).getByText('Расчётное время', { exact:true })).toBeVisible()
@@ -53,6 +53,7 @@ it('расчёт показывает эффективные параметры,
   expect(dialog).toHaveTextContent('95 мин после заката')
   expect(dialog).toHaveTextContent('Аср +12 мин')
   expect(dialog).toHaveTextContent('≈ По северному правилу')
+  expect(dialog).toHaveTextContent('Профиль расчёта: ДУМ РТ')
 })
 
 it('называет автоматический расчёт расчётным временем и сохраняет оговорку без повторного заголовка', () => {
@@ -64,6 +65,7 @@ it('называет автоматический расчёт расчётны�
   const dialog = screen.getByRole('region', { name:'Сведения об источнике' })
   expect(within(dialog).getByText('Расчётное время', { exact:true })).toBeVisible()
   expect(within(dialog).queryByText('Ручной расчёт', { exact:true })).toBeNull()
+  expect(dialog).toHaveTextContent('Профиль расчёта: Катар')
   expect(dialog.querySelector('blockquote')).toHaveTextContent('Время рассчитано по выбранной методике и может отличаться от расписания местной религиозной организации.')
   expect(dialog.querySelectorAll('blockquote')).toHaveLength(1)
 })

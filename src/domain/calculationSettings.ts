@@ -18,6 +18,9 @@ export interface AutomaticCalculationDefaults {
   profile: CalculationProfileId
   asrMethod: AsrMethod
 }
+export interface AutomaticCalculationRecommendation extends AutomaticCalculationDefaults {
+  strategy: 'regional' | 'default'
+}
 
 export const AUTOMATIC_CALCULATION_DEFAULTS: Readonly<Record<string, AutomaticCalculationDefaults>> = Object.freeze({
   'RU-TA': { profile: 'dumRt', asrMethod: 'hanafi' },
@@ -75,18 +78,25 @@ export function profileDefaults(profile: CalculationProfileId): CalculationSetti
     highLatitudeRule: profile === 'dumRt' ? 'dumRt' : 'twilightAngle',
   }
 }
-export function automaticCalculationDefaults(
+export function automaticCalculationRecommendation(
   place: Pick<Place, 'selection' | 'region' | 'coverage'> | undefined,
-): AutomaticCalculationDefaults {
+): AutomaticCalculationRecommendation {
   const regionCode = place?.region?.code
   const country = place?.coverage === 'inside' && regionCode === 'RU-TA'
     ? 'RU-TA'
     : place?.selection === 'city' && regionCode && /^[A-Z]{2}(?:[.-][A-Z0-9]{1,3})?$/.test(regionCode)
       ? regionCode.slice(0, 2)
       : undefined
-  const recommended = AUTOMATIC_CALCULATION_DEFAULTS[country ?? ''] ?? AUTOMATIC_CALCULATION_DEFAULTS.default
+  const policyKey = country && AUTOMATIC_CALCULATION_DEFAULTS[country] ? country : 'default'
+  const recommended = AUTOMATIC_CALCULATION_DEFAULTS[policyKey]
   if (!recommended) throw new RangeError('missing-automatic-calculation-defaults')
-  return { ...recommended }
+  return { ...recommended, strategy: policyKey === 'default' ? 'default' : 'regional' }
+}
+export function automaticCalculationDefaults(
+  place: Pick<Place, 'selection' | 'region' | 'coverage'> | undefined,
+): AutomaticCalculationDefaults {
+  const { profile, asrMethod } = automaticCalculationRecommendation(place)
+  return { profile, asrMethod }
 }
 export function effectiveCalculationSettings(selection: CalculationSelection): CalculationSettings {
   if (!isCalculationSelection(selection)) throw new RangeError('Некорректные параметры расчёта')

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createGpsPlace, homePlaceLabel, refineGpsPlace, setPlaceTimeZone, createCityPlace, isFreshGpsPlace, withNearbyCity } from './place'
+import { placeFromChoice } from './placeMigration'
 import type { CoverageGeometry } from './localGeography'
 const geometry: CoverageGeometry = { uncertaintyMeters: 2000, polygons: [[[[49,55],[50,55],[50,56],[49,56],[49,55]]]] }
 const position = { latitude: 55.5, longitude: 49.5, accuracy: 1000, timestamp: 100 }
@@ -30,6 +31,21 @@ describe('place identity and timezone', () => {
     expect(city.timeZone).toBe('Europe/Berlin')
     expect(city.timeZoneOverride).toBeUndefined()
     expect(city.selection).toBe('city')
+  })
+  it('keeps valid country identity when GeoNames has no usable subdivision', () => {
+    const city = createCityPlace({ id: 2, name: 'Moscow', countryCode: 'RU', admin1Code: '', admin1Name: '', latitude: 55.75, longitude: 37.62, population: 1, timeZone: 'Europe/Moscow' }, 300)
+    expect(city.region).toEqual({ code: 'RU', name: '' })
+  })
+  it('does not construct country evidence from malformed GeoNames country codes', () => {
+    const city = createCityPlace({ id: 3, name: 'Unknown', countryCode: 'ru', admin1Code: '73', admin1Name: 'Tatarstan', latitude: 55.75, longitude: 37.62, population: 1, timeZone: 'Europe/Moscow' }, 300)
+    expect(city.region).toBeNull()
+    expect(city.coverage).toBe('outside')
+  })
+  it('preserves confirmed saved Tatarstan identity and degrades malformed saved city regions', () => {
+    const city = createCityPlace({ id: 4, name: 'Kazan', countryCode: 'RU', admin1Code: '73', admin1Name: 'Tatarstan', latitude: 55.79, longitude: 49.12, population: 1, timeZone: 'Europe/Moscow' }, 300)
+    const choice = { mode: 'calculated' as const, source: 'manual' as const, coordinates: city, place: city }
+    expect(placeFromChoice(choice, [])?.region?.code).toBe('RU-TA')
+    expect(placeFromChoice({ ...choice, place: { ...city, region: { code: 'RU.undefined', name: '' } } }, [])?.region).toBeNull()
   })
   it('refreshes automatic places only after 30 minutes and rejects future timestamps', () => {
     expect(isFreshGpsPlace(gps(), 100 + 29 * 60_000)).toBe(true)

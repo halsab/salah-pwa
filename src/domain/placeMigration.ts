@@ -34,7 +34,17 @@ export function isPlace(value: unknown): value is Place {
 }
 
 export function placeFromChoice(choice: LocationChoice, locations: PrayerLocation[]): Place | null {
-  if (isPlace(choice.place)) return { ...choice.place, timeZone: choice.place.timeZoneOverride?.id ?? choice.place.automaticTimeZone.id }
+  if (isPlace(choice.place)) {
+    const place = choice.place
+    const regionCode = place.region?.code
+    const validCityRegion = regionCode && (/^[A-Z]{2}(?:\.[A-Z0-9]{1,3})?$/.test(regionCode)
+      || (regionCode === 'RU-TA' && place.coverage === 'inside'))
+    const region = place.selection === 'city' && place.region?.code
+      && !validCityRegion
+      ? null
+      : place.region
+    return { ...place, region, timeZone: place.timeZoneOverride?.id ?? place.automaticTimeZone.id }
+  }
   if (choice.mode === 'official') {
     const location = locations.find(item => item.id === choice.locationId)
     return location ? createOfficialPlace(location, 0) : null
