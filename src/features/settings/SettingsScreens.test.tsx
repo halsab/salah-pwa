@@ -3,9 +3,13 @@ import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { automaticPreferences, manualCalculation, type SourcePreferences } from '../../domain/sourcePreferences'
+import { resolvePrayerTimeSource, type OfficialDatasetAvailability } from '../../domain/prayerSource'
+import { createOfficialPlace } from '../../domain/place'
 import { SettingsScreens } from './SettingsScreens'
 import type { AppScreen } from '../../ui/useAppNavigation'
 const defaults = { onBack: vi.fn(), onOpen: vi.fn(), sourceLabel: 'ДУМ РТ', themeFamily: 'classic' as const, onThemeFamilyChange: vi.fn(), getCapability: () => ({ supported: true as const }), onReset: vi.fn(), version: 'v26.4' }
+const place = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 0)
+const official: OfficialDatasetAvailability = { provider: 'dumRt', priority: 10, timeZone: 'Europe/Moscow', coverage: 'RU-TA', years: [2026], locations: [{ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }], state: 'ready', version: 'v1', revision: 'r1' }
 
 describe('новые настройки', () => {
   it('оформляет footer вспомогательным правым действием, а удаление — полноширинным', () => {
@@ -117,11 +121,85 @@ describe('новые настройки', () => {
     }
     render(<Harness />)
     await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
-    expect(onChange).toHaveBeenLastCalledWith(automaticPreferences(draft))
-    await userEvent.click(screen.getByRole('button', { name: 'Таблица ДУМ РТ' }))
-    expect(onChange).toHaveBeenLastCalledWith({ mode: 'manual', source: { kind: 'official', provider: 'dumRt' }, calculationDraft: draft })
-    await userEvent.click(screen.getByRole('button', { name: 'Ручной расчёт' }))
+    expect(onChange).toHaveBeenLastCalledWith(automaticPreferences(draft, { kind: 'calculated', calculation: draft }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
     expect(onChange).toHaveBeenLastCalledWith(manualCalculation(draft))
+    expect(screen.queryByRole('button', { name: 'Таблица ДУМ РТ' })).not.toBeInTheDocument()
+  })
+  it.each([
+    ['dumRt', { asrMethod: 'standard' as const, highLatitudeRule: 'nearestDay' as const, fajrAngle: 19 }],
+    ['dumRf', { asrMethod: 'hanafi' as const, highLatitudeRule: 'twilightAngle' as const, adjustments: { isha: 7 } }],
+    ['turkey', { asrMethod: 'hanafi' as const, isha: { kind: 'interval' as const, minutes: 92 } }],
+    ['karachi', { asrMethod: 'standard' as const, fajrAngle: 18, adjustments: { maghrib: 2 } }],
+    ['muslimWorldLeague', { asrMethod: 'hanafi' as const, highLatitudeRule: 'nearestDay' as const }],
+  ] as const)('восстанавливает расчётный профиль %s через полный цикл настроек', async (profile, overrides) => {
+    const original = { profile, overrides }
+    let latest: SourcePreferences = manualCalculation(original)
+    function Harness() {
+      const [preferences, setPreferences] = useState<SourcePreferences>(manualCalculation(original))
+      return <SettingsScreens {...defaults} screen="source-choice" preferences={preferences} onChange={value => { latest = value; setPreferences(value) }} />
+    }
+    render(<Harness />)
+    await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
+    expect(latest).toEqual(automaticPreferences(original, { kind: 'calculated', calculation: original }))
+    expect(resolvePrayerTimeSource(place, '2026-09-01', latest, [official])).toMatchObject({ kind: 'official', provider: 'dumRt', status: 'ready' })
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(latest).toEqual(manualCalculation(original))
+    expect(resolvePrayerTimeSource(place, '2026-09-01', latest, [official])).toMatchObject({ kind: 'calculated', strategy: 'manual', settings: { profile, ...overrides } })
+    await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
+    expect(latest).toEqual(automaticPreferences(original, { kind: 'calculated', calculation: original }))
+    expect(resolvePrayerTimeSource(place, '2026-09-01', latest, [official])).toMatchObject({ kind: 'official', provider: 'dumRt', status: 'ready' })
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(latest).toEqual(manualCalculation(original))
+    expect(resolvePrayerTimeSource(place, '2026-09-01', latest, [official])).toMatchObject({ kind: 'calculated', strategy: 'manual', settings: { profile, ...overrides } })
+  })
+  it('restores a persisted manual calculation draft from Automatic mode', async () => {
+    const draft = { profile: 'karachi' as const, overrides: { asrMethod: 'standard' as const, fajrAngle: 19 } }
+    const onChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="source-choice" preferences={automaticPreferences(draft)} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(onChange).toHaveBeenCalledWith(manualCalculation(draft))
+  })
+  it('uses the effective automatic calculation as the first manual selection', async () => {
+    const selected = { profile: 'dumRf' as const, overrides: { asrMethod: 'standard' as const, highLatitudeRule: 'seventhOfNight' as const } }
+    const onChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="source-choice" preferences={automaticPreferences()} initialManualCalculation={selected} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(onChange).toHaveBeenCalledWith(manualCalculation(selected))
+  })
+  it('requires explicit profile choice when first-time Manual has no reliable automatic calculation', async () => {
+    const onOpen = vi.fn(), onChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="source-choice" preferences={automaticPreferences()} onOpen={onOpen} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(onOpen).toHaveBeenCalledWith('profiles')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+  it('shows the actual automatic source and does not imply an unresolved source is ready', () => {
+    const { rerender } = render(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()}
+      effectiveSource={{ kind: 'calculated', status: 'ready', settings: { profile: 'karachi', asrMethod: 'hanafi', highLatitudeRule: 'twilightAngle' }, timeZone: 'Asia/Karachi', strategy: 'regional' }} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Фактический источник: Расчёт · Карачи · Аср: Ханафитский')
+    rerender(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()}
+      effectiveSource={{ kind: 'official', status: 'ready', provider: 'dumRt', version: 'v1', revision: 'r1', coverage: 'RU-TA', locationId: 'kazan', timeZone: 'Europe/Moscow' }} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Фактический источник: Официальная таблица · ДУМ РТ')
+    rerender(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()} effectiveSource={null} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Источник ещё не определён')
+  })
+  it('restores the pinned official provider and source kind across a complete mode cycle', async () => {
+    const saved = { mode: 'manual' as const, source: { kind: 'official' as const, provider: 'dumRt' }, calculationDraft: { profile: 'karachi' as const, overrides: { asrMethod: 'hanafi' as const } } }
+    let latest: SourcePreferences = saved
+    function Harness() {
+      const [preferences, setPreferences] = useState<SourcePreferences>(saved)
+      return <SettingsScreens {...defaults} screen="source-choice" preferences={preferences} onChange={value => { latest = value; setPreferences(value) }} />
+    }
+    render(<Harness />)
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
+    expect(latest).toMatchObject({ mode: 'automatic', manualSourceDraft: { kind: 'official', provider: 'dumRt' } })
+    expect(resolvePrayerTimeSource(place, '2026-09-01', latest, [official])).toMatchObject({ kind: 'official', provider: 'dumRt', status: 'ready' })
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(screen.getByRole('button', { name: /Ручной выбор.*Выбрано/ })).toBeVisible()
+    expect(latest).toMatchObject({ mode: 'manual', source: { kind: 'official', provider: 'dumRt' }, calculationDraft: saved.calculationDraft })
+    expect(resolvePrayerTimeSource(place, '2026-09-01', latest, [official])).toMatchObject({ kind: 'official', provider: 'dumRt', status: 'ready' })
   })
   it('показывает неподдерживаемый профиль недоступным', () => {
     render(<SettingsScreens {...defaults} screen="profiles" preferences={automaticPreferences()} onChange={vi.fn()} getCapability={profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true }} />)

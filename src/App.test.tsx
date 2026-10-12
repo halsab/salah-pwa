@@ -640,7 +640,7 @@ describe('Salah', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     if (preferences.mode === 'automatic') expect(within(await screen.findByRole('list')).getByText('Фаджр')).toBeVisible()
     else {
-      expect(await screen.findByRole('alert')).toHaveTextContent('не покрывает это место или дату')
+      expect(await screen.findByRole('alert')).toHaveTextContent(/Официальная таблица недоступна.*места или даты/)
       expect(screen.queryByRole('list')).not.toBeInTheDocument()
     }
   })
