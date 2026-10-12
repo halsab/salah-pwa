@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { usePlaceSelection } from './usePlaceSelection'
 import type { AppServices } from '../../App'
 import { success, failure } from '../../domain/result'
-import { createGpsPlace, setPlaceTimeZone } from '../../domain/place'
+import { createGpsPlace, setPlaceTimeZone, withNearbyCity, type Place } from '../../domain/place'
+import { automaticPreferences } from '../../domain/sourcePreferences'
+import { resolvePrayerTimeSource } from '../../domain/prayerSource'
 import { parseCoverageGeometry } from '../../domain/localGeography'
 import geometryData from '../../../public/data/tatarstan-boundary.json'
 import type { City } from '../../domain/cities'
@@ -193,6 +195,108 @@ describe('one-shot GPS operations', () => {
     await waitFor(() => expect(h.result.current.nameLookupState).toBe('failed'))
     expect(h.result.current.place).toMatchObject(goodCoarseFix)
     await act(async () => { h.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await pending })
+  })
+  it('re-evaluates the automatic profile when a nearest-city country arrives', async () => {
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'muslimWorldLeague', asrMethod: 'standard' } })
+    await act(async () => {
+      h.lookup.resolve(success({ ...city, countryCode: 'TR', latitude: goodCoarseFix.latitude, longitude: goodCoarseFix.longitude }))
+      await Promise.resolve()
+    })
+    expect(h.result.current.place?.nearbyCity?.countryCode).toBe('TR')
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey', asrMethod: 'standard' } })
+    await act(async () => { h.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await pending })
+  })
+  it('retains a country resolved before the precise fix without falling back to MWL', async () => {
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    await act(async () => {
+      h.lookup.resolve(success({ ...city, countryCode: 'TR', latitude: coarseFix.latitude, longitude: coarseFix.longitude }))
+      await Promise.resolve()
+    })
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey' } })
+    await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
+    expect(h.result.current.place).toMatchObject({ ...preciseFix, nearbyCity: { countryCode: 'TR' } })
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey' } })
+  })
+  it('retains the prior country when the refined fix lookup fails or finds nothing', async () => {
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    const secondLookup = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
+    h.services.cities.findNearest = vi.fn().mockReturnValueOnce(h.lookup.promise).mockReturnValueOnce(secondLookup.promise)
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    await act(async () => {
+      h.lookup.resolve(success({ ...city, countryCode: 'TR', latitude: coarseFix.latitude, longitude: coarseFix.longitude }))
+      await Promise.resolve()
+    })
+    await act(async () => { h.precise.resolve(success(preciseFix)); await Promise.resolve() })
+    await act(async () => { secondLookup.resolve(success(null)); await pending })
+    expect(h.result.current.place).toMatchObject({ ...preciseFix, nearbyCity: { countryCode: 'TR' } })
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey' } })
+  })
+  it('invalidates country metadata after refinement moves more than 25 km from its city', async () => {
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    const secondLookup = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
+    h.services.cities.findNearest = vi.fn().mockReturnValueOnce(h.lookup.promise).mockReturnValueOnce(secondLookup.promise)
+    const farPreciseFix = { ...preciseFix, latitude: 56.2 }
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    await act(async () => {
+      h.lookup.resolve(success({ ...city, countryCode: 'TR', latitude: coarseFix.latitude, longitude: coarseFix.longitude }))
+      await Promise.resolve()
+    })
+    await act(async () => { h.precise.resolve(success(farPreciseFix)); await Promise.resolve() })
+    expect(h.result.current.place).toMatchObject(farPreciseFix)
+    expect(h.result.current.place?.nearbyCity).toBeUndefined()
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'muslimWorldLeague' } })
+    await act(async () => { secondLookup.resolve(success(null)); await pending })
+  })
+  it('restores a saved GPS country and calculation profile without another lookup', () => {
+    const base = setPlaceTimeZone(createGpsPlace(goodCoarseFix, 'UTC', null, 'gps:saved-country'), 'America/New_York')
+    const saved = withNearbyCity(base, { ...city, countryCode: 'CA', latitude: base.latitude, longitude: base.longitude })
+    const h = setup()
+    act(() => h.result.current.restore({ mode: 'calculated', coordinates: saved, source: 'automatic', place: saved }, []))
+    expect(h.result.current.place).toMatchObject({ nearbyCity: { countryCode: 'CA' }, timeZone: 'America/New_York' })
+    expect(resolvePrayerTimeSource(saved, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'canadaFcna' } })
+    expect(h.services.cities.findNearest).not.toHaveBeenCalled()
+    expect(h.services.getPosition).not.toHaveBeenCalled()
+  })
+  it('ignores an obsolete nearest-city result after GPS refinement starts a newer lookup', async () => {
+    const first = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
+    const second = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
+    let calls = 0
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    h.services.cities.findNearest = vi.fn(() => (++calls === 1 ? first.promise : second.promise))
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    await act(async () => { h.precise.resolve(success(preciseFix)); await Promise.resolve() })
+    await waitFor(() => expect(h.services.cities.findNearest).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      second.resolve(success({ ...city, countryCode: 'CA', latitude: preciseFix.latitude, longitude: preciseFix.longitude }))
+      await Promise.resolve()
+    })
+    await act(async () => {
+      first.resolve(success({ ...city, countryCode: 'RU', latitude: coarseFix.latitude, longitude: coarseFix.longitude }))
+      await pending
+    })
+    expect(h.result.current.place).toMatchObject({ ...preciseFix, nearbyCity: { countryCode: 'CA' } })
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+      .toMatchObject({ kind: 'calculated', settings: { profile: 'canadaFcna' } })
   })
   it('ignores responses after unmount without saving', async () => {
     const h = setup()

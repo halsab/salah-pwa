@@ -548,6 +548,21 @@ describe('Salah', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Как считается время' })).toHaveFocus())
   })
 
+  it('показывает автоматический профиль и Asr, выбранные resolver для Москвы', async () => {
+    const services = createServices()
+    render(<App services={services} />)
+    await screen.findByRole('button', { name: 'Казань' })
+    const initialDatasetCalls = vi.mocked(services.getDays).mock.calls.length
+    await chooseCity('Москва', /Москва/)
+    await expectSchedule()
+    expect(services.getDays).toHaveBeenCalledTimes(initialDatasetCalls)
+    await openSource()
+    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
+    const details = screen.getByRole('region', { name: 'Сведения об источнике' })
+    expect(details).toHaveTextContent('ДУМ РФ')
+    expect(details).toHaveTextContent('Шафиитский, маликитский и ханбалитский')
+  })
+
   it('открывает Поделиться и возвращает фокус в настройки', async () => {
     render(<App services={createServices()} />)
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))

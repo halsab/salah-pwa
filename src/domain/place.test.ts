@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createGpsPlace, homePlaceLabel, refineGpsPlace, setPlaceTimeZone, createCityPlace, isFreshGpsPlace, withNearbyCity } from './place'
+import { placeFromChoice } from './placeMigration'
 import type { CoverageGeometry } from './localGeography'
 const geometry: CoverageGeometry = { uncertaintyMeters: 2000, polygons: [[[[49,55],[50,55],[50,56],[49,56],[49,55]]]] }
 const position = { latitude: 55.5, longitude: 49.5, accuracy: 1000, timestamp: 100 }
@@ -30,6 +31,48 @@ describe('place identity and timezone', () => {
     expect(city.timeZone).toBe('Europe/Berlin')
     expect(city.timeZoneOverride).toBeUndefined()
     expect(city.selection).toBe('city')
+  })
+  it('keeps valid country identity when GeoNames has no usable subdivision', () => {
+    const city = createCityPlace({ id: 2, name: 'Moscow', countryCode: 'RU', admin1Code: '', admin1Name: '', latitude: 55.75, longitude: 37.62, population: 1, timeZone: 'Europe/Moscow' }, 300)
+    expect(city.region).toEqual({ code: 'RU', name: '' })
+  })
+  it('does not construct country evidence from malformed GeoNames country codes', () => {
+    const city = createCityPlace({ id: 3, name: 'Unknown', countryCode: 'ru', admin1Code: '73', admin1Name: 'Tatarstan', latitude: 55.75, longitude: 37.62, population: 1, timeZone: 'Europe/Moscow' }, 300)
+    expect(city.region).toBeNull()
+    expect(city.coverage).toBe('outside')
+  })
+  it('persists validated GPS nearest-city country metadata without changing the GPS position or timezone', () => {
+    const gpsPlace = createGpsPlace(position, 'America/Los_Angeles', null, 'gps:country')
+    const city = { id: 9, name: 'Berlin', countryCode: 'DE', admin1Code: '16', admin1Name: 'Berlin', latitude: 55.5, longitude: 49.5, population: 10, timeZone: 'Europe/Berlin' }
+    const named = withNearbyCity(gpsPlace, city)
+    expect(named).toMatchObject({ ...position, timeZone: 'America/Los_Angeles', nearbyCity: { countryCode: 'DE', latitude: 55.5, longitude: 49.5 } })
+    const restored = placeFromChoice({ mode: 'calculated', source: 'automatic', coordinates: named, place: named }, [])
+    expect(restored).toMatchObject({ ...position, timeZone: 'America/Los_Angeles', nearbyCity: { countryCode: 'DE' } })
+  })
+  it('drops malformed or no-longer-near GPS country hints while preserving valid user timezone overrides', () => {
+    const gpsPlace = setPlaceTimeZone(createGpsPlace(position, 'UTC', null, 'gps:country'), 'America/New_York')
+    const city = { id: 10, name: 'Nearby', countryCode: 'DE', admin1Code: '', admin1Name: '', latitude: 55.5, longitude: 49.5, population: 1, timeZone: 'Europe/Berlin' }
+    const named = withNearbyCity(gpsPlace, city)
+    const refined = refineGpsPlace(named, { ...position, latitude: 55.501, accuracy: 50, timestamp: 200 }, 'UTC', null)
+    expect(refined.nearbyCity?.countryCode).toBe('DE')
+    expect(refined.timeZoneOverride).toEqual({ id: 'America/New_York', source: 'user' })
+    const moved = refineGpsPlace(named, { ...position, latitude: 56, accuracy: 50, timestamp: 300 }, 'UTC', null)
+    expect(moved.nearbyCity).toBeUndefined()
+    expect(moved.timeZone).toBe('America/New_York')
+    const malformed = placeFromChoice({ mode: 'calculated', source: 'automatic', coordinates: named,
+      place: { ...named, nearbyCity: { id: 10, name: named.nearbyCity?.name ?? '', distanceKm: named.nearbyCity?.distanceKm ?? 0,
+        countryCode: 'de', latitude: city.latitude, longitude: city.longitude } } }, [])
+    expect(malformed?.nearbyCity?.countryCode).toBeUndefined()
+    const malformedCoordinates = placeFromChoice({ mode: 'calculated', source: 'automatic', coordinates: named,
+      place: { ...named, nearbyCity: { id: 10, name: 'Nearby', distanceKm: 1, countryCode: 'CA', latitude: 300, longitude: 49.5 } } }, [])
+    expect(malformedCoordinates?.nearbyCity?.countryCode).toBeUndefined()
+    expect(malformedCoordinates?.timeZoneOverride).toEqual({ id: 'America/New_York', source: 'user' })
+  })
+  it('preserves confirmed saved Tatarstan identity and degrades malformed saved city regions', () => {
+    const city = createCityPlace({ id: 4, name: 'Kazan', countryCode: 'RU', admin1Code: '73', admin1Name: 'Tatarstan', latitude: 55.79, longitude: 49.12, population: 1, timeZone: 'Europe/Moscow' }, 300)
+    const choice = { mode: 'calculated' as const, source: 'manual' as const, coordinates: city, place: city }
+    expect(placeFromChoice(choice, [])?.region?.code).toBe('RU-TA')
+    expect(placeFromChoice({ ...choice, place: { ...city, region: { code: 'RU.undefined', name: '' } } }, [])?.region).toBeNull()
   })
   it('refreshes automatic places only after 30 minutes and rejects future timestamps', () => {
     expect(isFreshGpsPlace(gps(), 100 + 29 * 60_000)).toBe(true)

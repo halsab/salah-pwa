@@ -3,7 +3,7 @@ import { getEffectiveParameters } from '../../domain/prayerCalculation'
 import type { DatasetMeta } from '../../storage/database'
 import { PRAYER_PROVIDERS } from '../../data/prayerProviders'
 import { buildScheduleEvents, type PrayerSchedule, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
-import { ASR_METHOD_KEYS, EVENT_LABEL_KEYS, HIGH_LATITUDE_KEYS } from '../../ui/calculationLabels'
+import { ASR_METHOD_KEYS, EVENT_LABEL_KEYS, HIGH_LATITUDE_KEYS, PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { MarkdownArticle } from '../../ui/MarkdownArticle'
@@ -32,6 +32,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     [t('freshness'), updateFailed ? t('updateFailed') : checkedAt ? t('checkedAt', { value: formatDateTime(checkedAt, context.timeZone, locale) }) : t('notChecked')],
   )
   else if (params) facts.push(
+    [t('calculationProfile'), t(PROFILE_LABEL_KEYS[context.settings.profile])],
     [t('prayerFajr'), `${params.fajrAngle}°`],
     [t('prayerIsha'), params.ishaInterval > 0 ? t('minutesAfterSunset', { minutes: params.ishaInterval }) : `${params.ishaAngle}°`],
     [t('asr'), t(ASR_METHOD_KEYS[context.settings.asrMethod])],

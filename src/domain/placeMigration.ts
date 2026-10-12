@@ -1,5 +1,5 @@
 import { getDeviceTimeZone, isValidTimeZone } from './locationTime'
-import { createOfficialPlace, type Place } from './place'
+import { createOfficialPlace, restorePlaceMetadata, type Place } from './place'
 import { validPosition } from './localGeography'
 import type { PrayerLocation, SavedCoordinates } from './types'
 import type { LocationChoice } from '../storage/database'
@@ -21,6 +21,15 @@ export function restoreSavedCoordinates(value: unknown): SavedCoordinates | null
   }
 }
 
+function validNearbyCity(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const city = value as Record<string, unknown>
+  if (!Number.isInteger(city.id) || typeof city.name !== 'string'
+    || typeof city.distanceKm !== 'number' || !Number.isFinite(city.distanceKm)
+    || city.distanceKm < 0) return false
+  return true
+}
+
 export function isPlace(value: unknown): value is Place {
   if (!value || typeof value !== 'object') return false
   const place = value as Partial<Place>
@@ -28,13 +37,24 @@ export function isPlace(value: unknown): value is Place {
     && typeof place.name === 'string' && ['gps', 'city', 'official'].includes(place.selection ?? '')
     && ['inside', 'outside', 'uncertain', 'unavailable'].includes(place.coverage ?? '')
     && (place.region === null || (place.region && typeof place.region.code === 'string' && typeof place.region.name === 'string'))
+    && (place.nearbyCity === undefined || validNearbyCity(place.nearbyCity))
     && place.automaticTimeZone && typeof place.automaticTimeZone.id === 'string' && isValidTimeZone(place.automaticTimeZone.id)
     && ['city', 'boundary', 'device', 'legacy'].includes(place.automaticTimeZone.source)
     && (place.timeZoneOverride === undefined || ((place.timeZoneOverride as { source?: unknown }).source === 'user' && typeof place.timeZoneOverride.id === 'string' && isValidTimeZone(place.timeZoneOverride.id))))
 }
 
 export function placeFromChoice(choice: LocationChoice, locations: PrayerLocation[]): Place | null {
-  if (isPlace(choice.place)) return { ...choice.place, timeZone: choice.place.timeZoneOverride?.id ?? choice.place.automaticTimeZone.id }
+  if (isPlace(choice.place)) {
+    const place = choice.place
+    const regionCode = place.region?.code
+    const validCityRegion = regionCode && (/^[A-Z]{2}(?:\.[A-Z0-9]{1,3})?$/.test(regionCode)
+      || (regionCode === 'RU-TA' && place.coverage === 'inside'))
+    const region = place.selection === 'city' && place.region?.code
+      && !validCityRegion
+      ? null
+      : place.region
+    return restorePlaceMetadata({ ...place, region, timeZone: place.timeZoneOverride?.id ?? place.automaticTimeZone.id })
+  }
   if (choice.mode === 'official') {
     const location = locations.find(item => item.id === choice.locationId)
     return location ? createOfficialPlace(location, 0) : null
