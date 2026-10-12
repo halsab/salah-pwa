@@ -132,7 +132,7 @@ describe('новые настройки', () => {
     expect(screen.getAllByRole('button')).toHaveLength(3)
     await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
     await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
-    expect(screen.getByRole('button', { name: 'Ручной выбор Выбрано' })).toBeVisible()
+    expect(screen.getByRole('button', { name: /Ручной выбор.*Выбрано/ })).toBeVisible()
   })
   it('показывает неподдерживаемый профиль недоступным', () => {
     render(<SettingsScreens {...defaults} screen="profiles" preferences={automaticPreferences()} onChange={vi.fn()} getCapability={profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true }} />)
