@@ -219,20 +219,26 @@ describe('calculatePrayerSchedule', () => {
     expect(deviations).toEqual({ fajr: 0, sunrise: 0, dhuhr: 0, asr: -1, maghrib: -2, isha: -1 })
   })
 
-  it('compares Turkey calculation with Diyanet Istanbul timetable on 2026-10-09', () => {
-    const schedule = calculatePrayerSchedule(
-      { latitude: 41.0082, longitude: 28.9784 }, '2026-10-09', 'Europe/Istanbul',
-      { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
-    )
-    const reference = { fajr: '05:37', sunrise: '07:02', dhuhr: '12:57', asr: '16:07', maghrib: '18:41', isha: '20:00' }
-    const deviationMinutes = Object.fromEntries(Object.entries(reference).map(([key, time]) => {
-      const [actualHour = 0, actualMinute = 0] = schedule.entries[key as keyof typeof reference].time.split(':').map(Number)
-      const [referenceHour = 0, referenceMinute = 0] = time.split(':').map(Number)
-      return [key, actualHour * 60 + actualMinute - referenceHour * 60 - referenceMinute]
-    }))
-    // Diyanet original monthly timetable: https://namazvakitleri.diyanet.gov.tr/en-US/9541/prayer-time-for-istanbul
-    // Signed difference means calculated minus published. This is an approximation, not official equivalence.
-    expect(deviationMinutes).toEqual({ fajr: 1, sunrise: 0, dhuhr: -1, asr: -2, maghrib: -1, isha: -1 })
+  it.each([
+    ['Istanbul', { latitude: 41.0082, longitude: 28.9784 },
+      ['05:37', '07:02', '12:57', '16:07', '18:41', '20:00'], [1, 0, -1, -2, -1, -1]],
+    ['Antalya', { latitude: 36.8969, longitude: 30.7133 },
+      ['05:33', '06:52', '12:50', '16:04', '18:37', '19:51'], [0, 0, -1, -1, -1, -1]],
+  ] as const)('compares Turkey calculation with official Diyanet %s on 2026-10-09', (_city, coordinates, published, expected) => {
+    const schedule = calculatePrayerSchedule(coordinates, '2026-10-09', 'Europe/Istanbul',
+      { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' })
+    const prayerKeys = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'] as const
+    const minutes = (time: string): number => {
+      const [hour = 0, minute = 0] = time.split(':').map(Number)
+      return hour * 60 + minute
+    }
+    const deviations = prayerKeys.map((key, index) =>
+      minutes(schedule.entries[key].time) - minutes(published[index] ?? ''))
+    // Primary monthly schedules:
+    // https://namazvakitleri.diyanet.gov.tr/en-US/9541/prayer-time-for-istanbul
+    // https://namazvakitleri.diyanet.gov.tr/tr-TR/9225/antalya-icin-namaz-vakti
+    // Signed difference means calculated minus published. No official equivalence is claimed.
+    expect(deviations).toEqual(expected)
   })
 
   it('rejects non-canonical calculation dates', () => {
