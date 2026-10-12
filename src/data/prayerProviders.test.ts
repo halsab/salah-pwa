@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { officialDatasets } from './prayerProviders'
+import { officialDatasets, PRAYER_PROVIDERS } from './prayerProviders'
 import type { DatasetMeta } from '../storage/database'
 
 describe('official dataset descriptors', () => {
+  it('keeps DUM RT as the only production official timetable provider', () => {
+    expect(PRAYER_PROVIDERS.map(provider => provider.id)).toEqual(['dumRt'])
+  })
+
   it('keeps v2 year coverage and exposes exact v3 civil date bounds', () => {
     const v2 = officialDatasets(null)[0]
     expect(v2).toMatchObject({ schemaVersion: 2, years: [2026] })
