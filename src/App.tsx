@@ -30,6 +30,7 @@ import {
   type CalculationProfileId,
 } from './domain/prayerCalculation'
 import { getDeviceTimeZone, getUtcOffset, getZonedTime } from './domain/locationTime'
+import { getSystemDate } from './domain/date'
 import type { Result } from './domain/result'
 import { failure } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
@@ -217,16 +218,20 @@ export function App({
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
-  const calendarTimeZone = place?.timeZone ?? deviceTimeZone
   const {
-    selectedDate,
+    selectedDateOverride,
     currentTime,
-    today,
     changeDate,
-  } = useScheduleDate(services, calendarTimeZone)
+  } = useScheduleDate(services)
   const resolution = place
-    ? resolvePrayerTimeSource(place, selectedDate === today ? currentTime : selectedDate, preferences, datasets, capabilities)
+    ? resolvePrayerTimeSource(place, selectedDateOverride ?? currentTime, preferences, datasets, capabilities)
     : null
+  const calendarTimeZone = resolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
+  const today = getSystemDate(currentTime, calendarTimeZone)
+  const selectedDate = selectedDateOverride ?? today
+  const changeScheduleDate = useCallback((date: string) => {
+    changeDate(date === today ? null : date)
+  }, [changeDate, today])
   const officialMode = resolution?.kind === 'official'
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
     : preferences.calculationDraft ? effectiveCalculationSettings(preferences.calculationDraft) : DEFAULT_CALCULATION_SETTINGS
@@ -351,14 +356,14 @@ export function App({
             notice={<>{religiousEventLoadError ? <p role="alert">{religiousEventLoadError}</p> : null}
               {locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}
               {!locationNotice && nearbyCityNotice ? <p className="note" role="status">{nearbyCityNotice}</p> : null}{persistenceNotice}</>}
-            onChangeDate={changeDate}
+            onChangeDate={changeScheduleDate}
             onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
           />}
 
       </div> : null}
 
       {navigation.screen === 'date' ? <DateScreen selectedDate={selectedDate} today={today} preferences={calendarPreferences} hijriSupported={hijriSupported}
-        onDateChange={changeDate} onPreferencesChange={updateCalendarPreferences} onOpenReligiousEvents={() => openScreen('religious-events')}
+        onDateChange={changeScheduleDate} onPreferencesChange={updateCalendarPreferences} onOpenReligiousEvents={() => openScreen('religious-events')}
         onBack={backScreen} notice={persistenceNotice} /> : null}
 
       {navigation.screen === 'religious-events' ? <ReligiousEventsScreen today={today} correction={calendarPreferences.correction}

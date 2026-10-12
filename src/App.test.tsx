@@ -46,6 +46,22 @@ const chelnyToday: PrayerDay = {
   asr: '16:37',
 }
 
+function dumRtDay(locationId: string, date: string): PrayerDay {
+  return {
+    locationId,
+    date,
+    fajrStart: '02:00',
+    fajrJamaat: '03:00',
+    sunrise: '04:30',
+    zenith: '11:45',
+    dhuhr: '12:00',
+    asr: '16:00',
+    maghrib: '19:00',
+    isha: date === '2026-10-12' ? '23:59' : date === '2026-10-13' ? '20:13'
+      : date === '2026-10-31' ? '20:31' : date === '2026-11-01' ? '20:01' : '20:00',
+  }
+}
+
 const cityDataset: CityDataset = {
   source: {
     name: 'GeoNames',
@@ -396,6 +412,67 @@ describe('Salah', () => {
     expect(screen.getByText('1 сентября')).toBeVisible()
   })
 
+  it('показывает строку ДУМ РТ по московской дате, когда GPS-устройство ещё на предыдущем дне', async () => {
+    const services = await showGpsKazan('America/Los_Angeles', '2026-10-12T21:30:00Z')
+
+    expect(homeDate()).toHaveAttribute('datetime', '2026-10-13')
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('20:13')).toBeVisible()
+    expect(within(list).queryByText('23:59')).not.toBeInTheDocument()
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 1 ч 30 мин')
+    expect(services.getDays).toHaveBeenCalledWith('kazan', expect.arrayContaining(['2026-10-13']), expect.any(String), 'dumRt')
+  })
+
+  it('сохраняет московскую дату строки накануне осеннего DST-перехода устройства', async () => {
+    await showGpsKazan('America/Los_Angeles', '2026-10-31T21:30:00Z')
+
+    expect(homeDate()).toHaveAttribute('datetime', '2026-11-01')
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('20:01')).toBeVisible()
+    expect(within(list).queryByText('20:31')).not.toBeInTheDocument()
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 1 ч 30 мин')
+  })
+
+  it('показывает московскую дату, текущий Аср и следующий Магриб, когда GPS-устройство уже на следующем дне', async () => {
+    await showGpsKazan('Asia/Tokyo', '2026-10-12T15:30:00Z')
+
+    expect(homeDate()).toHaveAttribute('datetime', '2026-10-12')
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('23:59')).toBeVisible()
+    expect(within(list).queryByText('20:13')).not.toBeInTheDocument()
+    expect(within(list).getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До Магриба, осталось 30 мин')
+  })
+
+  it('выбирает current и next по событийному instant после московской полуночи', async () => {
+    await showGpsKazan('America/Los_Angeles', '2026-10-12T23:30:00Z')
+
+    expect(homeDate()).toHaveAttribute('datetime', '2026-10-13')
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('Фаджр (конец сухура)').closest('li')).toHaveAttribute('aria-current', 'true')
+    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра в мечети, осталось 30 мин')
+  })
+
+  it.each(['2026-10-10', '2026-10-15'])('сохраняет явно выбранную дату %s при переходе official → calculated и смене места', async (date) => {
+    await showGpsKazan('America/Los_Angeles', '2026-10-12T21:30:00Z')
+    await chooseGregorianDate(date)
+    expect(homeDate()).toHaveAttribute('datetime', date)
+
+    await openSource()
+    await userEvent.click(screen.getByRole('button', { name: /Способ/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
+    expect(await screen.findByText('America/Los_Angeles')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    await backHomeFromSource()
+
+    await chooseCity('Стамбул', /Стамбул, Стамбул, Турция/, /55\.7946, 49\.1115/)
+    expect(homeDate()).toHaveAttribute('datetime', date)
+    await openSource()
+    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
+    expect(await screen.findByText('Europe/Istanbul')).toBeVisible()
+  })
+
   it('первый запуск не выбирает город и не запрашивает GPS сам', async () => {
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })) })
     render(<App services={services} />)
@@ -574,6 +651,7 @@ describe('Salah', () => {
     const services = createServices()
     render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
+    await expectSchedule()
     const initialDatasetCalls = vi.mocked(services.getDays).mock.calls.length
     await chooseCity('Москва', /Москва/)
     await expectSchedule()
@@ -724,6 +802,45 @@ describe('Salah', () => {
     expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#B9D0CD')
   })
 })
+
+function homeDate() {
+  const value = screen.getByRole('button', { name: 'Выбрать дату' }).querySelector('time')
+  if (!value) throw new Error('Главная дата расписания не отображается')
+  return value
+}
+
+async function chooseGregorianDate(date: string) {
+  const [year, month, day] = date.split('-')
+  await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Год' }), String(Number(year)))
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), String(Number(month)))
+  await userEvent.selectOptions(screen.getByRole('combobox', { name: 'День' }), String(Number(day)))
+  await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+  await screen.findByRole('list', { name: 'Расписание дня' })
+}
+
+async function showGpsKazan(deviceTimeZone: string, currentInstant: string) {
+  const now = new Date(currentInstant)
+  const services = createServices({
+    initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
+    getDeviceTimeZone: () => deviceTimeZone,
+    getPosition: vi.fn().mockResolvedValue(success({
+      latitude: 55.7946,
+      longitude: 49.1115,
+      accuracy: 50,
+      timestamp: now.getTime(),
+    })),
+    now: () => new Date(now),
+    getDays: vi.fn((_locationId: string, dates: readonly string[]) => Promise.resolve(success(
+      dates.map(date => dumRtDay('kazan', date)),
+    ))),
+  })
+  render(<App services={services} />)
+  await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
+  await screen.findByRole('button', { name: '55.7946, 49.1115' })
+  await screen.findByRole('list', { name: 'Расписание дня' })
+  return services
+}
 
 async function expectSchedule() {
   expect(await screen.findByRole('list', { name: 'Расписание дня' })).toBeVisible()

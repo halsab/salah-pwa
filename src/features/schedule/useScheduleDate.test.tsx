@@ -12,8 +12,7 @@ describe('useScheduleDate', () => {
     vi.useFakeTimers()
     vi.setSystemTime('2026-09-01T10:00:00.000Z')
     const services = { now: () => new Date(Date.now()) }
-    const { result, unmount } = renderHook(() =>
-      useScheduleDate(services, 'Europe/Moscow'))
+    const { result, unmount } = renderHook(() => useScheduleDate(services))
     const initialTime = result.current.currentTime
 
     act(() => { vi.advanceTimersByTime(1_000) })
@@ -28,28 +27,20 @@ describe('useScheduleDate', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('на минутной границе точно переводит следующую гражданскую дату', () => {
+  it('хранит только явную дату и позволяет вернуться к эффективному сегодня', () => {
     vi.useFakeTimers()
-    vi.setSystemTime('2026-08-31T20:59:59.000Z')
+    vi.setSystemTime('2026-10-12T21:30:00.000Z')
     const services = { now: () => new Date(Date.now()) }
-    const { result, unmount } = renderHook(() =>
-      useScheduleDate(services, 'Europe/Moscow'))
+    const { result, unmount } = renderHook(() => useScheduleDate(services))
 
-    expect(result.current.selectedDate).toBe('2026-08-31')
-    act(() => { vi.advanceTimersByTime(1_000) })
-    expect(result.current.selectedDate).toBe('2026-09-01')
-    expect(result.current.today).toBe('2026-09-01')
+    expect(result.current.selectedDateOverride).toBeNull()
+    act(() => result.current.changeDate('2026-08-30'))
+    expect(result.current.selectedDateOverride).toBe('2026-08-30')
+    act(() => { vi.advanceTimersByTime(60_000) })
+    expect(result.current.selectedDateOverride).toBe('2026-08-30')
+    act(() => result.current.changeDate(null))
+    expect(result.current.selectedDateOverride).toBeNull()
     unmount()
     expect(vi.getTimerCount()).toBe(0)
-  })
-
-  it('сохраняет выбранную вручную civil date при смене часового пояса Place', () => {
-    const services = { now: () => new Date('2026-08-31T21:30:00.000Z') }
-    const hook = renderHook(({ timeZone }) => useScheduleDate(services, timeZone), { initialProps: { timeZone: 'Europe/Moscow' } })
-    act(() => hook.result.current.changeDate('2026-08-30'))
-    hook.rerender({ timeZone: 'America/Los_Angeles' })
-    expect(hook.result.current.selectedDate).toBe('2026-08-30')
-    expect(hook.result.current.today).toBe('2026-08-31')
-    hook.unmount()
   })
 })
