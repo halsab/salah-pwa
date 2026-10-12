@@ -117,11 +117,22 @@ describe('новые настройки', () => {
     }
     render(<Harness />)
     await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
-    expect(onChange).toHaveBeenLastCalledWith(automaticPreferences(draft))
-    await userEvent.click(screen.getByRole('button', { name: 'Таблица ДУМ РТ' }))
-    expect(onChange).toHaveBeenLastCalledWith({ mode: 'manual', source: { kind: 'official', provider: 'dumRt' }, calculationDraft: draft })
-    await userEvent.click(screen.getByRole('button', { name: 'Ручной расчёт' }))
+    expect(onChange).toHaveBeenLastCalledWith(automaticPreferences(draft, { kind: 'calculated', calculation: draft }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
     expect(onChange).toHaveBeenLastCalledWith(manualCalculation(draft))
+    expect(screen.queryByRole('button', { name: 'Таблица ДУМ РТ' })).not.toBeInTheDocument()
+  })
+  it('preserves legacy pinned official DUM RT across Automatic and Manual mode switching', async () => {
+    const saved = { mode: 'manual' as const, source: { kind: 'official' as const, provider: 'dumRt' }, calculationDraft: { profile: 'karachi' as const, overrides: { asrMethod: 'hanafi' as const } } }
+    function Harness() {
+      const [preferences, setPreferences] = useState<SourcePreferences>(saved)
+      return <SettingsScreens {...defaults} screen="source-choice" preferences={preferences} onChange={setPreferences} />
+    }
+    render(<Harness />)
+    expect(screen.getAllByRole('button')).toHaveLength(3)
+    await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(screen.getByRole('button', { name: 'Ручной выбор Выбрано' })).toBeVisible()
   })
   it('показывает неподдерживаемый профиль недоступным', () => {
     render(<SettingsScreens {...defaults} screen="profiles" preferences={automaticPreferences()} onChange={vi.fn()} getCapability={profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true }} />)

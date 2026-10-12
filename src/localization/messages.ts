@@ -285,6 +285,7 @@ export const RU_MESSAGES = Object.freeze({
   calculatedScheduleDescription: 'Время рассчитывается на устройстве по выбранному профилю, координатам и дате.',
   choiceAutomatic: 'Автоматически',
   choiceOfficial: 'Таблица ДУМ РТ',
+  choiceManual: 'Ручной выбор',
   choiceCalculated: 'Ручной расчёт',
   replaceLegacy: 'Выбор профиля заменит прежние поправки',
 } satisfies Record<string, MessageValue>)

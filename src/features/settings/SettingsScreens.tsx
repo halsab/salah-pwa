@@ -32,6 +32,10 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
     : preferences.calculationDraft ?? { profile: 'muslimWorldLeague', overrides: {} }
   const parameters = effectiveCalculationSettings(calculation)
   const mode = preferences.mode === 'automatic' ? 'automatic' : preferences.source.kind === 'official' ? 'official' : 'calculated'
+  const manualSource = preferences.mode === 'manual' ? preferences.source : preferences.manualSourceDraft
+  const restoreManual = (): SourcePreferences => manualSource?.kind === 'official'
+    ? { mode: 'manual', source: manualSource, calculationDraft: calculation }
+    : manualSource?.kind === 'calculated' ? manualCalculation(manualSource.calculation) : manualCalculation(calculation)
   const profileLabel = t(PROFILE_LABEL_KEYS[calculation.profile])
   const legacy = calculation.overrides.fajrAngle !== undefined || calculation.overrides.isha !== undefined || Object.keys(calculation.overrides.adjustments ?? {}).length > 0
   const privacyContent = getInformationContent('privacy', locale)
@@ -48,23 +52,22 @@ export function SettingsScreens({ screen, preferences, sourceLabel, themeFamily,
       {row('settings-privacy', t('privacy'), 'privacy')}{row('settings-about', t('about'), 'about')}{notice}</div>
   </Screen>
   if (screen === 'source') return <Screen label={t('scheduleSettings')} top={top} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="source-info" onClick={() => onOpen('source-info')}>{t('scheduleInfo')}</ActionButton></ScreenFooter>}>
-    <p className="screen-heading">{t('schedule')}</p><h1 className="screen-title">{mode === 'automatic' ? t('automatic') : mode === 'official' ? t('officialTable') : t('manualCalculation')}</h1>
+    <p className="screen-heading">{t('schedule')}</p><h1 className="screen-title">{mode === 'automatic' ? t('automatic') : t('choiceManual')}</h1>
     <p className="note screen-space">{mode === 'automatic' ? t('automaticScheduleDescription') : mode === 'official' ? t('officialScheduleDescription') : t('calculatedScheduleDescription')}</p>
     <div className="screen-stack screen-space">
-      {row('source-method', t('method'), 'source-choice', mode === 'automatic' ? t('autoShort') : mode === 'official' ? t('dumRt') : t('manualShort'))}
-      {mode === 'official' ? row('source-table', t('table'), 'source-info') : null}
+      {row('source-method', t('method'), 'source-choice', mode === 'automatic' ? t('autoShort') : t('manualShort'))}
+      {mode === 'official' ? <>{row('source-table', t('table'), 'source-info')}{row('source-profile', t('manualCalculation'), 'profiles')}</> : null}
       {mode === 'calculated' ? <>{row('source-profile', t('profile'), 'profiles', profileLabel)}{row('source-parameters', t('parameters'), 'parameters')}</> : null}
       {notice}
     </div>
   </Screen>
   if (screen === 'source-choice') {
     const choices = [
-      { id: 'automatic', label: t('choiceAutomatic'), value: automaticPreferences(calculation) },
-      { id: 'official', label: t('choiceOfficial'), value: { mode: 'manual', source: { kind: 'official', provider: 'dumRt' }, calculationDraft: calculation } as SourcePreferences },
-      { id: 'calculated', label: t('choiceCalculated'), value: manualCalculation(calculation) },
+      { id: 'automatic', label: t('choiceAutomatic'), value: automaticPreferences(calculation, manualSource) },
+      { id: 'manual', label: t('choiceManual'), value: restoreManual() },
     ]
     return <Screen label={t('sourceChoice')} top={top}><h1 className="screen-heading">{t('chooseSchedule')}</h1><div className="screen-stack screen-space">
-      {choices.map(choice => <ActionRow key={choice.id} title={choice.label} value={choice.id === mode ? t('selected') : undefined} aria-pressed={choice.id === mode} onClick={() => { onChange(choice.value); onBack() }} />
+      {choices.map(choice => <ActionRow key={choice.id} title={choice.label} value={(choice.id === 'automatic') === (mode === 'automatic') ? t('selected') : undefined} aria-pressed={(choice.id === 'automatic') === (mode === 'automatic')} onClick={() => { onChange(choice.value); onBack() }} />
       )}{notice}
     </div></Screen>
   }
