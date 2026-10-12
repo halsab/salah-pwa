@@ -1,4 +1,4 @@
-import { getDeviceTimeZone, isValidTimeZone } from './locationTime'
+import { DUM_RT_TIME_ZONE, getDeviceTimeZone, isValidTimeZone } from './locationTime'
 import { createOfficialPlace, restorePlaceMetadata, type Place } from './place'
 import { validPosition } from './localGeography'
 import type { PrayerLocation, SavedCoordinates } from './types'
@@ -33,6 +33,7 @@ function validNearbyCity(value: unknown): boolean {
 export function isPlace(value: unknown): value is Place {
   if (!value || typeof value !== 'object') return false
   const place = value as Partial<Place>
+  const legacyOverride = (value as { timeZoneOverride?: unknown }).timeZoneOverride
   return Boolean(restoreSavedCoordinates(value) && typeof place.id === 'string' && place.id
     && typeof place.name === 'string' && ['gps', 'city', 'official'].includes(place.selection ?? '')
     && ['inside', 'outside', 'uncertain', 'unavailable'].includes(place.coverage ?? '')
@@ -40,7 +41,11 @@ export function isPlace(value: unknown): value is Place {
     && (place.nearbyCity === undefined || validNearbyCity(place.nearbyCity))
     && place.automaticTimeZone && typeof place.automaticTimeZone.id === 'string' && isValidTimeZone(place.automaticTimeZone.id)
     && ['city', 'boundary', 'device', 'legacy'].includes(place.automaticTimeZone.source)
-    && (place.timeZoneOverride === undefined || ((place.timeZoneOverride as { source?: unknown }).source === 'user' && typeof place.timeZoneOverride.id === 'string' && isValidTimeZone(place.timeZoneOverride.id))))
+    && (legacyOverride === undefined || place.selection === 'gps' || place.selection === 'official' || (Boolean(legacyOverride) && typeof legacyOverride === 'object'
+      && (legacyOverride as { source?: unknown }).source === 'user'
+      && typeof (legacyOverride as { id?: unknown }).id === 'string'
+      && isValidTimeZone((legacyOverride as { id: string }).id)))
+  )
 }
 
 export function placeFromChoice(choice: LocationChoice, locations: PrayerLocation[]): Place | null {
@@ -53,7 +58,16 @@ export function placeFromChoice(choice: LocationChoice, locations: PrayerLocatio
       && !validCityRegion
       ? null
       : place.region
-    return restorePlaceMetadata({ ...place, region, timeZone: place.timeZoneOverride?.id ?? place.automaticTimeZone.id })
+    const { timeZoneOverride: _legacyOverride, ...withoutOverride } = place as Place & { timeZoneOverride?: unknown }
+    const timeZone = place.selection === 'gps' ? getDeviceTimeZone()
+      : place.selection === 'official' ? DUM_RT_TIME_ZONE
+        : place.automaticTimeZone.id
+    const automaticTimeZone = place.selection === 'gps'
+      ? { id: timeZone, source: 'device' as const }
+      : place.selection === 'official'
+        ? { id: timeZone, source: 'city' as const }
+        : place.automaticTimeZone
+    return restorePlaceMetadata({ ...withoutOverride, region, timeZone, automaticTimeZone })
   }
   if (choice.mode === 'official') {
     const location = locations.find(item => item.id === choice.locationId)
@@ -68,7 +82,10 @@ export function placeFromChoice(choice: LocationChoice, locations: PrayerLocatio
     selection, name: coordinates.name ?? '',
     region: null, coverage: 'unavailable',
     // Старая запись не доказывает происхождение зоны; сохраняем её до локального уточнения.
-    automaticTimeZone: { id: coordinates.timeZone, source: 'legacy' },
+    timeZone: selection === 'gps' ? getDeviceTimeZone() : coordinates.timeZone,
+    automaticTimeZone: selection === 'gps'
+      ? { id: getDeviceTimeZone(), source: 'device' }
+      : { id: coordinates.timeZone, source: 'legacy' },
   }
 }
 

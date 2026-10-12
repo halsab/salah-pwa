@@ -19,8 +19,8 @@ describe('local geographic evidence', () => {
     expect(classifyCoverage(point(55.5, 49.5), geometry)).toBe('outside')
     expect(classifyCoverage(point(55.4, 49.5), geometry)).toBe('uncertain')
   })
-  it('never derives timezone from nearest city or connectivity', () => {
-    expect(resolveGpsGeography(point(55.5, 49.5), 'America/Los_Angeles', square)).toMatchObject({ coverage: 'inside', timeZone: 'Europe/Moscow', timeZoneSource: 'boundary' })
+  it('uses device timezone for GPS regardless of official coverage or nearby geography', () => {
+    expect(resolveGpsGeography(point(55.5, 49.5), 'America/Los_Angeles', square)).toMatchObject({ coverage: 'inside', timeZone: 'America/Los_Angeles', timeZoneSource: 'device' })
     expect(resolveGpsGeography(point(54.5, 49.5), 'America/Los_Angeles', square)).toMatchObject({ coverage: 'outside', timeZone: 'America/Los_Angeles', timeZoneSource: 'device' })
     expect(resolveGpsGeography(point(55, 49.5), 'Europe/Samara', square).timeZoneSource).toBe('device')
     expect(resolveGpsGeography(point(55.5, 49.5), 'UTC', null).coverage).toBe('unavailable')

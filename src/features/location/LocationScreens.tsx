@@ -12,6 +12,7 @@ import { useLocalization } from '../../localization'
 import type { Translator } from '../../localization/messages'
 import type { SupportedLocale } from '../../localization/locale'
 import { localizedCityLabel, localizedCityRegion } from '../../localization/place'
+import { getUtcOffset } from '../../domain/locationTime'
 
 const idleGpsState: GpsUiState = { status: 'idle' }
 
@@ -24,10 +25,11 @@ function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, 
 }
 
 export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
-  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom }: {
+  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom, currentTime = new Date() }: {
   place: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
   onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
   gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
+  currentTime?: Date
 }) {
   const { locale, t } = useLocalization()
   const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
@@ -43,6 +45,9 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
       : compactPlaceLabel(place.name, locale)}</p>
       {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy, locale)}</p></>
         : place.region ? <p className="note">{place.region.name}</p> : null}
+      <div className="location-timezone" aria-label={t('timezone')}>
+        <p className="note"><span>{t('timezone')}:</span> <code>{place.timeZone}</code> <span>({getUtcOffset(currentTime, place.timeZone)})</span></p>
+      </div>
     </div> : null}
     <div className="screen-stack">
       <ActionButton variant="field" id="location-search" onClick={onSearch}>{t('locationSearch')}</ActionButton>

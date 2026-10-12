@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createGpsPlace, homePlaceLabel, refineGpsPlace, setPlaceTimeZone, createCityPlace, isFreshGpsPlace, withNearbyCity } from './place'
+import { createGpsPlace, homePlaceLabel, refineGpsPlace, createCityPlace, isFreshGpsPlace, withNearbyCity } from './place'
 import { placeFromChoice } from './placeMigration'
+import { getDeviceTimeZone } from './locationTime'
 import type { CoverageGeometry } from './localGeography'
 const geometry: CoverageGeometry = { uncertaintyMeters: 2000, polygons: [[[[49,55],[50,55],[50,56],[49,56],[49,55]]]] }
 const position = { latitude: 55.5, longitude: 49.5, accuracy: 1000, timestamp: 100 }
@@ -9,7 +10,7 @@ const gps = () => createGpsPlace(position, 'America/Los_Angeles', geometry, 'gps
 describe('place identity and timezone', () => {
   it('keeps real coordinates, identity and automatic timezone independent of label', () => {
     const place = gps()
-    expect(place).toMatchObject({ id: 'gps:1', selection: 'gps', ...position, timeZone: 'Europe/Moscow', coverage: 'inside' })
+    expect(place).toMatchObject({ id: 'gps:1', selection: 'gps', ...position, timeZone: 'America/Los_Angeles', coverage: 'inside' })
     expect(place.name).toBe('')
     expect(homePlaceLabel(place)).toBe('55.5000, 49.5000')
   })
@@ -18,18 +19,13 @@ describe('place identity and timezone', () => {
     expect(homePlaceLabel(named)).toBe('Казань')
     expect(homePlaceLabel(null)).toBe('Местоположение не определено')
   })
-  it('preserves user override through refinement and restores automatic timezone', () => {
-    const place = setPlaceTimeZone(gps(), 'America/New_York')
-    const refined = refineGpsPlace(place, { ...position, accuracy: 10, timestamp: 200 }, 'UTC', geometry)
-    expect(refined.timeZone).toBe('America/New_York')
-    expect(refined.timeZoneOverride).toEqual({ id: 'America/New_York', source: 'user' })
-    expect(setPlaceTimeZone(refined, null).timeZone).toBe('Europe/Moscow')
-    expect(() => setPlaceTimeZone(place, '+03:00')).toThrow()
+  it('uses the current device timezone after GPS refinement, including inside official coverage', () => {
+    const refined = refineGpsPlace(gps(), { ...position, accuracy: 10, timestamp: 200 }, 'Asia/Tokyo', geometry)
+    expect(refined.timeZone).toBe('Asia/Tokyo')
   })
   it('new manual city resets override, GPS refresh retains it', () => {
     const city = createCityPlace({ id: 1, name: 'Berlin', countryCode: 'DE', admin1Code: '16', admin1Name: 'Berlin', latitude: 52.52, longitude: 13.4, population: 1, timeZone: 'Europe/Berlin' }, 300)
     expect(city.timeZone).toBe('Europe/Berlin')
-    expect(city.timeZoneOverride).toBeUndefined()
     expect(city.selection).toBe('city')
   })
   it('keeps valid country identity when GeoNames has no usable subdivision', () => {
@@ -47,18 +43,18 @@ describe('place identity and timezone', () => {
     const named = withNearbyCity(gpsPlace, city)
     expect(named).toMatchObject({ ...position, timeZone: 'America/Los_Angeles', nearbyCity: { countryCode: 'DE', latitude: 55.5, longitude: 49.5 } })
     const restored = placeFromChoice({ mode: 'calculated', source: 'automatic', coordinates: named, place: named }, [])
-    expect(restored).toMatchObject({ ...position, timeZone: 'America/Los_Angeles', nearbyCity: { countryCode: 'DE' } })
+    expect(restored).toMatchObject({ ...position, timeZone: getDeviceTimeZone(), nearbyCity: { countryCode: 'DE' } })
   })
-  it('drops malformed or no-longer-near GPS country hints while preserving valid user timezone overrides', () => {
-    const gpsPlace = setPlaceTimeZone(createGpsPlace(position, 'UTC', null, 'gps:country'), 'America/New_York')
+  it('drops malformed or no-longer-near GPS country hints without using city timezone', () => {
+    const gpsPlace = createGpsPlace(position, 'UTC', null, 'gps:country')
     const city = { id: 10, name: 'Nearby', countryCode: 'DE', admin1Code: '', admin1Name: '', latitude: 55.5, longitude: 49.5, population: 1, timeZone: 'Europe/Berlin' }
     const named = withNearbyCity(gpsPlace, city)
     const refined = refineGpsPlace(named, { ...position, latitude: 55.501, accuracy: 50, timestamp: 200 }, 'UTC', null)
     expect(refined.nearbyCity?.countryCode).toBe('DE')
-    expect(refined.timeZoneOverride).toEqual({ id: 'America/New_York', source: 'user' })
+    expect(refined.timeZone).toBe('UTC')
     const moved = refineGpsPlace(named, { ...position, latitude: 56, accuracy: 50, timestamp: 300 }, 'UTC', null)
     expect(moved.nearbyCity).toBeUndefined()
-    expect(moved.timeZone).toBe('America/New_York')
+    expect(moved.timeZone).toBe('UTC')
     const malformed = placeFromChoice({ mode: 'calculated', source: 'automatic', coordinates: named,
       place: { ...named, nearbyCity: { id: 10, name: named.nearbyCity?.name ?? '', distanceKm: named.nearbyCity?.distanceKm ?? 0,
         countryCode: 'de', latitude: city.latitude, longitude: city.longitude } } }, [])
@@ -66,7 +62,7 @@ describe('place identity and timezone', () => {
     const malformedCoordinates = placeFromChoice({ mode: 'calculated', source: 'automatic', coordinates: named,
       place: { ...named, nearbyCity: { id: 10, name: 'Nearby', distanceKm: 1, countryCode: 'CA', latitude: 300, longitude: 49.5 } } }, [])
     expect(malformedCoordinates?.nearbyCity?.countryCode).toBeUndefined()
-    expect(malformedCoordinates?.timeZoneOverride).toEqual({ id: 'America/New_York', source: 'user' })
+    expect(malformedCoordinates?.timeZone).toBe(getDeviceTimeZone())
   })
   it('preserves confirmed saved Tatarstan identity and degrades malformed saved city regions', () => {
     const city = createCityPlace({ id: 4, name: 'Kazan', countryCode: 'RU', admin1Code: '73', admin1Name: 'Tatarstan', latitude: 55.79, longitude: 49.12, population: 1, timeZone: 'Europe/Moscow' }, 300)

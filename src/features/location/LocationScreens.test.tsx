@@ -25,6 +25,17 @@ describe('экраны локации', () => {
     rerender(<LocationScreen place={{ ...gps, accuracy: null }} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     expect(screen.getByText('Точность неизвестна')).toBeVisible()
   })
+  it('показывает, что timezone GPS берётся с устройства', () => {
+    const gps = createGpsPlace({ latitude: 48.85, longitude: 2.35, accuracy: 80, timestamp: 0 }, 'America/Los_Angeles', null, 'gps:paris')
+    render(<LocationScreen place={gps} recentPlaces={[]} currentTime={new Date('2026-07-01T12:00:00Z')} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('America/Los_Angeles')).toBeVisible()
+    expect(screen.getByText('(UTC−7)')).toBeVisible()
+  })
+  it('показывает timezone выбранного города из каталога', () => {
+    const catalogPlace = createCityPlace(city, 0)
+    render(<LocationScreen place={catalogPlace} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('Europe/Moscow')).toBeVisible()
+  })
   it('отмечает полное название GPS как ближайший населённый пункт', () => {
     const gps = withNearbyCity(createGpsPlace({ latitude: 55.79631, longitude: 49.10881, accuracy: 120, timestamp: 0 }, 'Europe/Moscow', null, 'gps:1'), { ...city, name: 'Казань', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55.79, longitude: 49.12 })
     render(<LocationScreen place={gps} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)

@@ -117,7 +117,7 @@ function getUtcOffsetMinutes(instant: Date, timeZone: string): number {
 }
 
 export function isValidTimeZone(timeZone: string): boolean {
-  if (!timeZone || /^[+−-]/.test(timeZone)) return false
+  if (!timeZone || /^[+−-]/.test(timeZone) || /^(?:UTC|GMT)[+−-]\d{1,2}(?::?\d{2})?$/iu.test(timeZone)) return false
 
   try {
     getFormatter(timeZone)

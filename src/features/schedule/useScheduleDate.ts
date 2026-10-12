@@ -1,25 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
-import { getSystemDate } from '../../domain/date'
 import { pulseHaptic } from '../../platform/browser'
 
 interface ScheduleDateServices {
   now: () => Date
 }
 
-export function useScheduleDate(services: ScheduleDateServices, timeZone: string) {
-  const [selectedDate, setSelectedDate] = useState(() => getSystemDate(services.now(), timeZone))
+export function useScheduleDate(services: ScheduleDateServices) {
+  const [selectedDateOverride, setSelectedDateOverride] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState(() => services.now())
-  const followingToday = useRef(true)
 
   const syncCurrentTime = useCallback(() => {
     const now = services.now()
     setCurrentTime((current) => current.getTime() === now.getTime() ? current : now)
-    if (followingToday.current) {
-      const currentDate = getSystemDate(now, timeZone)
-      setSelectedDate((date) => date === currentDate ? date : currentDate)
-    }
-  }, [services, timeZone])
+  }, [services])
 
   useEffect(() => {
     let active = true
@@ -55,17 +49,14 @@ export function useScheduleDate(services: ScheduleDateServices, timeZone: string
     }
   }, [services, syncCurrentTime])
 
-  const today = getSystemDate(currentTime, timeZone)
-  const changeDate = (date: string) => {
-    followingToday.current = date === today
-    setSelectedDate(date)
+  const changeDate = useCallback((date: string | null) => {
+    setSelectedDateOverride(date)
     pulseHaptic()
-  }
+  }, [])
 
   return {
-    selectedDate,
+    selectedDateOverride,
     currentTime,
-    today,
     changeDate,
   }
 }

@@ -55,6 +55,8 @@ describe('location time', () => {
     expect(isValidTimeZone('Europe/Moscow')).toBe(true)
     expect(isValidTimeZone('not/a-time-zone')).toBe(false)
     expect(isValidTimeZone('')).toBe(false)
+    expect(isValidTimeZone('+03:00')).toBe(false)
+    expect(isValidTimeZone('UTC+03:00')).toBe(false)
     expect(() => createLocationClock('not/a-time-zone')).toThrow(RangeError)
   })
 
