@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { usePlaceSelection } from './usePlaceSelection'
 import type { AppServices } from '../../App'
 import { success, failure } from '../../domain/result'
-import { createGpsPlace, setPlaceTimeZone, withNearbyCity, type Place } from '../../domain/place'
+import { createGpsPlace, withNearbyCity, type Place } from '../../domain/place'
 import { automaticPreferences } from '../../domain/sourcePreferences'
 import { resolvePrayerTimeSource } from '../../domain/prayerSource'
 import { parseCoverageGeometry } from '../../domain/localGeography'
@@ -32,7 +32,7 @@ function setup(overrides: Partial<AppServices & TestSettingsServices> = {}) {
     loadGeography: vi.fn().mockResolvedValue(geometry),
     getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
     getPermission: vi.fn().mockResolvedValue('granted'),
-    getDeviceTimeZone: () => 'America/Los_Angeles', now: () => new Date(1000),
+    getDeviceTimeZone: vi.fn(() => 'America/Los_Angeles'), now: () => new Date(1000),
     cities: { findNearest: vi.fn().mockReturnValue(lookup.promise) },
     ...settingsServices(overrides),
     ...overrides,
@@ -50,7 +50,7 @@ describe('one-shot GPS operations', () => {
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
-    expect(h.result.current.place).toMatchObject({ ...coarseFix, coverage: 'inside', timeZone: 'Europe/Moscow' })
+    expect(h.result.current.place).toMatchObject({ ...coarseFix, coverage: 'inside', timeZone: 'America/Los_Angeles' })
     expect(h.result.current.gpsState).toEqual({ status: 'refining' })
     expect(h.chosen).not.toHaveBeenCalled()
     expect(h.services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'automatic', expect.objectContaining(coarseFix), expect.any(Function))
@@ -100,7 +100,7 @@ describe('one-shot GPS operations', () => {
     await act(async () => { h.coarse.resolve(success(coarseFix)); await pending })
     expect(h.result.current.place).toMatchObject(preciseFix)
     await act(async () => { h.lookup.resolve(success({ ...city, name: 'Казань', latitude: 55.79, longitude: 49.12, timeZone: 'Europe/Samara' })); await Promise.resolve() })
-    expect(h.result.current.place).toMatchObject({ ...preciseFix, timeZone: 'Europe/Moscow', name: 'Казань' })
+    expect(h.result.current.place).toMatchObject({ ...preciseFix, timeZone: 'America/Los_Angeles', name: 'Казань' })
   })
   it('retains useful coarse when precise fails', async () => {
     const h = setup()
@@ -265,11 +265,11 @@ describe('one-shot GPS operations', () => {
     await act(async () => { secondLookup.resolve(success(null)); await pending })
   })
   it('restores a saved GPS country and calculation profile without another lookup', () => {
-    const base = setPlaceTimeZone(createGpsPlace(goodCoarseFix, 'UTC', null, 'gps:saved-country'), 'America/New_York')
+    const base = createGpsPlace(goodCoarseFix, 'UTC', null, 'gps:saved-country')
     const saved = withNearbyCity(base, { ...city, countryCode: 'CA', latitude: base.latitude, longitude: base.longitude })
     const h = setup()
     act(() => h.result.current.restore({ mode: 'calculated', coordinates: saved, source: 'automatic', place: saved }, []))
-    expect(h.result.current.place).toMatchObject({ nearbyCity: { countryCode: 'CA' }, timeZone: 'America/New_York' })
+    expect(h.result.current.place).toMatchObject({ nearbyCity: { countryCode: 'CA' }, timeZone: 'America/Los_Angeles' })
     expect(resolvePrayerTimeSource(saved, '2026-09-01', automaticPreferences(), []))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'canadaFcna' } })
     expect(h.services.cities.findNearest).not.toHaveBeenCalled()
@@ -307,47 +307,19 @@ describe('one-shot GPS operations', () => {
     expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
     expect(h.services.saveCalculatedLocation).not.toHaveBeenCalled()
   })
-  it('keeps override across a new GPS request and allows automatic timezone again', async () => {
+  it('ignores a saved GPS timezone override across restoration and a new GPS request', async () => {
     const h = setup()
-    const saved = setPlaceTimeZone(createGpsPlace(coarseFix, 'UTC', geometry, 'gps:saved'), 'America/New_York')
+    const saved = { ...createGpsPlace(coarseFix, 'UTC', geometry, 'gps:saved'), timeZone: 'America/New_York',
+      timeZoneOverride: { id: 'America/New_York', source: 'user' as const } }
     act(() => h.result.current.restore({ mode: 'official', locationId: 'kazan', source: 'automatic', place: saved }, locations))
     expect(h.services.getPosition).not.toHaveBeenCalled()
+    expect(h.result.current.place).toMatchObject({ timeZone: 'America/Los_Angeles', id: 'gps:saved' })
+    expect(h.result.current.place).not.toHaveProperty('timeZoneOverride')
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.precise.resolve(success(preciseFix)); h.coarse.resolve(success(coarseFix)); await pending })
-    expect(h.result.current.place?.timeZone).toBe('America/New_York')
-    await act(async () => { await h.result.current.changeTimeZone(null) })
-    expect(h.result.current.place?.timeZone).toBe('Europe/Moscow')
-    await expect(h.result.current.changeTimeZone('Europe/Berlin')).rejects.toThrow('Ручной часовой пояс доступен только для GPS')
-    expect(h.result.current.place?.timeZone).toBe('Europe/Moscow')
+    expect(h.result.current.place?.timeZone).toBe('America/Los_Angeles')
     act(() => h.result.current.selectCity(city))
-    expect(h.result.current.place?.timeZoneOverride).toBeUndefined()
-  })
-  it('manual timezone change rejects pending GPS refinement and nearby-city callbacks', async () => {
-    const outsideFix = { latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 }
-    const refinedOutsideFix = { ...outsideFix, latitude: 41.02, timestamp: 200 }
-    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
-    const selected = createGpsPlace(outsideFix, 'America/Los_Angeles', null, 'gps:stable')
-    act(() => h.result.current.restore({ mode: 'calculated', source: 'manual', coordinates: selected }, locations))
-    const originalId = h.result.current.place?.id
-    let pending!: Promise<void>
-    act(() => { pending = h.result.current.locate() })
-    await act(async () => { h.coarse.resolve(success(outsideFix)); await Promise.resolve() })
-    await waitFor(() => expect(h.services.cities.findNearest).toHaveBeenCalled())
-    await act(async () => { await h.result.current.changeTimeZone('Europe/Berlin') })
-    await act(async () => {
-      h.precise.resolve(success(refinedOutsideFix))
-      h.lookup.resolve(success({ ...city, name: 'Поздний ответ', latitude: outsideFix.latitude, longitude: outsideFix.longitude }))
-      await pending
-    })
-    expect(h.result.current.place).toMatchObject({
-      ...outsideFix, id: originalId, timeZone: 'Europe/Berlin',
-      timeZoneOverride: { id: 'Europe/Berlin', source: 'user' }, name: '',
-    })
-    const savedSettings = vi.mocked(h.services.saveSettings).mock.lastCall?.[0]
-    expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: {
-      id: originalId, timeZone: 'Europe/Berlin', timeZoneOverride: { id: 'Europe/Berlin', source: 'user' },
-    } })
   })
   it('serializes slow saves so the manual choice is persisted last', async () => {
     const save = deferred<Awaited<ReturnType<TestSettingsServices['saveOfficialLocation']>>>()
@@ -389,10 +361,20 @@ it('a newer GPS request wins over both callbacks of the previous request', async
   expect(h.result.current.place).toMatchObject(latest)
 })
 
-it('automatic timezone reset re-evaluates a legacy GPS place using local boundaries', async () => {
+it('restores a legacy GPS coordinate with current device timezone without requesting location', () => {
   const h = setup()
-  act(() => h.result.current.restore({ mode: 'calculated', source: 'manual', coordinates: { ...coarseFix, source: 'gps', timeZone: 'America/Los_Angeles', name: 'Сохранённое имя' } }, locations))
-  await act(async () => { await h.result.current.changeTimeZone(null) })
-  expect(h.result.current.place).toMatchObject({ timeZone: 'Europe/Moscow', name: 'Сохранённое имя', automaticTimeZone: { source: 'boundary' } })
+  act(() => h.result.current.restore({ mode: 'calculated', source: 'manual', coordinates: { ...coarseFix, source: 'gps', timeZone: 'Europe/Moscow', name: 'Сохранённое имя' } }, locations))
+  expect(h.result.current.place).toMatchObject({ timeZone: 'America/Los_Angeles', name: 'Сохранённое имя', automaticTimeZone: { source: 'device' } })
   expect(h.services.getPosition).not.toHaveBeenCalled()
 })
+  it('updates restored GPS timezone on resume without another location lookup', () => {
+    const h = setup()
+    act(() => h.result.current.restore({ mode: 'calculated', source: 'automatic', coordinates: {
+      ...coarseFix, source: 'gps', timeZone: 'America/Los_Angeles',
+    } }, locations))
+    expect(h.result.current.place?.timeZone).toBe('America/Los_Angeles')
+    vi.mocked(h.services.getDeviceTimeZone).mockReturnValue('Asia/Tokyo')
+    act(() => { window.dispatchEvent(new Event('pageshow')) })
+    expect(h.result.current.place).toMatchObject({ timeZone: 'Asia/Tokyo', automaticTimeZone: { source: 'device' } })
+    expect(h.services.getPosition).not.toHaveBeenCalled()
+  })

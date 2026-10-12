@@ -4,6 +4,7 @@ import { initialManualCalculation, resolvePrayerTimeSource, type OfficialDataset
 import { automaticPreferences, isSourcePreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
 import { automaticCalculationDefaults, effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
 import { calculatePrayerSchedule } from './prayerCalculation'
+import { DUM_RT_TIME_ZONE } from './locationTime'
 
 const place = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 0)
 const official: OfficialDatasetAvailability = {
@@ -206,7 +207,7 @@ describe('preferences and validation', () => {
 
 it('uses the provider calendar year near midnight regardless of a manual place timezone', () => {
   const west = { ...place, timeZone: 'America/Los_Angeles' }
-  expect(resolvePrayerTimeSource(west, new Date('2025-12-31T22:00:00Z'), auto, [official])).toMatchObject({ kind: 'official', status: 'ready' })
+  expect(resolvePrayerTimeSource(west, new Date('2025-12-31T22:00:00Z'), auto, [official])).toMatchObject({ kind: 'official', status: 'ready', timeZone: DUM_RT_TIME_ZONE })
   expect(resolvePrayerTimeSource(west, new Date('2026-12-31T22:00:00Z'), auto, [official])).toMatchObject({ kind: 'calculated' })
 })
 it('uses a confirmed local version ahead of a missing version regardless of descriptor order', () => {
@@ -222,9 +223,15 @@ it('uses exact inclusive date ranges for v3 datasets while retaining v2 year cov
   expect(resolvePrayerTimeSource(place, '2026-10-21', auto, [partial])).toMatchObject({ kind: 'calculated' })
   expect(resolvePrayerTimeSource(place, '2026-12-31', auto, [official])).toMatchObject({ kind: 'official', status: 'ready' })
   expect(resolvePrayerTimeSource(place, '2026-02-30', auto, [official])).toMatchObject({ kind: 'calculated' })
-  const west = { ...partial, timeZone: 'America/Los_Angeles' }
-  expect(resolvePrayerTimeSource(place, new Date('2026-03-15T00:30:00Z'), auto, [west])).toMatchObject({ kind: 'calculated' })
-  expect(resolvePrayerTimeSource(place, '2026-03-15', auto, [west])).toMatchObject({ kind: 'official' })
+  const wrongZone = { ...partial, timeZone: 'America/Los_Angeles' }
+  expect(resolvePrayerTimeSource(place, new Date('2026-03-15T00:30:00Z'), auto, [wrongZone])).toMatchObject({ kind: 'official', timeZone: DUM_RT_TIME_ZONE })
+  expect(resolvePrayerTimeSource(place, '2026-03-15', auto, [wrongZone])).toMatchObject({ kind: 'official', timeZone: DUM_RT_TIME_ZONE })
+})
+
+it('uses Moscow date at midnight when device date is still the previous day', () => {
+  const instant = new Date('2026-01-01T00:30:00.000Z')
+  const partial = { ...official, schemaVersion: 3, startDate: '2026-01-01', endDate: '2026-12-31' }
+  expect(resolvePrayerTimeSource(place, instant, auto, [partial])).toMatchObject({ kind: 'official', status: 'ready', timeZone: DUM_RT_TIME_ZONE })
 })
 
 it('applies the automatic Asr school to calculated prayer times', () => {

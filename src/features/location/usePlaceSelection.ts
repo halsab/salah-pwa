@@ -3,7 +3,7 @@ import type { AppServices } from '../../App'
 import type { LocationChoice } from '../../storage/database'
 import type { LocationSelectionSource } from '../../domain/locationSelection'
 import { shouldStartAutomaticLocation } from '../../domain/locationSelection'
-import { createCityPlace, createGpsPlace, createOfficialPlace, isFreshGpsPlace, isUsefulRefinement, officialLocationForPlace, refineGpsPlace, setPlaceTimeZone, withNearbyCity, type Place } from '../../domain/place'
+import { createCityPlace, createGpsPlace, createOfficialPlace, isFreshGpsPlace, isUsefulRefinement, officialLocationForPlace, refineGpsPlace, withNearbyCity, type Place } from '../../domain/place'
 import { placeFromChoice } from '../../domain/placeMigration'
 import { validPosition } from '../../domain/localGeography'
 import type { City } from '../../domain/cities'
@@ -40,7 +40,9 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     if (restored.current || current.current) return
     restored.current = true
     if (!choice) { started.current = true; return }
-    const saved = placeFromChoice(choice, availableLocations)
+    const saved = placeFromChoice(choice.place && choice.place.selection === 'gps'
+      ? { mode: 'calculated', coordinates: choice.place, source: choice.source, place: choice.place }
+      : choice, availableLocations)
     current.current = saved
     setPlace(saved)
     setSource(choice.source)
@@ -191,28 +193,24 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     apply({ ...recent, timestamp: services.now().getTime() }, 'manual', ++epoch.current)
     onChosen()
   }, [apply, onChosen, services])
-  const changeTimeZone = useCallback(async (zone: string | null): Promise<string> => {
+  const synchronizeDeviceTimeZone = useCallback(() => {
     const selected = current.current
-    if (!selected) return services.getDeviceTimeZone()
-    if (zone !== null && (selected.selection !== 'gps' || selected.coverage === 'inside')) {
-      throw new RangeError(translate('ru', 'timezoneRestricted'))
-    }
-    let updated = setPlaceTimeZone(selected, zone)
+    if (!selected || selected.selection !== 'gps') return
+    const timeZone = services.getDeviceTimeZone()
+    if (selected.timeZone === timeZone && selected.automaticTimeZone.id === timeZone) return
+    const { timeZoneOverride: _legacyOverride, ...base } = selected as Place & { timeZoneOverride?: unknown }
     const operation = ++epoch.current
-    // Настройка зоны прерывает ожидающие GPS/lookup, поэтому override не теряется при гонке.
-    activeInteractive.current = null
-    setGpsState({ status: 'idle' })
-    setNameLookupState('idle')
-    if (zone === null && selected.selection === 'gps') {
-      const geometry = await services.loadGeography().catch(() => null)
-      if (operation !== epoch.current) return current.current?.timeZone ?? selected.timeZone
-      const resolved = createGpsPlace(selected, services.getDeviceTimeZone(), geometry, selected.id)
-      updated = { ...updated, timeZone: resolved.timeZone, automaticTimeZone: resolved.automaticTimeZone,
-        coverage: resolved.coverage, region: resolved.region }
-    }
-    apply(updated, source, operation)
-    return updated.timeZone
+    apply({ ...base, timeZone, automaticTimeZone: { id: timeZone, source: 'device' } }, source, operation)
   }, [apply, services, source])
+  useEffect(() => {
+    window.addEventListener('pageshow', synchronizeDeviceTimeZone)
+    document.addEventListener('visibilitychange', synchronizeDeviceTimeZone)
+    synchronizeDeviceTimeZone()
+    return () => {
+      window.removeEventListener('pageshow', synchronizeDeviceTimeZone)
+      document.removeEventListener('visibilitychange', synchronizeDeviceTimeZone)
+    }
+  }, [synchronizeDeviceTimeZone, place])
   const acceptGps = useCallback(() => {
     const active = activeInteractive.current
     const selected = current.current
@@ -227,5 +225,5 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
   }, [])
-  return { place, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, selectOfficial, selectCity, selectRecent, changeTimeZone, invalidate }
+  return { place, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, selectOfficial, selectCity, selectRecent, invalidate }
 }

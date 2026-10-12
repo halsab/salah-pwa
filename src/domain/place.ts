@@ -10,8 +10,7 @@ export interface Place extends SavedCoordinates {
   name: string
   region: { code: string; name: string } | null
   coverage: Coverage
-  automaticTimeZone: { id: string; source: 'city' | 'boundary' | 'device' | 'legacy' }
-  timeZoneOverride?: { id: string; source: 'user' }
+  automaticTimeZone: { id: string; source: 'city' | 'device' | 'legacy' }
   nearbyCity?: {
     id: number
     name: string
@@ -66,25 +65,17 @@ export function createOfficialPlace(location: PrayerLocation, timestamp: number)
   }
 }
 
-export function setPlaceTimeZone(place: Place, timeZone: string | null): Place {
-  const { timeZoneOverride: _oldOverride, ...base } = place
-  if (timeZone === null) return { ...base, timeZone: base.automaticTimeZone.id }
-  if (!isValidTimeZone(timeZone)) throw new RangeError('Введите действующую IANA timezone, например Europe/Moscow')
-  return { ...base, timeZone, timeZoneOverride: { id: timeZone, source: 'user' } }
-}
-
 export function refineGpsPlace(place: Place, fix: Fix, deviceZone: string, geometry: CoverageGeometry | null): Place {
   const refined = createGpsPlace(fix, deviceZone, geometry, place.id)
-  const withZone = place.timeZoneOverride ? setPlaceTimeZone(refined, place.timeZoneOverride.id) : refined
   const city = place.nearbyCity
   const latitude = city?.latitude
   const longitude = city?.longitude
   if (!city || typeof latitude !== 'number' || !Number.isFinite(latitude)
     || typeof longitude !== 'number' || !Number.isFinite(longitude)
-    || !validPosition({ latitude, longitude, accuracy: null })) return withZone
+    || !validPosition({ latitude, longitude, accuracy: null })) return refined
   const distanceKm = haversineDistanceKm(fix.latitude, fix.longitude, latitude, longitude)
-  if (distanceKm > 25) return withZone
-  return { ...withZone, name: city.name, nearbyCity: { ...city, distanceKm } }
+  if (distanceKm > 25) return refined
+  return { ...refined, name: city.name, nearbyCity: { ...city, distanceKm } }
 }
 
 export function withNearbyCity(place: Place, city: City | null): Place {

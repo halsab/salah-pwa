@@ -1,5 +1,3 @@
-import { DUM_RT_TIME_ZONE } from './locationTime'
-
 export type Coverage = 'inside' | 'outside' | 'uncertain' | 'unavailable'
 export type GeoPoint = readonly [longitude: number, latitude: number]
 export interface CoverageGeometry {
@@ -66,8 +64,8 @@ export function resolveGpsGeography(point: Position, deviceTimeZone: string, geo
   const coverage = classifyCoverage(point, geometry)
   return {
     coverage,
-    timeZone: coverage === 'inside' ? DUM_RT_TIME_ZONE : deviceTimeZone,
-    timeZoneSource: coverage === 'inside' ? 'boundary' as const : 'device' as const,
+    timeZone: deviceTimeZone,
+    timeZoneSource: 'device' as const,
   }
 }
 

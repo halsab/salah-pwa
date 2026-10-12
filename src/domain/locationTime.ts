@@ -127,17 +127,6 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
-export function getSupportedTimeZones(): string[] | null {
-  const intl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }
-  if (typeof intl.supportedValuesOf !== 'function') return null
-
-  try {
-    return [...new Set(intl.supportedValuesOf('timeZone').filter(isValidTimeZone))].sort()
-  } catch {
-    return null
-  }
-}
-
 export function getDeviceTimeZone(): string {
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
   return isValidTimeZone(timeZone) ? timeZone : 'UTC'

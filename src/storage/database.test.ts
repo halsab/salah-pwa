@@ -2,6 +2,7 @@ import { openDB } from 'idb'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getDatasetRevision } from '../domain/scheduleContext'
+import { getDeviceTimeZone } from '../domain/locationTime'
 import type { Result } from '../domain/result'
 import type { PrayerDataset } from '../domain/types'
 import {
@@ -443,7 +444,7 @@ it('migrates real v6 Nominatim names without requesting the network or deleting 
   await createVersion5Database({ settings: [{ key: 'locationChoice', value: { mode: 'calculated', source: 'automatic', coordinates: legacy } }] }, 6)
   const choice = unwrap(await getLocationChoice())
   expect(choice?.place).toMatchObject({ name: legacy.name, latitude: legacy.latitude, longitude: legacy.longitude,
-    selection: 'gps', automaticTimeZone: { id: 'Europe/Moscow', source: 'legacy' } })
+    selection: 'gps', automaticTimeZone: { source: 'device' }, timeZone: getDeviceTimeZone() })
   expect(choice?.place).not.toHaveProperty('nameSource')
   expect(await getDatabaseVersion()).toBe(12)
 })

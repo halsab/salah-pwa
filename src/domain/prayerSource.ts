@@ -1,4 +1,4 @@
-import { getCivilDate } from './locationTime'
+import { DUM_RT_TIME_ZONE, getCivilDate } from './locationTime'
 import { automaticCalculationRecommendation, effectiveCalculationSettings, profileDefaults, selectionFromSettings, type CalculationSelection } from './calculationSettings'
 import { officialLocationForPlace, type Place } from './place'
 import type { CalculationProfileId, CalculationSettings } from './prayerCalculation'
@@ -58,12 +58,16 @@ export function resolvePrayerTimeSource(
   for (const dataset of datasets) {
     if (manual?.kind === 'official' && manual.provider !== dataset.provider) continue
     const locality = location.region?.code === dataset.coverage ? officialLocationForPlace(location, dataset.locations) : null
-    const civilDate = typeof date === 'string' ? date : getCivilDate(date, dataset.timeZone)
+    const civilDate = typeof date === 'string'
+      ? date
+      : getCivilDate(date, dataset.provider === 'dumRt' ? DUM_RT_TIME_ZONE : dataset.timeZone)
     if (!locality || !coversDate(dataset, civilDate)) continue
-    return { kind: 'official', status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: locality.timeZone ?? dataset.timeZone }
+    return { kind: 'official', status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: dataset.provider === 'dumRt' ? DUM_RT_TIME_ZONE : locality.timeZone ?? dataset.timeZone }
   }
   if (manual?.kind === 'official') {
-    return { kind: 'official', status: 'not-covered', provider: manual.provider, version: null, revision: null, coverage: null, locationId: null, timeZone: datasets.find(d => d.provider === manual.provider)?.timeZone ?? location.timeZone }
+    const providerTimeZone = datasets.find(d => d.provider === manual.provider)?.timeZone
+    return { kind: 'official', status: 'not-covered', provider: manual.provider, version: null, revision: null, coverage: null, locationId: null,
+      timeZone: manual.provider === 'dumRt' ? DUM_RT_TIME_ZONE : providerTimeZone ?? location.timeZone }
   }
   const recommendation = automaticCalculationRecommendation(location)
   const regional = recommendation.profile
