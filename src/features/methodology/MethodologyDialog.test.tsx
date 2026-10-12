@@ -14,4 +14,6 @@ it('сразу показывает разделы методологии и п�
   const parameters = screen.getByRole('heading', { level: 2, name: 'Расчёт на устройстве' }).parentElement
   expect(parameters?.querySelectorAll('li')).toHaveLength(3)
   expect(article.querySelector('blockquote')).toHaveTextContent('информационное приложение')
+  expect(article.querySelector('blockquote')).toHaveTextContent('полностью исключить ошибки нельзя')
+  expect(article.querySelector('blockquote')).toHaveTextContent('надёжным местным источникам')
 })

@@ -219,6 +219,28 @@ describe('calculatePrayerSchedule', () => {
     expect(deviations).toEqual({ fajr: 0, sunrise: 0, dhuhr: 0, asr: -1, maghrib: -2, isha: -1 })
   })
 
+  it.each([
+    ['Istanbul', { latitude: 41.0082, longitude: 28.9784 },
+      ['05:37', '07:02', '12:57', '16:07', '18:41', '20:00'], [1, 0, -1, -2, -1, -1]],
+    ['Antalya', { latitude: 36.8969, longitude: 30.7133 },
+      ['05:33', '06:52', '12:50', '16:04', '18:37', '19:51'], [0, 0, -1, -1, -1, -1]],
+  ] as const)('compares Turkey calculation with official Diyanet %s on 2026-10-09', (_city, coordinates, published, expected) => {
+    const schedule = calculatePrayerSchedule(coordinates, '2026-10-09', 'Europe/Istanbul',
+      { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' })
+    const prayerKeys = ['fajr', 'sunrise', 'dhuhr', 'asr', 'maghrib', 'isha'] as const
+    const minutes = (time: string): number => {
+      const [hour = 0, minute = 0] = time.split(':').map(Number)
+      return hour * 60 + minute
+    }
+    const deviations = prayerKeys.map((key, index) =>
+      minutes(schedule.entries[key].time) - minutes(published[index] ?? ''))
+    // Primary monthly schedules:
+    // https://namazvakitleri.diyanet.gov.tr/en-US/9541/prayer-time-for-istanbul
+    // https://namazvakitleri.diyanet.gov.tr/tr-TR/9225/antalya-icin-namaz-vakti
+    // Signed difference means calculated minus published. No official equivalence is claimed.
+    expect(deviations).toEqual(expected)
+  })
+
   it('rejects non-canonical calculation dates', () => {
     expect(() => calculatePrayerSchedule(KAZAN, '2026-1-15', 'Europe/Moscow')).toThrow('invalid-calculation-date')
     expect(() => calculatePrayerSchedule(KAZAN, '2026-01-15-extra', 'Europe/Moscow')).toThrow('invalid-calculation-date')
