@@ -12,6 +12,7 @@ import { useLocalization } from '../../localization'
 import type { Translator } from '../../localization/messages'
 import type { SupportedLocale } from '../../localization/locale'
 import { localizedCityLabel, localizedCityRegion } from '../../localization/place'
+import { getSupportedTimeZones, getUtcOffset, isValidTimeZone } from '../../domain/locationTime'
 
 const idleGpsState: GpsUiState = { status: 'idle' }
 
@@ -24,10 +25,11 @@ function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, 
 }
 
 export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
-  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom }: {
+  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom, currentTime = new Date(), onChangeTimeZone }: {
   place: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
   onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
   gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
+  currentTime?: Date; onChangeTimeZone?: (zone: string | null) => Promise<string>
 }) {
   const { locale, t } = useLocalization()
   const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
@@ -36,6 +38,43 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
   const lowAccuracy = gpsState.status === 'ready' && gpsState.lowAccuracy
   const status = locationStatus(gpsState, nameLookupState, gpsPlace, locale, t)
   const error = gpsState.status === 'error' ? geolocationFailureMessage(gpsState.reason, locale) : null
+  const [timezoneEditorOpen, setTimezoneEditorOpen] = useState(false)
+  const [timezoneQuery, setTimezoneQuery] = useState('')
+  const [timezoneError, setTimezoneError] = useState<string | null>(null)
+  const supportedTimeZones = useMemo(() => getSupportedTimeZones(), [])
+  const placeTimeZone = place?.timeZone
+  const availableTimeZones = useMemo(() => {
+    if (!supportedTimeZones) return []
+    return [...new Set([...supportedTimeZones, 'UTC', ...(placeTimeZone && isValidTimeZone(placeTimeZone) ? [placeTimeZone] : [])])].sort()
+  }, [placeTimeZone, supportedTimeZones])
+  const matchingTimeZones = useMemo(() => {
+    if (!timezoneQuery.trim()) return []
+    const query = timezoneQuery.trim().toLocaleLowerCase('en')
+    return availableTimeZones.filter(zone => zone.toLocaleLowerCase('en').includes(query)).slice(0, 16)
+  }, [availableTimeZones, timezoneQuery])
+  const canChooseTimeZone = Boolean(place && gpsPlace && place.coverage !== 'inside' && onChangeTimeZone)
+  const canResetTimeZone = Boolean(place?.timeZoneOverride && onChangeTimeZone)
+  const timezoneSource = !place ? null : place.timeZoneOverride
+    ? place.selection === 'official' ? t('timezoneLegacyOfficial') : t('timezoneManual')
+    : place.automaticTimeZone.source === 'device' ? t('timezoneDeviceSource')
+      : place.automaticTimeZone.source === 'boundary' ? t('timezoneBoundarySource')
+        : place.selection === 'official' ? t('timezoneOfficialSource')
+          : place.automaticTimeZone.source === 'legacy' ? t('timezoneLegacySource') : t('timezoneCatalogSource')
+  const applyTimeZone = async (zone: string | null) => {
+    if (!onChangeTimeZone) return
+    if (zone !== null && !isValidTimeZone(zone)) {
+      setTimezoneError(t('timezoneInvalid'))
+      return
+    }
+    try {
+      await onChangeTimeZone(zone)
+      setTimezoneEditorOpen(false)
+      setTimezoneQuery('')
+      setTimezoneError(null)
+    } catch {
+      setTimezoneError(t('timezoneInvalid'))
+    }
+  }
   return <Screen label={initial ? t('selectPlace') : t('location')} top={initial ? undefined : <BackButton onClick={onBack} />} bottom={bottom} contentClassName={initial ? 'screen-center' : ''}>
     {initial ? <h1 className="screen-title">{t('selectPlace')}</h1> : null}
     {place ? <div className="location-current"><p className="screen-title">{gpsPlace
@@ -43,6 +82,31 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
       : compactPlaceLabel(place.name, locale)}</p>
       {gpsPlace ? <><p className="note location-coordinates">{formatCoordinates(place.latitude, place.longitude)}</p><p className="note">{formatAccuracy(place.accuracy, locale)}</p></>
         : place.region ? <p className="note">{place.region.name}</p> : null}
+      <div className="location-timezone" aria-label={t('timezone')}>
+        <p className="note"><span>{t('timezone')}:</span> <code>{place.timeZone}</code> <span>({getUtcOffset(currentTime, place.timeZone)})</span></p>
+        <p className="note">{timezoneSource}</p>
+        {place.automaticTimeZone.source === 'device' && !place.timeZoneOverride ? <p className="note">{t('timezoneDeviceUnverified')}</p> : null}
+        {(place.selection === 'official' || (gpsPlace && place.coverage === 'inside')) && place.timeZoneOverride
+          ? <p className="note">{t('timezoneOfficialUnaffected')}</p> : null}
+        {canChooseTimeZone || canResetTimeZone ? <div className="location-timezone-actions">
+          {canChooseTimeZone ? <ActionButton variant="auxiliary" onClick={() => { setTimezoneEditorOpen(value => !value); setTimezoneError(null) }}>
+            {timezoneEditorOpen ? t('cancel') : t('timezoneChange')}
+          </ActionButton> : null}
+          {canResetTimeZone ? <ActionButton variant="auxiliary" onClick={() => void applyTimeZone(null)}>{t('timezoneAutomatic')}</ActionButton> : null}
+        </div> : null}
+        {timezoneEditorOpen && canChooseTimeZone ? <div className="location-timezone-editor">
+          <p className="note">{t('timezonePickerHelp')}</p>
+          <input className="text-field" type="search" aria-label={t('timezoneSearch')} placeholder={supportedTimeZones ? 'Europe/Berlin' : 'Europe/Berlin'}
+            autoComplete="off" autoCorrect="off" spellCheck={false} value={timezoneQuery}
+            onChange={event => { setTimezoneQuery(event.target.value); setTimezoneError(null) }} />
+          {supportedTimeZones ? <ul className="timezone-results" aria-label={t('timezoneResults')}>
+            {matchingTimeZones.map(zone => <li key={zone}><ActionRow title={zone} value={getUtcOffset(currentTime, zone)} onClick={() => void applyTimeZone(zone)} />
+            </li>)}
+            {timezoneQuery.trim() && !matchingTimeZones.length ? <li className="note">{t('timezoneNoMatches')}</li> : null}
+          </ul> : <ActionButton variant="primary" onClick={() => void applyTimeZone(timezoneQuery.trim())}>{t('timezoneApply')}</ActionButton>}
+          {timezoneError ? <p className="note" role="alert">{timezoneError}</p> : null}
+        </div> : null}
+      </div>
     </div> : null}
     <div className="screen-stack">
       <ActionButton variant="field" id="location-search" onClick={onSearch}>{t('locationSearch')}</ActionButton>

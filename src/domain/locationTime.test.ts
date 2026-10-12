@@ -4,6 +4,7 @@ import {
   createLocationClock,
   getCivilDate,
   getDeviceTimeZone,
+  getSupportedTimeZones,
   getUtcOffset,
   getZonedTime,
   isValidTimeZone,
@@ -55,11 +56,26 @@ describe('location time', () => {
     expect(isValidTimeZone('Europe/Moscow')).toBe(true)
     expect(isValidTimeZone('not/a-time-zone')).toBe(false)
     expect(isValidTimeZone('')).toBe(false)
+    expect(isValidTimeZone('+03:00')).toBe(false)
+    expect(isValidTimeZone('UTC+03:00')).toBe(false)
     expect(() => createLocationClock('not/a-time-zone')).toThrow(RangeError)
   })
 
   it('возвращает валидную таймзону устройства', () => {
     expect(isValidTimeZone(getDeviceTimeZone())).toBe(true)
+  })
+
+  it('использует браузерный список поддерживаемых IANA-зон и допускает fallback при его отсутствии', () => {
+    const zones = getSupportedTimeZones()
+    expect(zones).toContain('Europe/Moscow')
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, 'supportedValuesOf')
+    Object.defineProperty(Intl, 'supportedValuesOf', { configurable: true, value: undefined })
+    try {
+      expect(getSupportedTimeZones()).toBeNull()
+    } finally {
+      if (descriptor) Object.defineProperty(Intl, 'supportedValuesOf', descriptor)
+      else Reflect.deleteProperty(Intl, 'supportedValuesOf')
+    }
   })
 
   it('отклоняет несуществующее местное время при весеннем переходе DST', () => {

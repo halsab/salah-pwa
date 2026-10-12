@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { failure, success } from '../../domain/result'
-import { createCityPlace, createGpsPlace, createOfficialPlace, withNearbyCity } from '../../domain/place'
+import { createCityPlace, createGpsPlace, createOfficialPlace, setPlaceTimeZone, withNearbyCity } from '../../domain/place'
+import { isValidTimeZone } from '../../domain/locationTime'
 import type { CitySearchResult } from '../../data/cityCatalog'
 import { LocationScreen, SearchScreen } from './LocationScreens'
 const location = { id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.11 }
@@ -24,6 +25,84 @@ describe('экраны локации', () => {
     expect(screen.getByText('Точность ±2,4 км')).toBeVisible()
     rerender(<LocationScreen place={{ ...gps, accuracy: null }} recentPlaces={[]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     expect(screen.getByText('Точность неизвестна')).toBeVisible()
+  })
+  it('показывает, что timezone GPS вне подтверждённой географии взята с устройства', () => {
+    const gps = createGpsPlace({ latitude: 48.85, longitude: 2.35, accuracy: 80, timestamp: 0 }, 'America/Los_Angeles', null, 'gps:paris')
+    render(<LocationScreen place={gps} recentPlaces={[]} currentTime={new Date('2026-07-01T12:00:00Z')} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('America/Los_Angeles')).toBeVisible()
+    expect(screen.getByText('Источник: часовой пояс устройства')).toBeVisible()
+    expect(screen.getByText('Для этих координат часовой пояс географически не подтверждён.')).toBeVisible()
+    expect(screen.getByText('(UTC−7)')).toBeVisible()
+  })
+  it('выбирает IANA-зону для GPS и предоставляет явный возврат к автоматической', async () => {
+    const gps = createGpsPlace({ latitude: 48.85, longitude: 2.35, accuracy: 80, timestamp: 0 }, 'UTC', null, 'gps:paris')
+    const onChangeTimeZone = vi.fn().mockResolvedValue('Europe/Berlin')
+    const props = { place: gps, recentPlaces: [], currentTime: new Date('2026-01-01T12:00:00Z'), onChangeTimeZone,
+      onSelectRecent: vi.fn(), onBack: vi.fn(), onSearch: vi.fn(), onLocate: vi.fn() }
+    const { rerender } = render(<LocationScreen {...props} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить часовой пояс' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск часового пояса IANA' }), 'Europe/Berlin')
+    await userEvent.click(await screen.findByRole('button', { name: /Europe\/Berlin/ }))
+    expect(onChangeTimeZone).toHaveBeenLastCalledWith('Europe/Berlin')
+    const overridden = setPlaceTimeZone(gps, 'Europe/Berlin')
+    rerender(<LocationScreen {...props} place={overridden} />)
+    expect(screen.getByText('Источник: выбрано вручную')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Восстановить автоматический' }))
+    expect(onChangeTimeZone).toHaveBeenLastCalledWith(null)
+  })
+  it('при отсутствии Intl.supportedValuesOf принимает только проверенный IANA id без сети', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Intl, 'supportedValuesOf')
+    Object.defineProperty(Intl, 'supportedValuesOf', { configurable: true, value: undefined })
+    try {
+      const gps = createGpsPlace({ latitude: 48.85, longitude: 2.35, accuracy: 80, timestamp: 0 }, 'UTC', null, 'gps:paris')
+      const onChangeTimeZone = vi.fn().mockResolvedValue('Europe/Berlin')
+      render(<LocationScreen place={gps} recentPlaces={[]} onChangeTimeZone={onChangeTimeZone} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+      await userEvent.click(screen.getByRole('button', { name: 'Изменить часовой пояс' }))
+      const input = screen.getByRole('searchbox', { name: 'Поиск часового пояса IANA' })
+      await userEvent.type(input, '+03:00')
+      await userEvent.click(screen.getByRole('button', { name: 'Применить часовой пояс' }))
+      expect(await screen.findByRole('alert')).toHaveTextContent('Введите поддерживаемый идентификатор часового пояса IANA')
+      expect(onChangeTimeZone).not.toHaveBeenCalled()
+      await userEvent.clear(input)
+      await userEvent.type(input, 'Europe/Berlin')
+      expect(input).toHaveValue('Europe/Berlin')
+      expect(isValidTimeZone('Europe/Berlin')).toBe(true)
+      await userEvent.click(screen.getByRole('button', { name: 'Применить часовой пояс' }))
+      expect(onChangeTimeZone).toHaveBeenCalledWith('Europe/Berlin')
+    } finally {
+      if (descriptor) Object.defineProperty(Intl, 'supportedValuesOf', descriptor)
+      else Reflect.deleteProperty(Intl, 'supportedValuesOf')
+    }
+  })
+  it('для официального пункта ДУМ РТ не предлагает новую зону и сохраняет только сброс прежнего override', async () => {
+    const official = createOfficialPlace(location, 0)
+    const onChangeTimeZone = vi.fn().mockResolvedValue('Europe/Moscow')
+    const props = { place: official, recentPlaces: [], onChangeTimeZone, onSelectRecent: vi.fn(), onBack: vi.fn(), onSearch: vi.fn(), onLocate: vi.fn() }
+    const { rerender } = render(<LocationScreen {...props} />)
+    expect(screen.getByText('Источник: официальный пункт ДУМ РТ')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Изменить часовой пояс' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Восстановить автоматический' })).not.toBeInTheDocument()
+    rerender(<LocationScreen {...props} place={setPlaceTimeZone(official, 'Europe/Berlin')} />)
+    expect(screen.getByText('Опубликованное расписание ДУМ РТ остаётся в Europe/Moscow.')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Восстановить автоматический' }))
+    expect(onChangeTimeZone).toHaveBeenLastCalledWith(null)
+  })
+  it('показывает происхождение часового пояса каталога и legacy Place', () => {
+    const catalogPlace = createCityPlace(city, 0)
+    const { rerender } = render(<LocationScreen place={catalogPlace} recentPlaces={[]} onChangeTimeZone={vi.fn()} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('Источник: каталог выбранного города')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Изменить часовой пояс' })).not.toBeInTheDocument()
+    rerender(<LocationScreen place={{ ...catalogPlace, automaticTimeZone: { id: catalogPlace.timeZone, source: 'legacy' } }} recentPlaces={[]}
+      onChangeTimeZone={vi.fn()} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('Источник автоматической зоны неизвестен')).toBeVisible()
+  })
+  it('не открывает новый override для GPS-точки внутри подтверждённого Татарстана', () => {
+    const gps = { ...createGpsPlace({ latitude: 55.79, longitude: 49.12, accuracy: 20, timestamp: 0 }, 'UTC', null, 'gps:inside'),
+      coverage: 'inside' as const, region: { code: 'RU-TA', name: 'Татарстан' },
+      timeZone: 'Europe/Moscow', automaticTimeZone: { id: 'Europe/Moscow', source: 'boundary' as const } }
+    render(<LocationScreen place={gps} recentPlaces={[]} onChangeTimeZone={vi.fn()} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getByText('Источник: подтверждённая геозона Татарстана')).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Изменить часовой пояс' })).not.toBeInTheDocument()
   })
   it('отмечает полное название GPS как ближайший населённый пункт', () => {
     const gps = withNearbyCity(createGpsPlace({ latitude: 55.79631, longitude: 49.10881, accuracy: 120, timestamp: 0 }, 'Europe/Moscow', null, 'gps:1'), { ...city, name: 'Казань', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55.79, longitude: 49.12 })

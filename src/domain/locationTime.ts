@@ -117,13 +117,24 @@ function getUtcOffsetMinutes(instant: Date, timeZone: string): number {
 }
 
 export function isValidTimeZone(timeZone: string): boolean {
-  if (!timeZone || /^[+−-]/.test(timeZone)) return false
+  if (!timeZone || /^[+−-]/.test(timeZone) || /^(?:UTC|GMT)[+−-]\d{1,2}(?::?\d{2})?$/iu.test(timeZone)) return false
 
   try {
     getFormatter(timeZone)
     return true
   } catch {
     return false
+  }
+}
+
+export function getSupportedTimeZones(): string[] | null {
+  const intl = Intl as typeof Intl & { supportedValuesOf?: (key: 'timeZone') => string[] }
+  if (typeof intl.supportedValuesOf !== 'function') return null
+
+  try {
+    return [...new Set(intl.supportedValuesOf('timeZone').filter(isValidTimeZone))].sort()
+  } catch {
+    return null
   }
 }
 

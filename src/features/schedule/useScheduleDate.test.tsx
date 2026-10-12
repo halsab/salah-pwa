@@ -42,4 +42,14 @@ describe('useScheduleDate', () => {
     unmount()
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('сохраняет выбранную вручную civil date при смене часового пояса Place', () => {
+    const services = { now: () => new Date('2026-08-31T21:30:00.000Z') }
+    const hook = renderHook(({ timeZone }) => useScheduleDate(services, timeZone), { initialProps: { timeZone: 'Europe/Moscow' } })
+    act(() => hook.result.current.changeDate('2026-08-30'))
+    hook.rerender({ timeZone: 'America/Los_Angeles' })
+    expect(hook.result.current.selectedDate).toBe('2026-08-30')
+    expect(hook.result.current.today).toBe('2026-08-31')
+    hook.unmount()
+  })
 })

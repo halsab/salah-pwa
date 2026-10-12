@@ -509,6 +509,38 @@ describe('Salah', () => {
     expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining(position), 'automatic', expect.any(Function))
   })
 
+  it('позволяет вручную исправить GPS timezone и пересчитывает расписание, сохраняя точку', async () => {
+    const position = { latitude: 41.01, longitude: 28.95, accuracy: 200, timestamp: 1_788_265_600_000 }
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
+      getDeviceTimeZone: () => 'America/Los_Angeles',
+      getPosition: vi.fn().mockResolvedValueOnce(success(position)).mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'unavailable' })),
+    })
+    services.cities.findNearest = vi.fn().mockResolvedValue(failure({ kind: 'data', reason: 'offline' }))
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
+    await screen.findByRole('button', { name: '41.0100, 28.9500' })
+    expect(await screen.findByText('Нет интернета. Используем координаты.')).toBeVisible()
+    await expectSchedule()
+    const beforeClock = (await screen.findByRole('button', { name: /41\.0100, 28\.9500/ })).getAttribute('aria-label')
+    const before = within(screen.getByRole('list')).getAllByRole('listitem').map(item => item.textContent).join('|')
+    await userEvent.click(screen.getByRole('button', { name: '41.0100, 28.9500' }))
+    expect(screen.getByText('Источник: часовой пояс устройства')).toBeVisible()
+    await userEvent.click(screen.getByRole('button', { name: 'Изменить часовой пояс' }))
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Поиск часового пояса IANA' }), 'Europe/Berlin')
+    await userEvent.click(await screen.findByRole('button', { name: /Europe\/Berlin/ }))
+    const savedSettings = vi.mocked(services.saveSettings).mock.lastCall?.[0]
+    expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: {
+      ...position, timeZone: 'Europe/Berlin', timeZoneOverride: { id: 'Europe/Berlin', source: 'user' },
+    } })
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    await waitFor(() => expect(within(screen.getByRole('list')).getAllByRole('listitem').map(item => item.textContent).join('|')).not.toBe(before))
+    const updatedClock = await screen.findByRole('button', { name: /41\.0100, 28\.9500/ })
+    expect(updatedClock).toBeVisible()
+    expect(updatedClock.getAttribute('aria-label')).not.toBe(beforeClock)
+    expect(screen.getByRole('timer')).toBeVisible()
+  })
+
   it.each(['rejection', 'result'] as const)('при ошибке записи %s не откатывает выбранный город', async kind => {
     const saveSettings = vi.fn<AppServices['saveSettings']>().mockImplementationOnce(() => kind === 'rejection' ? Promise.reject(new Error('quota')) : Promise.resolve(failure({ kind: 'storage', reason: 'unavailable' }))).mockResolvedValue(success(undefined))
     const services = createServices({ saveSettings })

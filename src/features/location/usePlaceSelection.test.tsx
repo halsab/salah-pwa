@@ -318,9 +318,36 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place?.timeZone).toBe('America/New_York')
     await act(async () => { await h.result.current.changeTimeZone(null) })
     expect(h.result.current.place?.timeZone).toBe('Europe/Moscow')
-    await act(async () => { await h.result.current.changeTimeZone('Europe/Berlin') })
+    await expect(h.result.current.changeTimeZone('Europe/Berlin')).rejects.toThrow('Ручной часовой пояс доступен только для GPS')
+    expect(h.result.current.place?.timeZone).toBe('Europe/Moscow')
     act(() => h.result.current.selectCity(city))
     expect(h.result.current.place?.timeZoneOverride).toBeUndefined()
+  })
+  it('manual timezone change rejects pending GPS refinement and nearby-city callbacks', async () => {
+    const outsideFix = { latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 }
+    const refinedOutsideFix = { ...outsideFix, latitude: 41.02, timestamp: 200 }
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    const selected = createGpsPlace(outsideFix, 'America/Los_Angeles', null, 'gps:stable')
+    act(() => h.result.current.restore({ mode: 'calculated', source: 'manual', coordinates: selected }, locations))
+    const originalId = h.result.current.place?.id
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(outsideFix)); await Promise.resolve() })
+    await waitFor(() => expect(h.services.cities.findNearest).toHaveBeenCalled())
+    await act(async () => { await h.result.current.changeTimeZone('Europe/Berlin') })
+    await act(async () => {
+      h.precise.resolve(success(refinedOutsideFix))
+      h.lookup.resolve(success({ ...city, name: 'Поздний ответ', latitude: outsideFix.latitude, longitude: outsideFix.longitude }))
+      await pending
+    })
+    expect(h.result.current.place).toMatchObject({
+      ...outsideFix, id: originalId, timeZone: 'Europe/Berlin',
+      timeZoneOverride: { id: 'Europe/Berlin', source: 'user' }, name: '',
+    })
+    const savedSettings = vi.mocked(h.services.saveSettings).mock.lastCall?.[0]
+    expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: {
+      id: originalId, timeZone: 'Europe/Berlin', timeZoneOverride: { id: 'Europe/Berlin', source: 'user' },
+    } })
   })
   it('serializes slow saves so the manual choice is persisted last', async () => {
     const save = deferred<Awaited<ReturnType<TestSettingsServices['saveOfficialLocation']>>>()

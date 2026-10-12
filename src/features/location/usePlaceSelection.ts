@@ -194,9 +194,15 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
   const changeTimeZone = useCallback(async (zone: string | null): Promise<string> => {
     const selected = current.current
     if (!selected) return services.getDeviceTimeZone()
+    if (zone !== null && (selected.selection !== 'gps' || selected.coverage === 'inside')) {
+      throw new RangeError(translate('ru', 'timezoneRestricted'))
+    }
+    let updated = setPlaceTimeZone(selected, zone)
     const operation = ++epoch.current
     // Настройка зоны прерывает ожидающие GPS/lookup, поэтому override не теряется при гонке.
-    let updated = setPlaceTimeZone(selected, zone)
+    activeInteractive.current = null
+    setGpsState({ status: 'idle' })
+    setNameLookupState('idle')
     if (zone === null && selected.selection === 'gps') {
       const geometry = await services.loadGeography().catch(() => null)
       if (operation !== epoch.current) return current.current?.timeZone ?? selected.timeZone
