@@ -106,7 +106,11 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
         }
         const data = await geometry
         if (operation !== epoch.current || (accuracy === 'coarse' && preciseAccepted)) return
-        const base = operationResult.best ?? previous
+        // Lookup обогащает current, а refinement должен брать это обогащение только от текущего GPS operation.
+        const enriched = current.current?.selection === 'gps' && current.current.id === operationResult.best?.id
+          ? current.current
+          : null
+        const base = enriched ?? operationResult.best ?? previous
         const next = base
           ? refineGpsPlace(base, result.value, services.getDeviceTimeZone(), data)
           : createGpsPlace(result.value, services.getDeviceTimeZone(), data, `gps:${operation}:${result.value.timestamp}`)
