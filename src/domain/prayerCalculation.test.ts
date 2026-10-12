@@ -219,6 +219,22 @@ describe('calculatePrayerSchedule', () => {
     expect(deviations).toEqual({ fajr: 0, sunrise: 0, dhuhr: 0, asr: -1, maghrib: -2, isha: -1 })
   })
 
+  it('compares Turkey calculation with Diyanet Istanbul timetable on 2026-10-09', () => {
+    const schedule = calculatePrayerSchedule(
+      { latitude: 41.0082, longitude: 28.9784 }, '2026-10-09', 'Europe/Istanbul',
+      { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' },
+    )
+    const reference = { fajr: '05:37', sunrise: '07:02', dhuhr: '12:57', asr: '16:07', maghrib: '18:41', isha: '20:00' }
+    const deviationMinutes = Object.fromEntries(Object.entries(reference).map(([key, time]) => {
+      const [actualHour = 0, actualMinute = 0] = schedule.entries[key as keyof typeof reference].time.split(':').map(Number)
+      const [referenceHour = 0, referenceMinute = 0] = time.split(':').map(Number)
+      return [key, actualHour * 60 + actualMinute - referenceHour * 60 - referenceMinute]
+    }))
+    // Diyanet original monthly timetable: https://namazvakitleri.diyanet.gov.tr/en-US/9541/prayer-time-for-istanbul
+    // Signed difference means calculated minus published. This is an approximation, not official equivalence.
+    expect(deviationMinutes).toEqual({ fajr: 1, sunrise: 0, dhuhr: -1, asr: -2, maghrib: -1, isha: -1 })
+  })
+
   it('rejects non-canonical calculation dates', () => {
     expect(() => calculatePrayerSchedule(KAZAN, '2026-1-15', 'Europe/Moscow')).toThrow('invalid-calculation-date')
     expect(() => calculatePrayerSchedule(KAZAN, '2026-01-15-extra', 'Europe/Moscow')).toThrow('invalid-calculation-date')
