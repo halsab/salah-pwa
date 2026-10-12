@@ -15,7 +15,7 @@ import { prayerRepositories, prayerRepository, type PrayerRepositoryState, type 
 import { loadLocalGeography } from './data/localGeography'
 import type { CoverageGeometry } from './domain/localGeography'
 import { PRAYER_PROVIDERS, DEFAULT_OFFICIAL_LOCATIONS, officialDatasets } from './data/prayerProviders'
-import { resolvePrayerTimeSource } from './domain/prayerSource'
+import { initialManualCalculation, resolvePrayerTimeSource } from './domain/prayerSource'
 import { automaticPreferences, type SourcePreferences } from './domain/sourcePreferences'
 import { effectiveCalculationSettings } from './domain/calculationSettings'
 import { useSettingsPersistence } from './features/settings/useSettingsPersistence'
@@ -378,7 +378,9 @@ export function App({
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}
-        sourceLabel={officialMode ? t('dumRt') : t(PROFILE_LABEL_KEYS[calculationSettings.profile])} /> : null}
+        sourceLabel={officialMode ? t('dumRt') : t(PROFILE_LABEL_KEYS[calculationSettings.profile])}
+        effectiveSource={resolution}
+        initialManualCalculation={place ? initialManualCalculation(place, selectedDate, datasets, capabilities) : undefined} /> : null}
       <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />
       <ShareDialog open={shareDialogOpen} onClose={backScreen} />
     </AppShell>

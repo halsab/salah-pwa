@@ -1,5 +1,5 @@
 import { getCivilDate } from './locationTime'
-import { automaticCalculationRecommendation, effectiveCalculationSettings, profileDefaults } from './calculationSettings'
+import { automaticCalculationRecommendation, effectiveCalculationSettings, profileDefaults, selectionFromSettings, type CalculationSelection } from './calculationSettings'
 import { officialLocationForPlace, type Place } from './place'
 import type { CalculationProfileId, CalculationSettings } from './prayerCalculation'
 import type { SourcePreferences } from './sourcePreferences'
@@ -74,4 +74,19 @@ export function resolvePrayerTimeSource(
     : profileDefaults(profile)
   if (profile !== 'dumRt' && Math.abs(location.latitude) > 48) settings.highLatitudeRule = 'seventhOfNight'
   return { kind: 'calculated', status: supportedProfiles.includes(profile) ? 'ready' : 'unsupported', settings, timeZone: location.timeZone, strategy: canUseRegional ? recommendation.strategy : 'default' }
+}
+
+export function initialManualCalculation(
+  location: Place,
+  date: string | Date,
+  availableOfficialDatasets: readonly OfficialDatasetAvailability[],
+  supportedProfiles?: readonly CalculationProfileId[],
+): CalculationSelection | undefined {
+  const automatic = resolvePrayerTimeSource(location, date, { mode: 'automatic' }, availableOfficialDatasets, supportedProfiles)
+  const effective = automatic.kind === 'official'
+    ? resolvePrayerTimeSource(location, date, { mode: 'automatic' }, [], supportedProfiles)
+    : automatic
+  return effective.kind === 'calculated' && effective.status === 'ready'
+    ? selectionFromSettings(effective.settings)
+    : undefined
 }

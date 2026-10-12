@@ -122,6 +122,37 @@ describe('новые настройки', () => {
     expect(onChange).toHaveBeenLastCalledWith(manualCalculation(draft))
     expect(screen.queryByRole('button', { name: 'Таблица ДУМ РТ' })).not.toBeInTheDocument()
   })
+  it('restores a persisted manual calculation draft from Automatic mode', async () => {
+    const draft = { profile: 'karachi' as const, overrides: { asrMethod: 'standard' as const, fajrAngle: 19 } }
+    const onChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="source-choice" preferences={automaticPreferences(draft)} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(onChange).toHaveBeenCalledWith(manualCalculation(draft))
+  })
+  it('uses the effective automatic calculation as the first manual selection', async () => {
+    const selected = { profile: 'dumRf' as const, overrides: { asrMethod: 'standard' as const, highLatitudeRule: 'seventhOfNight' as const } }
+    const onChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="source-choice" preferences={automaticPreferences()} initialManualCalculation={selected} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(onChange).toHaveBeenCalledWith(manualCalculation(selected))
+  })
+  it('requires explicit profile choice when first-time Manual has no reliable automatic calculation', async () => {
+    const onOpen = vi.fn(), onChange = vi.fn()
+    render(<SettingsScreens {...defaults} screen="source-choice" preferences={automaticPreferences()} onOpen={onOpen} onChange={onChange} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
+    expect(onOpen).toHaveBeenCalledWith('profiles')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+  it('shows the actual automatic source and does not imply an unresolved source is ready', () => {
+    const { rerender } = render(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()}
+      effectiveSource={{ kind: 'calculated', status: 'ready', settings: { profile: 'karachi', asrMethod: 'hanafi', highLatitudeRule: 'twilightAngle' }, timeZone: 'Asia/Karachi', strategy: 'regional' }} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Фактический источник: Расчёт · Карачи · Аср: Ханафитский')
+    rerender(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()}
+      effectiveSource={{ kind: 'official', status: 'ready', provider: 'dumRt', version: 'v1', revision: 'r1', coverage: 'RU-TA', locationId: 'kazan', timeZone: 'Europe/Moscow' }} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Фактический источник: Официальная таблица · ДУМ РТ')
+    rerender(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()} effectiveSource={null} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Источник ещё не определён')
+  })
   it('preserves legacy pinned official DUM RT across Automatic and Manual mode switching', async () => {
     const saved = { mode: 'manual' as const, source: { kind: 'official' as const, provider: 'dumRt' }, calculationDraft: { profile: 'karachi' as const, overrides: { asrMethod: 'hanafi' as const } } }
     function Harness() {

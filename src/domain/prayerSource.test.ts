@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createCityPlace, createGpsPlace, createOfficialPlace, withNearbyCity } from './place'
-import { resolvePrayerTimeSource, type OfficialDatasetAvailability } from './prayerSource'
+import { initialManualCalculation, resolvePrayerTimeSource, type OfficialDatasetAvailability } from './prayerSource'
 import { automaticPreferences, isSourcePreferences, manualCalculation, restoreSourcePreferences } from './sourcePreferences'
 import { automaticCalculationDefaults, effectiveCalculationSettings, isCalculationSelection } from './calculationSettings'
 import { calculatePrayerSchedule } from './prayerCalculation'
@@ -18,6 +18,17 @@ describe('source resolver', () => {
     const result = resolvePrayerTimeSource(place, '2026-09-01', auto, [official])
     expect(result).toMatchObject({ kind: 'official', status: 'ready', provider: 'dumRt', version: 'v1', locationId: 'kazan', timeZone: 'Europe/Moscow' })
     expect(resolvePrayerTimeSource(place, '2026-09-01', automaticPreferences({ profile: 'karachi', overrides: {} }), [official])).toEqual(result)
+  })
+  it('starts first-time Manual with the calculated profile behind an available official table', () => {
+    expect(initialManualCalculation(place, '2026-09-01', [official])).toMatchObject({ profile: 'dumRt', overrides: { asrMethod: 'hanafi' } })
+  })
+  it('starts first-time Manual with the effective regional profile and Asr method', () => {
+    const moscow = { ...place, selection: 'city' as const, coverage: 'outside' as const, region: { code: 'RU.77', name: 'Москва' } }
+    expect(initialManualCalculation(moscow, '2026-09-01', [official])).toMatchObject({ profile: 'dumRf', overrides: { asrMethod: 'standard', highLatitudeRule: 'seventhOfNight' } })
+  })
+  it('requires explicit profile selection when no supported automatic calculation is resolvable', () => {
+    const saudi = { ...place, selection: 'city' as const, coverage: 'outside' as const, region: { code: 'SA.01', name: 'Эр-Рияд' } }
+    expect(initialManualCalculation(saudi, '2026-09-01', [], [])).toBeUndefined()
   })
   it('does not turn expected official coverage into calculation when missing or corrupt', () => {
     for (const state of ['not-loaded', 'invalid'] as const) {
@@ -139,6 +150,22 @@ describe('source resolver', () => {
     const selection = { profile: 'karachi' as const, overrides: { fajrAngle: 19, adjustments: { isha: 90 } } }
     expect(resolvePrayerTimeSource(place, '2026-09-01', manualCalculation(selection), [official])).toMatchObject({ kind: 'calculated', settings: { profile: 'karachi', fajrAngle: 19, adjustments: { isha: 90 } } })
     expect(resolvePrayerTimeSource(place, '2026-09-01', automaticPreferences(selection), [official]).kind).toBe('official')
+  })
+  it('preserves calculation overrides across Automatic and Manual and restores effective settings', () => {
+    const selection = { profile: 'karachi' as const, overrides: { asrMethod: 'standard' as const, fajrAngle: 19, adjustments: { isha: 90 } } }
+    const switched = automaticPreferences(selection, { kind: 'calculated', calculation: selection })
+    expect(resolvePrayerTimeSource(place, '2026-09-01', switched, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
+    const source = switched.manualSourceDraft
+    if (source?.kind !== 'calculated') throw new Error('expected preserved manual calculation')
+    const restored = { mode: 'manual' as const, source }
+    expect(resolvePrayerTimeSource(place, '2026-09-01', restored, [official])).toMatchObject({ kind: 'calculated', strategy: 'manual', settings: { profile: 'karachi', asrMethod: 'standard', fajrAngle: 19, adjustments: { isha: 90 } } })
+  })
+  it('restores the pinned DUM RT source kind and provider after Automatic mode', () => {
+    const saved = { mode: 'manual' as const, source: { kind: 'official' as const, provider: 'dumRt' }, calculationDraft: { profile: 'karachi' as const, overrides: { asrMethod: 'hanafi' as const } } }
+    const automatic = automaticPreferences(saved.calculationDraft, saved.source)
+    expect(resolvePrayerTimeSource(place, '2026-09-01', automatic, [official])).toMatchObject({ kind: 'official', provider: 'dumRt' })
+    expect(automatic.manualSourceDraft).toEqual(saved.source)
+    expect(resolvePrayerTimeSource(place, '2026-09-01', saved, [official])).toMatchObject({ kind: 'official', provider: 'dumRt', status: 'ready' })
   })
   it.each(['canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian'] as const)(
     'allows manual calculation with the new profile %s', profile => {
