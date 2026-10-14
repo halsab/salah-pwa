@@ -176,7 +176,7 @@ button.religious-event-banner:active { background: var(--text-primary); color: v
 .fasting-card-label { font: var(--font-footnote); }
 .fasting-card-timer { font: var(--font-title); color: var(--accent-countdown); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fasting-progress { height: 4px; overflow: hidden; border-radius: 999px; background: var(--background-secondary); }
-.fasting-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--text-secondary); }
+.fasting-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--accent-countdown); }
 .fasting-endpoints { flex-wrap: wrap; font: var(--font-footnote); font-variant-numeric: tabular-nums; }
 .fasting-endpoint { min-width: 0; white-space: nowrap; }
 .fasting-endpoint-compact { display: none; }
