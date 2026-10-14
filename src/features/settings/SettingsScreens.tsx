@@ -22,6 +22,8 @@ interface SettingsScreensProps {
   initialManualCalculation?: CalculationSelection | undefined
   themeFamily: ThemeFamily
   onThemeFamilyChange: (family: ThemeFamily) => void
+  fastingModeEnabled?: boolean
+  onFastingModeChange?: (enabled: boolean) => void
   onChange: (preferences: SourcePreferences) => void
   onOpen: (screen: AppScreen) => void
   onBack: () => void
@@ -31,7 +33,8 @@ interface SettingsScreensProps {
   version?: string | undefined
 }
 
-export function SettingsScreens({ screen, preferences, sourceLabel, effectiveSource, initialManualCalculation, themeFamily, onThemeFamilyChange, onChange, onOpen, onBack, getCapability, onReset, notice, version }: SettingsScreensProps) {
+export function SettingsScreens({ screen, preferences, sourceLabel, effectiveSource, initialManualCalculation, themeFamily, onThemeFamilyChange,
+  fastingModeEnabled = false, onFastingModeChange = () => {}, onChange, onOpen, onBack, getCapability, onReset, notice, version }: SettingsScreensProps) {
   const { locale, t } = useLocalization()
   const calculation = preferences.mode === 'manual' && preferences.source.kind === 'calculated' ? preferences.source.calculation
     : preferences.calculationDraft ?? { profile: 'muslimWorldLeague', overrides: {} }
@@ -50,6 +53,8 @@ export function SettingsScreens({ screen, preferences, sourceLabel, effectiveSou
   const row = (id: string, title: string, target: AppScreen, value?: string) => <ActionRow id={id} title={title} value={value} aria-label={value ? `${title} ${value}` : title} onClick={() => onOpen(target)} />
   if (screen === 'settings') return <Screen label={t('settings')} top={top} contentClassName="settings-menu" bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="settings-share" onClick={() => onOpen('share')}>{t('share')}</ActionButton></ScreenFooter>}>
     <div className="screen-stack">{row('settings-source', t('schedule'), 'source', sourceLabel)}
+      <ActionRow id="settings-fasting-mode" className="fasting-mode-toggle" title={t('fastingMode')} role="switch"
+        aria-checked={fastingModeEnabled} aria-label={t('fastingMode')} onClick={() => onFastingModeChange(!fastingModeEnabled)} />
       <label className="pill pill-row theme-field"><span>{t('theme')}</span><span className="note">{themeFamily === 'classic' ? t('classicTheme') : t('seasonalTheme')}</span>
         <select aria-label={t('theme')} value={themeFamily} onChange={event => onThemeFamilyChange(event.target.value as ThemeFamily)}>
           <option value="classic">{t('classicTheme')}</option><option value="seasonal">{t('seasonalTheme')}</option>

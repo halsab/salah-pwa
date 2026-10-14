@@ -11,6 +11,7 @@ import type { LocationSelectionSource } from '../domain/locationSelection'
 import type { CalculationSettings } from '../domain/prayerCalculation'
 import type { ThemeFamily } from '../domain/theme'
 import type { LanguagePreference } from '../localization/locale'
+import type { FastingModePreferences } from '../domain/fasting'
 import { failure, success, type Result } from '../domain/result'
 import type {
   PrayerDataset,
@@ -52,6 +53,7 @@ interface SettingValueMap {
   sourcePreferences: SourcePreferences
   calculationSettings: CalculationSettings
   languagePreference: LanguagePreference
+  fastingMode: FastingModePreferences
 }
 
 interface LegacySettingValueMap {
@@ -463,7 +465,7 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences' | 'languagePreference'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
@@ -480,6 +482,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
       if (patch.languagePreference) await transaction.objectStore('settings').put({ key: 'languagePreference', value: patch.languagePreference })
+      if (patch.fastingMode) await transaction.objectStore('settings').put({ key: 'fastingMode', value: patch.fastingMode })
       await transaction.done
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }

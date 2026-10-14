@@ -12,6 +12,8 @@ import { PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 import type { DisplaySchedule } from './usePrayerSchedules'
 import { useLocalization } from '../../localization'
 import { formatLocalizedCalendarDate } from '../../localization/calendar'
+import { FastingCard } from '../fasting/FastingCard'
+import { DEFAULT_FASTING_MODE_PREFERENCES, buildFastingScheduleEvents, type FastingModePreferences, type FastingScheduleEvents } from '../../domain/fasting'
 
 const LABELS: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
   fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', dhuhrJamaat: 'prayerDhuhrJamaat',
@@ -66,6 +68,10 @@ interface ScheduleContentProps {
   now: () => Date
   officialMode: boolean
   hijriSupported?: boolean
+  fastingMode?: FastingModePreferences
+  fastingModeEnabled?: boolean
+  fastingEvents?: FastingScheduleEvents
+  timeZone?: string | null | undefined
   onOpenReligiousEvent?: (eventId: ReligiousEventId, origin: HTMLElement) => void
   onChangeDate: (date: string) => void
   onRetrySchedule: () => void
@@ -75,7 +81,8 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
-  currentTime, now, officialMode, hijriSupported = false, onOpenReligiousEvent = () => {},
+  currentTime, now, officialMode, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
+  fastingModeEnabled = false, fastingEvents, timeZone, onOpenReligiousEvent = () => {},
   onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
 }: ScheduleContentProps) {
   const { t } = useLocalization()
@@ -84,6 +91,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   const effectiveNow = boundary?.schedules === schedules && boundary.parentTime === currentTime.getTime() ? boundary.time : currentTime
   const onElapsed = useCallback(() => { setBoundary({ time: now(), parentTime: currentTime.getTime(), schedules }) }, [now, currentTime, schedules])
   const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
+  const fastingScheduleEvents = useMemo(() => fastingEvents ?? buildFastingScheduleEvents(schedules, timeZone), [fastingEvents, schedules, timeZone])
   const ready = !scheduleLoading && !scheduleError && schedule !== null
   const live = selectedDate === today && ready
   const { current, next } = live ? selectEventPair(effectiveNow, events) : { current: null, next: null }
@@ -116,6 +124,9 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
           : <>
             {religiousBanner ? <ReligiousEventBanner state={religiousBanner} onOpen={onOpenReligiousEvent} /> : null}
             <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} calendarPreferences={calendarPreferences} />
+            {live && fastingModeEnabled && timeZone ? <FastingCard events={fastingScheduleEvents} preferences={fastingMode}
+              selectedDate={selectedDate} today={today} timeZone={timeZone} correction={calendarPreferences.correction}
+              hijriSupported={hijriSupported} now={now} /> : null}
             {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">{t('estimatedByHighLatitude')}</p> : null}
             {live && !next ? <p className="note screen-space">{t(officialMode ? 'nextOfficialUnavailable' : 'nextEventUnavailable')}</p> : null}
           </>}

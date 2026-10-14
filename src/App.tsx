@@ -68,6 +68,15 @@ import { applyTheme, resolveTheme } from './ui/theme'
 import { useSystemAppearance } from './ui/useSystemAppearance'
 import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
+import {
+  DEFAULT_FASTING_MODE_PREFERENCES,
+  buildFastingScheduleEvents,
+  isFastingModeActive,
+  resolveActiveRamadanOccurrence,
+  restoreFastingModePreferences,
+  updateFastingModePreferences,
+  type FastingModePreferences,
+} from './domain/fasting'
 
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository, 'clearAppData' | 'getDataGeneration'>>, Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
@@ -126,6 +135,7 @@ export function App({
   const [preferences, setPreferences] = useState<SourcePreferences>(automaticPreferences)
   const [storedCalendarPreferences, setCalendarPreferences] = useState(DEFAULT_CALENDAR_PREFERENCES)
   const [themeFamily, setThemeFamily] = useState<ThemeFamily>(DEFAULT_THEME_FAMILY)
+  const [fastingMode, setFastingMode] = useState<FastingModePreferences>({ ...DEFAULT_FASTING_MODE_PREFERENCES })
   const [hijriSupported] = useState(supportsHijriCalendar)
   const calendarPreferences: CalendarPreferences = hijriSupported ? storedCalendarPreferences : { ...storedCalendarPreferences, calendar: 'gregorian' }
   const persistence = useSettingsPersistence(services.saveSettings)
@@ -196,6 +206,7 @@ export function App({
       setLanguagePreference(state.languagePreference ?? 'auto')
       setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
       setThemeFamily(restoreThemeFamily(state.themeFamily))
+      setFastingMode(restoreFastingModePreferences(state.fastingMode))
       sessionHasPlace.current = Boolean(state.locationChoice)
       setLoading(false)
     }
@@ -259,6 +270,12 @@ export function App({
     mode: preferences.mode,
     selectedDate,
   })
+  const fastingEvents = useMemo(() => buildFastingScheduleEvents(schedules, context?.timeZone), [schedules, context?.timeZone])
+  const activeRamadanOccurrence = resolveActiveRamadanOccurrence({
+    today, correction: calendarPreferences.correction, hijriSupported,
+    now: currentTime, timeZone: context?.timeZone, events: fastingEvents,
+  })
+  const fastingModeEnabled = isFastingModeActive(fastingMode, activeRamadanOccurrence)
 
   const openLocationDialog = useCallback(() => {
     openScreen('location')
@@ -302,6 +319,11 @@ export function App({
     setThemeFamily(next)
     persistence.save({ themeFamily: next })
   }
+  const updateFastingMode = (enabled: boolean) => {
+    const next = updateFastingModePreferences(fastingMode, enabled, activeRamadanOccurrence)
+    setFastingMode(next)
+    saveSettings({ fastingMode: next })
+  }
   const homeLocationLabel = homePlaceLabel(place, t('locationUnknown'))
   const sourcePlaceLabel = compactPlaceLabel(place?.name || t('selectPlace'), locale)
   const locationTime = place && getUtcOffset(currentTime, place.timeZone) !== getUtcOffset(currentTime, deviceTimeZone)
@@ -344,6 +366,10 @@ export function App({
             now={services.now}
             officialMode={officialMode}
             hijriSupported={hijriSupported}
+            fastingMode={fastingMode}
+            fastingModeEnabled={fastingModeEnabled}
+            fastingEvents={fastingEvents}
+            timeZone={context?.timeZone}
             onOpenReligiousEvent={openReligiousEvent}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={homeLocationLabel} locationTime={locationTime} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}
@@ -383,6 +409,7 @@ export function App({
         ? LoadedReligiousEventScreen ? <LoadedReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} /> : null
         : null}
       {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
+        fastingModeEnabled={fastingModeEnabled} onFastingModeChange={updateFastingMode}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={reset} version={version} notice={persistenceNotice}
         sourceLabel={officialMode ? t('dumRt') : t(PROFILE_LABEL_KEYS[calculationSettings.profile])}

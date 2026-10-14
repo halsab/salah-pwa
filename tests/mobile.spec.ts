@@ -1,4 +1,4 @@
-import { choosePlace, expectSchedule, expect, test } from './fixtures'
+import { choosePlace, expectSchedule, expect, readSavedSetting, test } from './fixtures'
 
 test('Mobile Safari показывает расписание и основные действия без обрезанного контента', async ({ page }) => {
   const errors: string[] = []
@@ -78,4 +78,37 @@ test('интерактивные элементы не попадают под �
 
   expect(controls.top).toBeGreaterThanOrEqual(safeArea.top)
   expect(controls.bottom).toBeLessThanOrEqual(controls.height - safeArea.bottom)
+})
+
+test('Mobile Safari показывает режим поста без горизонтального переполнения на узком экране', async ({ page }) => {
+  await page.goto('./')
+  await choosePlace(page)
+  await page.locator('#home-settings').click()
+  const fastingMode = page.getByRole('switch', { name: 'Режим поста' })
+  await expect(fastingMode).toHaveAttribute('aria-checked', 'false')
+  await fastingMode.click()
+  await expect(fastingMode).toHaveAttribute('aria-checked', 'true')
+  await expect.poll(() => readSavedSetting(page, 'fastingMode')).toMatchObject({ manualEnabled: true })
+  await page.getByRole('button', { name: 'Назад', exact: true }).click()
+
+  const card = page.locator('.fasting-card')
+  await expect(card).toBeVisible()
+  await expect(card.getByText('Пост', { exact: true })).toBeVisible()
+  for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 720 }]) {
+    await page.setViewportSize(viewport)
+    const layout = await page.evaluate(() => {
+      const cardElement = document.querySelector('.fasting-card')
+      const endpoints = [...document.querySelectorAll('.fasting-endpoint')]
+      if (!cardElement || endpoints.length !== 2) throw new Error('Не найдены карточка поста или её времена')
+      return {
+        viewportWidth: innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        cardRight: cardElement.getBoundingClientRect().right,
+        endpointTops: endpoints.map(endpoint => endpoint.getBoundingClientRect().top),
+      }
+    })
+    expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
+    expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth)
+    expect(layout.endpointTops[0]).toBe(layout.endpointTops[1])
+  }
 })

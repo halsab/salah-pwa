@@ -11,6 +11,9 @@ type SourceValuesParams = { values: string }
 type SourceNameParams = { name: string }
 type LateFajrParams = { time: string; date: string }
 type EventCountdownParams = { event: string; count: number }
+type FastingDurationParams = { hours: number; minutes: number }
+type PercentParams = { percent: number }
+type FastingEndpointsParams = { first: string; second: string }
 
 export const RU_MESSAGES = Object.freeze({
   appLoading: 'Открываем расписание…',
@@ -42,6 +45,20 @@ export const RU_MESSAGES = Object.freeze({
   calculatedZenithUnavailableInfo: 'Таблица не публикует зенит; астрономический расчёт для этой даты недоступен.',
   estimatedByHighLatitude: '≈ По северному правилу',
   today: 'Сегодня',
+  relativeToday: 'сегодня',
+  relativeYesterday: 'вчера',
+  relativeTomorrow: 'завтра',
+  fastingMode: 'Режим поста',
+  fastingTitle: 'Пост',
+  fastingUntilEnd: 'До конца поста',
+  fastingUntilStart: 'До начала поста',
+  fastingStart: 'Начало',
+  fastingEnd: 'Конец',
+  fastingDuration: ({ hours, minutes }: FastingDurationParams) => `${hours} ч ${String(minutes).padStart(2, '0')} мин`,
+  fastingDayProgress: 'Прогресс дневного поста',
+  fastingNightProgress: 'Прогресс времени до начала поста',
+  fastingProgressPercent: ({ percent }: PercentParams) => `${percent}%`,
+  fastingEndpointsDescription: ({ first, second }: FastingEndpointsParams) => `${first}; ${second}`,
   dateSetup: 'Установка даты',
   calendar: 'Календарь',
   gregorian: 'Григорианский',
