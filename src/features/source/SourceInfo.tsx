@@ -68,7 +68,7 @@ export function SourceInfo({ open, onClose, context, schedule, meta, placeLabel,
     official ? markdownLink(t('primarySource', { name: provider ? providerName : t('provider') }), meta?.source.url ?? provider?.bundled.source.url ?? '') : '',
     `## ${t('important')}`,
     ...important,
-    official ? '' : markdownLink(t('adhanProfilesLink'), 'https://github.com/batoulapps/adhan-js/blob/master/METHODS.md'),
+    official ? '' : markdownLink(t('adhanProfilesLink'), 'https://github.com/batoulapps/adhan-js'),
     official ? '' : `> ${t('disclaimer')}`,
   ].filter(Boolean).join('\n\n')
 

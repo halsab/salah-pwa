@@ -54,6 +54,7 @@ it('расчёт показывает эффективные параметры,
   expect(dialog).toHaveTextContent('Аср +12 мин')
   expect(dialog).toHaveTextContent('≈ По северному правилу')
   expect(dialog).toHaveTextContent('Профиль расчёта: ДУМ РТ')
+  expect(within(dialog).getByRole('link', { name: 'Профили Adhan' })).toHaveAttribute('href', 'https://github.com/batoulapps/adhan-js')
 })
 
 it('называет автоматический расчёт расчётным временем и сохраняет оговорку без повторного заголовка', () => {

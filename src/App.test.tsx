@@ -642,7 +642,7 @@ describe('Salah', () => {
     expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toBeVisible()
     expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toHaveTextContent('Europe/Moscow')
     await userEvent.click(screen.getByRole('button', { name: 'Как считается время' }))
-    expect(screen.getByRole('heading', { name: 'Расчёт на устройстве' })).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Как рассчитывается время' })).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await waitFor(() => expect(screen.getByRole('button', { name: 'Как считается время' })).toHaveFocus())
   })
