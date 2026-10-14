@@ -234,12 +234,15 @@ export function App({
     currentTime,
     changeDate,
   } = useScheduleDate(services)
-  const resolution = place
-    ? resolvePrayerTimeSource(place, selectedDateOverride ?? currentTime, preferences, datasets, capabilities)
+  const currentResolution = place
+    ? resolvePrayerTimeSource(place, currentTime, preferences, datasets, capabilities)
     : null
-  const calendarTimeZone = resolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
-  const today = getSystemDate(currentTime, calendarTimeZone)
+  const todayTimeZone = currentResolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
+  const today = getSystemDate(currentTime, todayTimeZone)
   const selectedDate = selectedDateOverride ?? today
+  const resolution = place
+    ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities)
+    : null
   const changeScheduleDate = useCallback((date: string) => {
     changeDate(date === today ? null : date)
   }, [changeDate, today])
@@ -271,9 +274,22 @@ export function App({
     selectedDate,
   })
   const fastingEvents = useMemo(() => buildFastingScheduleEvents(schedules, context?.timeZone), [schedules, context?.timeZone])
+  // Не используем расписания выбранной даты для вычисления режима текущего дня.
+  const currentSchedules = usePrayerSchedules({
+    services: scheduleServices,
+    location: selectedDate === today ? null : place,
+    resolution: selectedDate === today ? null : currentResolution,
+    mode: preferences.mode,
+    selectedDate: today,
+  })
+  const activeScheduleContext = selectedDate === today ? context : currentSchedules.context
+  const activeFastingEvents = useMemo(() => selectedDate === today
+    ? fastingEvents
+    : buildFastingScheduleEvents(currentSchedules.schedules, currentSchedules.context?.timeZone),
+  [selectedDate, today, fastingEvents, currentSchedules.schedules, currentSchedules.context?.timeZone])
   const activeRamadanOccurrence = resolveActiveRamadanOccurrence({
     today, correction: calendarPreferences.correction, hijriSupported,
-    now: currentTime, timeZone: context?.timeZone, events: fastingEvents,
+    now: currentTime, timeZone: activeScheduleContext?.timeZone, events: activeFastingEvents,
   })
   const fastingModeEnabled = isFastingModeActive(fastingMode, activeRamadanOccurrence)
 

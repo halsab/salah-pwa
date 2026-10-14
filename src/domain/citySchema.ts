@@ -30,7 +30,7 @@ function uniqueCities(cities: CompactCityRecord[]): boolean { return new Set(cit
 function isDescriptor(v: unknown): v is CityShardDescriptor {
   return object(v) && country(v.country) && typeof v.id === 'string' && new RegExp(`^${v.country}-[0-9]+$`).test(v.id)
     && typeof v.count === 'number' && Number.isSafeInteger(v.count) && v.count > 0 && v.count <= 300
-    && typeof v.bytes === 'number' && Number.isSafeInteger(v.bytes) && v.bytes > 0 && v.bytes <= 128 * 1024
+    && typeof v.bytes === 'number' && Number.isSafeInteger(v.bytes) && v.bytes > 0
     && hash(v.sha256) && typeof v.filter === 'string' && v.filter.length >= 12
     && v.filter.length % 4 === 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v.filter)
 }

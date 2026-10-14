@@ -170,7 +170,7 @@ button.religious-event-banner:active { background: var(--text-primary); color: v
   color: var(--text-secondary);
 }
 .fasting-card-heading, .fasting-card-countdown, .fasting-endpoints { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
-.fasting-card-heading { flex-wrap: wrap; font: var(--font-body); }
+.fasting-card-heading { justify-content: flex-start; flex-wrap: wrap; font: var(--font-body); }
 .fasting-duration { font: var(--font-footnote); font-variant-numeric: tabular-nums; }
 .fasting-card-countdown { flex-wrap: wrap; }
 .fasting-card-label { font: var(--font-footnote); }

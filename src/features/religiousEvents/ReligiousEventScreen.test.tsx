@@ -6,12 +6,12 @@ import { RELIGIOUS_EVENTS } from '../../domain/religiousEvents'
 import { localizedEventTitle } from '../../localization/religiousEvents'
 import { ReligiousEventScreen } from './ReligiousEventScreen'
 
-it.each(RELIGIOUS_EVENTS)('открывает локальную статью события $id', ({ id }) => {
+it.each(RELIGIOUS_EVENTS)('открывает локальную статью события $id', async ({ id }) => {
   const { container } = render(<ReligiousEventScreen eventId={id} onBack={() => {}} />)
   const title = localizedEventTitle(id, 'ru')
 
-  expect(screen.getByRole('region', { name: title })).toBeVisible()
-  expect(screen.getByRole('heading', { level: 1, name: title })).toBeVisible()
+  expect(await screen.findByRole('region', { name: title })).toBeVisible()
+  expect(await screen.findByRole('heading', { level: 1, name: title })).toBeVisible()
   expect(container.querySelector('.markdown-article blockquote')).not.toBeNull()
 })
 
@@ -21,6 +21,7 @@ it('показывает только стандартный Back и локал�
 
   const articleScreen = screen.getByRole('region', { name: 'День Арафа' })
   expect(articleScreen).toBeVisible()
+  await screen.findByRole('heading', { level: 1, name: 'День Арафа' })
   expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('День Арафа')
   expect(screen.getAllByRole('button')).toHaveLength(1)

@@ -19,6 +19,7 @@ import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
 import { setLanguagePreference } from './localization'
+import type { SettingsPatch } from './storage/database'
 
 const kazanToday: PrayerDay = {
   locationId: 'kazan',
@@ -255,13 +256,51 @@ describe('Salah', () => {
     await waitFor(() => expect(services.saveSettings).toHaveBeenLastCalledWith({ calendarPreferences: { calendar: 'gregorian', correction: 1 } }, expect.any(Function)))
   })
 
+  it('сохраняет автоактивацию текущей ночи Рамадана при просмотре другой даты', async () => {
+    const services = createServices({
+      now: () => new Date('2026-02-17T18:30:00.000Z'),
+      getDays: vi.fn((locationId: string, dates: readonly string[]) => Promise.resolve(success(
+        dates.map(date => dumRtDay(locationId, date)),
+      ))),
+    })
+    render(<App services={services} />)
+
+    await screen.findByRole('list', { name: 'Расписание дня' })
+    expect(screen.getByText('До начала поста')).toBeVisible()
+    await chooseGregorianDate('2026-03-01')
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+
+    expect(screen.getByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('восстанавливает ручное включение режима поста после перезапуска', async () => {
+    let savedMode = { manualEnabled: false }
+    const services = createServices({
+      initialize: vi.fn(() => Promise.resolve(initialized({ fastingMode: savedMode }))),
+      saveSettings: vi.fn((patch: SettingsPatch) => {
+        if (patch.fastingMode) savedMode = { ...patch.fastingMode }
+        return Promise.resolve(success(undefined))
+      }),
+    })
+    const firstRun = render(<App services={services} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await userEvent.click(screen.getByRole('switch', { name: 'Режим поста' }))
+    await waitFor(() => expect(savedMode).toEqual({ manualEnabled: true }))
+    firstRun.unmount()
+
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
+    expect(screen.getByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('восстанавливает календарь и поправку при запуске; метод доступен только в сведениях', async () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ calendarPreferences: { calendar: 'hijri', correction: -1 } })) })} />)
     expect(await screen.findByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('18 раби I')
     await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
     expect(screen.queryByText('Календарь')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))
-    expect(screen.getByText('Дата хиджры рассчитывается по календарю Умм аль-Кура.')).toBeVisible()
+    expect(await screen.findByText('Дата хиджры рассчитывается по календарю Умм аль-Кура.')).toBeVisible()
   })
 
   it.each(['manual', 'default'] as const)(

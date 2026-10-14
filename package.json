@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:check": "tsx scripts/checkBuildBudgets.ts",
+    "build:check": "tsx scripts/checkBuildArtifacts.ts",
     "actions:check": "tsx scripts/checkActionPins.ts",
     "security:audit": "npm audit --audit-level=high",
     "license:check": "license-checker-rseidelsohn --excludePrivatePackages --summary --onlyAllow 'Apache-2.0;BSD-2-Clause;BSD-3-Clause;BlueOak-1.0.0;CC-BY-3.0;CC-BY-4.0;CC0-1.0;ISC;MIT;MIT-0;MPL-2.0;OFL-1.1'",

@@ -81,6 +81,7 @@ test('интерактивные элементы не попадают под �
 })
 
 test('Mobile Safari показывает режим поста без горизонтального переполнения на узком экране', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
   await page.goto('./')
   await choosePlace(page)
   await page.locator('#home-settings').click()
@@ -94,21 +95,78 @@ test('Mobile Safari показывает режим поста без гориз
   const card = page.locator('.fasting-card')
   await expect(card).toBeVisible()
   await expect(card.getByText('Пост', { exact: true })).toBeVisible()
+  await expect(card.getByRole('progressbar')).toHaveAccessibleName('Прогресс дневного поста')
+  const readCardSurface = () => card.evaluate(element => {
+    const probe = document.createElement('span')
+    probe.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--background-tertiary')
+    document.body.append(probe)
+    const token = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return { background: getComputedStyle(element).backgroundColor, token }
+  })
+  expect(await readCardSurface().then(({ background, token }) => background === token)).toBe(true)
+
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.themeTone)).toBe('dark')
+  expect(await readCardSurface().then(({ background, token }) => background === token)).toBe(true)
+  await page.emulateMedia({ colorScheme: 'light' })
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.themeTone)).toBe('light')
+
+  await page.locator('#home-settings').click()
+  await page.getByRole('combobox', { name: 'Тема' }).selectOption('seasonal')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('seasonal')
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.themeTone)).toBe('light')
+  await page.getByRole('button', { name: 'Назад', exact: true }).click()
+  await expect(card).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.dataset.season)).toBe('autumn')
+  expect(await readCardSurface().then(({ background, token }) => background === token)).toBe(true)
+
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.themeTone)).toBe('dark')
+  expect(await readCardSurface().then(({ background, token }) => background === token)).toBe(true)
+
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  const reducedMotion = await card.evaluate(element => ({
+    enabled: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    progressTransition: getComputedStyle(element.querySelector('.fasting-progress-fill') as Element).transitionDuration,
+  }))
+  expect(reducedMotion).toEqual({ enabled: true, progressTransition: '0s' })
+
   for (const viewport of [{ width: 390, height: 844 }, { width: 320, height: 720 }]) {
     await page.setViewportSize(viewport)
     const layout = await page.evaluate(() => {
       const cardElement = document.querySelector('.fasting-card')
+      const heading = cardElement?.querySelector('.fasting-card-heading')
+      const title = heading?.querySelector('span:first-child')
+      const duration = heading?.querySelector('.fasting-duration')
       const endpoints = [...document.querySelectorAll('.fasting-endpoint')]
-      if (!cardElement || endpoints.length !== 2) throw new Error('Не найдены карточка поста или её времена')
+      if (!cardElement || !heading || !title || !duration || endpoints.length !== 2) throw new Error('Не найдены карточка поста, длительность или её времена')
+      const headingBounds = heading.getBoundingClientRect()
+      const titleBounds = title.getBoundingClientRect()
+      const durationBounds = duration.getBoundingClientRect()
       return {
         viewportWidth: innerWidth,
         documentWidth: document.documentElement.scrollWidth,
         cardRight: cardElement.getBoundingClientRect().right,
+        headingJustification: getComputedStyle(heading).justifyContent,
+        titleLeft: titleBounds.left,
+        headingLeft: headingBounds.left,
+        titleTop: titleBounds.top,
+        titleBottom: titleBounds.bottom,
+        durationLeft: durationBounds.left,
+        durationTop: durationBounds.top,
+        durationBottom: durationBounds.bottom,
+        titleRight: titleBounds.right,
         endpointTops: endpoints.map(endpoint => endpoint.getBoundingClientRect().top),
       }
     })
     expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth + 1)
     expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth)
+    expect(layout.headingJustification).toBe('flex-start')
+    expect(layout.titleLeft).toBe(layout.headingLeft)
+    expect(layout.durationLeft).toBeGreaterThanOrEqual(layout.titleRight)
+    expect(layout.durationTop).toBeLessThan(layout.titleBottom)
+    expect(layout.durationBottom).toBeGreaterThan(layout.titleTop)
     expect(layout.endpointTops[0]).toBe(layout.endpointTops[1])
   }
 })

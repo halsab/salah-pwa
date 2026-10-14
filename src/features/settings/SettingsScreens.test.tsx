@@ -41,17 +41,17 @@ describe('новые настройки', () => {
     expect(reset).toHaveClass('pill--primary')
     expect(reset.closest('.screen-footer')).toHaveClass('screen-footer--stretch')
   })
-  it('показывает privacy и about как полные статьи без вложенных переходов', () => {
+  it('показывает privacy и about как полные статьи без вложенных переходов', async () => {
     const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn() }
     const { rerender } = render(<SettingsScreens {...props} screen="privacy" />)
     const privacy = screen.getByRole('region', { name: 'Данные и конфиденциальность' })
-    expect(screen.getByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
     expect(privacy).toHaveTextContent('История перемещений и поисковых запросов не ведётся')
     expect(privacy).toHaveTextContent('GitHub Pages')
     expect(screen.queryByRole('link', { name: 'Конфиденциальность' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Удалить данные' })).toBeVisible()
     rerender(<SettingsScreens {...props} screen="about" />)
-    expect(screen.getByRole('heading', { level: 1, name: 'О приложении' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'О приложении' })).toBeVisible()
     expect(screen.getByText('Версия v26.4.')).toBeVisible()
     expect(screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' })).toBeVisible()
     const sources = screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' }).nextElementSibling

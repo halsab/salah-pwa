@@ -42,7 +42,6 @@ export async function prepareLocalGeography(check: boolean) {
   if (feature.properties.shapeISO !== 'RU-TA' || feature.geometry.type !== 'MultiPolygon') throw new Error('Не тот регион')
   const result = buildLocalGeography(feature.geometry.coordinates)
   const bytes = JSON.stringify(result) + '\n'
-  if (Buffer.byteLength(bytes) > 80 * 1024) throw new Error('Превышен бюджет геопакета')
   const path = 'public/data/tatarstan-boundary.json'
   if (check) {
     if (await readFile(path, 'utf8') !== bytes) throw new Error('Геопакет не воспроизводится')

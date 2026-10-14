@@ -7,6 +7,7 @@ import {
   isFastingModeActive,
   resolveActiveRamadanOccurrence,
   resolveFastingTimeline,
+  restoreFastingModePreferences,
   updateFastingModePreferences,
 } from './fasting'
 import { calculatePrayerSchedule } from './prayerCalculation'
@@ -60,6 +61,19 @@ describe('режим поста', () => {
     expect(isFastingModeActive(suppressed, ramadanOccurrence)).toBe(false)
     expect(isFastingModeActive(suppressed, 'ramadan-1449')).toBe(true)
     expect(updateFastingModePreferences(suppressed, true, ramadanOccurrence)).toEqual({ manualEnabled: true })
+  })
+
+  it('восстанавливает ручной выбор и подавление после перезапуска', () => {
+    const restoredManual = restoreFastingModePreferences({ manualEnabled: true })
+    const restoredSuppression = restoreFastingModePreferences({
+      manualEnabled: false,
+      suppressedRamadanOccurrence: ramadanOccurrence,
+    })
+
+    expect(isFastingModeActive(restoredManual, null)).toBe(true)
+    expect(isFastingModeActive(restoredManual, 'ramadan-1449')).toBe(true)
+    expect(isFastingModeActive(restoredSuppression, ramadanOccurrence)).toBe(false)
+    expect(isFastingModeActive(restoredSuppression, 'ramadan-1449')).toBe(true)
   })
 
   it('включает первый предрассветный интервал после магриба накануне Рамадана', () => {

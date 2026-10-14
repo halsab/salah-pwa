@@ -1,14 +1,11 @@
-import Markdown, { defaultUrlTransform } from 'react-markdown'
+import { lazy, Suspense } from 'react'
 
-const ALLOWED_ELEMENTS = ['h1', 'h2', 'p', 'strong', 'em', 'ul', 'ol', 'li', 'blockquote', 'a']
+const MarkdownArticleContent = lazy(() => import('./MarkdownArticleContent').then(module => ({
+  default: module.MarkdownArticleContent,
+})))
 
 export function MarkdownArticle({ content }: { content: string }) {
-  return <div className="markdown-article">
-    <Markdown allowedElements={ALLOWED_ELEMENTS} skipHtml urlTransform={defaultUrlTransform} components={{
-      a: ({ href, children }) => {
-        const external = /^https?:\/\//i.test(href ?? '')
-        return <a href={href} target={external ? '_blank' : undefined} rel={external ? 'noreferrer' : undefined}>{children}</a>
-      },
-    }}>{content}</Markdown>
-  </div>
+  return <Suspense fallback={<div className="markdown-article" aria-busy="true" />}>
+    <MarkdownArticleContent content={content} />
+  </Suspense>
 }

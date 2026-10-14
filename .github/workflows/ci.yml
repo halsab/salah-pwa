@@ -106,7 +106,41 @@ jobs:
       - name: Собрать production-версию
         run: npm run build
 
-      - name: Проверить бюджеты production-сборки
+      - name: Подготовить сравнительную production-сборку PR base
+        if: github.event_name == 'pull_request'
+        id: bundle-baseline
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          if ! git diff --quiet "$BASE_SHA" HEAD -- package-lock.json .nvmrc; then
+            echo '::notice::Bundle baseline skipped because the dependency lockfile or Node version changed.'
+            exit 0
+          fi
+
+          baseline_root="$(mktemp -d "$RUNNER_TEMP/salah-pr-base-XXXXXX")"
+          if ! git archive "$BASE_SHA" | tar -x -C "$baseline_root"; then
+            echo '::notice::Bundle baseline unavailable because the PR base checkout could not be prepared.'
+            exit 0
+          fi
+          if ! ln -s "$GITHUB_WORKSPACE/node_modules" "$baseline_root/node_modules"; then
+            echo '::notice::Bundle baseline unavailable because shared dependencies could not be linked.'
+            exit 0
+          fi
+          # Для baseline нужны только выпущенные ресурсы; typecheck блокирует текущую сборку выше.
+          if ! (cd "$baseline_root" && ./node_modules/.bin/vite build); then
+            echo '::notice::Bundle baseline unavailable because the PR base production build failed.'
+            exit 0
+          fi
+
+          if ! echo "directory=$baseline_root/dist" >> "$GITHUB_OUTPUT"; then
+            echo '::notice::Bundle baseline built, but its comparison path could not be recorded.'
+          fi
+
+      - name: Проверить production-артефакты и записать размеры
+        env:
+          BUILD_SIZE_BASELINE_DIR: ${{ steps.bundle-baseline.outputs.directory }}
         run: npm run build:check
 
       - name: Проверить npm audit
