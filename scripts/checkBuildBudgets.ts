@@ -61,11 +61,6 @@ export function validateBuildArtifacts(artifacts: readonly BuildArtifact[], cata
     }
   }
 
-  const javaScript = artifacts.filter((artifact) => (
-    artifact.path.startsWith('assets/') && artifact.path.endsWith('.js')
-  ))
-  const totalJavaScript = javaScript.reduce((total, artifact) => total + artifact.size, 0)
-
   const cityArtifacts = artifacts.filter(a => a.path.startsWith('data/cities/'))
   const total = cityArtifacts.reduce((n,a)=>n+a.size,0)
   if (total > BUILD_BUDGETS.cityTotal) errors.push(overLimitError('cityTotal','data/cities/**',total))
