@@ -29,6 +29,21 @@ describe('новое расписание', () => {
     expect(screen.queryByText('Первые 10 дней Зуль-хиджи')).not.toBeInTheDocument()
   })
 
+  it('ставит карточку поста сразу после списка событий и скрывает её на прошлой дате', () => {
+    const liveDay: typeof day = { ...day, date: '2026-03-10', fajrStart: '04:00', maghrib: '19:00' }
+    const now = () => new Date('2026-03-10T17:00:00+03:00')
+    const props = { ...base, schedule: liveDay, schedules: [liveDay], selectedDate: liveDay.date, today: liveDay.date,
+      currentTime: now(), now, officialMode: true, hijriSupported: false, timeZone: 'Europe/Moscow',
+      fastingMode: { manualEnabled: true }, fastingModeEnabled: true }
+    const { container, rerender } = render(<ScheduleContent {...props} />)
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    const card = container.querySelector('.fasting-card')
+    expect(card).toBeInTheDocument()
+    expect(list.compareDocumentPosition(card as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    rerender(<ScheduleContent {...props} selectedDate="2026-03-09" />)
+    expect(container.querySelector('.fasting-card')).not.toBeInTheDocument()
+  })
+
   it('оформляет footer главной общим toolbar: ведущий слот слева, icon-only действие справа', () => {
     const actions = <button id="home-settings" type="button">Настройки</button>
     render(<ScheduleContent {...base} actions={actions} />)

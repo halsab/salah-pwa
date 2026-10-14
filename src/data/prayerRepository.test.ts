@@ -41,6 +41,18 @@ describe('local initialization and persistence', () => {
     await clearAppData()
     expect(await initializePrayerRepository()).toMatchObject({ value: { calendarPreferences: { calendar: 'gregorian', correction: 0 } } })
   })
+  it('сохраняет ручной режим и подавление одного периода Рамадана, сбрасывая их вместе с данными', async () => {
+    const fastingMode = { manualEnabled: false, suppressedRamadanOccurrence: 'ramadan-1448' as const }
+    expect(await initializePrayerRepository()).toMatchObject({ value: { fastingMode: { manualEnabled: false } } })
+    expect(await repo.saveSettings({ fastingMode })).toEqual(success(undefined))
+    expect(await initializePrayerRepository()).toMatchObject({ value: { fastingMode } })
+    expect(await repo.saveSettings({ fastingMode: { manualEnabled: true } })).toEqual(success(undefined))
+    expect(await initializePrayerRepository()).toMatchObject({ value: { fastingMode: { manualEnabled: true } } })
+    expect(await repo.saveSettings({ fastingMode: { manualEnabled: false, suppressedRamadanOccurrence: 'invalid' } as never }))
+      .toMatchObject({ ok: false, error: { kind: 'data' } })
+    await clearAppData()
+    expect(await initializePrayerRepository()).toMatchObject({ value: { fastingMode: { manualEnabled: false } } })
+  })
   it('сохраняет выбор языка без изменения версии базы и восстанавливает auto по умолчанию', async () => {
     expect(await initializePrayerRepository()).toMatchObject({ value: { languagePreference: 'auto' } })
     expect(await repo.saveSettings({ languagePreference: 'ru' })).toEqual(success(undefined))

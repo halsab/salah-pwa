@@ -21,7 +21,7 @@ export default defineConfig({
         'scripts/prayerDatasetArtifacts.ts',
         'scripts/selectDatasetYear.ts',
         'scripts/checkActionPins.ts',
-        'scripts/checkBuildBudgets.ts'
+        'scripts/checkBuildArtifacts.ts'
       ],
       exclude: [
         '**/*.test.{ts,tsx}',

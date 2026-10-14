@@ -47,7 +47,6 @@ export default defineConfig({
     'import.meta.env.VITE_APP_PACKAGE_VERSION': JSON.stringify(LOCAL_APP_VERSION),
   },
   build: {
-    // Плотная минификация сохраняет прежний бюджет расширенного интерфейса.
     minify: 'terser',
     terserOptions: { compress: { passes: 2 }, maxWorkers: 2 },
   },

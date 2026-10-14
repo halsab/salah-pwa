@@ -16,6 +16,7 @@ import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type Praye
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
 import { restoreThemeFamily, type ThemeFamily } from '../domain/theme'
 import { restoreLanguagePreference, type LanguagePreference } from '../localization/locale'
+import { isFastingModePreferences, restoreFastingModePreferences, type FastingModePreferences } from '../domain/fasting'
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 export type DatasetUpdate = { status: 'idle' | 'refreshing' } | { status: 'failed'; reason: 'network' | 'timeout' | 'invalid' | 'storage' | 'superseded' }
@@ -33,6 +34,7 @@ export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   themeFamily: ThemeFamily
   preferences: SourcePreferences
   languagePreference?: LanguagePreference
+  fastingMode?: FastingModePreferences
 }
 export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & {
   fetch?: Fetcher
@@ -62,9 +64,9 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
 export async function initializePrayerRepository(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, calendarPreferences, languagePreference] = await Promise.all([
+  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, calendarPreferences, languagePreference, fastingMode] = await Promise.all([
     readLocalSnapshot(provider), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('themeFamily'),
-    getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('languagePreference'),
+    getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('languagePreference'), getSetting('fastingMode'),
   ])
   if (!snapshot.ok) return snapshot
   if (!choice.ok) return choice
@@ -75,6 +77,7 @@ export async function initializePrayerRepository(provider: PrayerProvider = dumR
   if (!recentPlaces.ok) return recentPlaces
   if (!calendarPreferences.ok) return calendarPreferences
   if (!languagePreference.ok) return languagePreference
+  if (!fastingMode.ok) return fastingMode
   const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta ?? provider.bundled)
   return success({ ...snapshot.value, locationChoice,
     calendarPreferences: restoreCalendarPreferences(calendarPreferences.value),
@@ -82,6 +85,7 @@ export async function initializePrayerRepository(provider: PrayerProvider = dumR
     appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',
     themeFamily: restoreThemeFamily(themeFamily.value),
     languagePreference: restoreLanguagePreference(languagePreference.value),
+    fastingMode: restoreFastingModePreferences(fastingMode.value),
     preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
 
@@ -177,6 +181,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.themeFamily && restoreThemeFamily(patch.themeFamily) !== patch.themeFamily) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.languagePreference && restoreLanguagePreference(patch.languagePreference) !== patch.languagePreference) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      if (patch.fastingMode && !isFastingModePreferences(patch.fastingMode)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       return saveSettings(patch, isCurrent, generation)
     },
   }

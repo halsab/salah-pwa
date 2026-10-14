@@ -19,6 +19,7 @@ export const RELIGIOUS_EVENT_IDS = [
 
 export type ReligiousEventId = typeof RELIGIOUS_EVENT_IDS[number]
 export type ReligiousEventKind = 'day' | 'night' | 'period'
+export type RamadanOccurrenceId = `ramadan-${number}`
 
 type ReligiousEventRule =
   | { type: 'fixed'; month: number; day: number }
@@ -110,6 +111,17 @@ function matchesRule(definition: Readonly<ReligiousEventDefinition>, date: strin
   if (rule.type === 'ragaib') return hijri.month === 7 && hijri.day >= 1 && hijri.day <= 7 && isFriday(date)
   if (rule.type === 'month') return hijri.month === rule.month
   return hijri.month === rule.month && hijri.day >= rule.startDay && hijri.day <= rule.endDay
+}
+
+export function ramadanOccurrenceIdForDate(
+  date: string,
+  correction: DateCorrection,
+  hijriSupported: boolean,
+): RamadanOccurrenceId | null {
+  if (!hijriSupported) return null
+  const definition = RELIGIOUS_EVENTS.find(item => item.id === 'ramadan')
+  if (!definition || !matchesRule(definition, date, correction)) return null
+  return `ramadan-${hijriDate(date, correction).year}`
 }
 
 function isPeriodStart(definition: Readonly<ReligiousEventDefinition>, date: string, correction: DateCorrection): boolean {

@@ -12,6 +12,20 @@ const place = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude:
 const official: OfficialDatasetAvailability = { provider: 'dumRt', priority: 10, timeZone: 'Europe/Moscow', coverage: 'RU-TA', years: [2026], locations: [{ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }], state: 'ready', version: 'v1', revision: 'r1' }
 
 describe('новые настройки', () => {
+  it('представляет режим поста переключателем и передаёт новое состояние', async () => {
+    const onFastingModeChange = vi.fn()
+    const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn(), onFastingModeChange }
+    const { rerender } = render(<SettingsScreens {...props} screen="settings" fastingModeEnabled={false} />)
+    const toggle = screen.getByRole('switch', { name: 'Режим поста' })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    await userEvent.click(toggle)
+    expect(onFastingModeChange).toHaveBeenCalledWith(true)
+    rerender(<SettingsScreens {...props} screen="settings" fastingModeEnabled />)
+    expect(screen.getByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
+    await userEvent.keyboard('{Enter}')
+    expect(onFastingModeChange).toHaveBeenLastCalledWith(false)
+  })
+
   it('оформляет footer вспомогательным правым действием, а удаление — полноширинным', () => {
     const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn() }
     const { rerender } = render(<SettingsScreens {...props} screen="settings" />)
@@ -27,17 +41,17 @@ describe('новые настройки', () => {
     expect(reset).toHaveClass('pill--primary')
     expect(reset.closest('.screen-footer')).toHaveClass('screen-footer--stretch')
   })
-  it('показывает privacy и about как полные статьи без вложенных переходов', () => {
+  it('показывает privacy и about как полные статьи без вложенных переходов', async () => {
     const props = { ...defaults, preferences: automaticPreferences(), onChange: vi.fn() }
     const { rerender } = render(<SettingsScreens {...props} screen="privacy" />)
     const privacy = screen.getByRole('region', { name: 'Данные и конфиденциальность' })
-    expect(screen.getByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'Конфиденциальность' })).toBeVisible()
     expect(privacy).toHaveTextContent('История перемещений и поисковых запросов не ведётся')
     expect(privacy).toHaveTextContent('GitHub Pages')
     expect(screen.queryByRole('link', { name: 'Конфиденциальность' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Удалить данные' })).toBeVisible()
     rerender(<SettingsScreens {...props} screen="about" />)
-    expect(screen.getByRole('heading', { level: 1, name: 'О приложении' })).toBeVisible()
+    expect(await screen.findByRole('heading', { level: 1, name: 'О приложении' })).toBeVisible()
     expect(screen.getByText('Версия v26.4.')).toBeVisible()
     expect(screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' })).toBeVisible()
     const sources = screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' }).nextElementSibling

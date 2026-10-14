@@ -2,10 +2,11 @@ import { render, screen } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { MethodologyDialog } from './MethodologyDialog'
 
-it('показывает утверждённые разделы статьи и первичные источники', () => {
+it('показывает утверждённые разделы статьи и первичные источники', async () => {
   const officialScheduleUrl = 'https://dumrt.ru/ru/help-info/prayertime/?source=approved-copy'
   render(<MethodologyDialog open officialScheduleUrl={officialScheduleUrl} onClose={() => {}} />)
-  const article = screen.getByRole('region', { name: 'Как рассчитывается время' })
+  const article = await screen.findByRole('region', { name: 'Как рассчитывается время' })
+  await screen.findByRole('heading', { level: 1, name: 'Как рассчитывается время намаза' })
   expect(article.querySelectorAll('h1')).toHaveLength(1)
   expect(screen.getByRole('heading', { level: 1, name: 'Как рассчитывается время намаза' })).toBeVisible()
   for (const heading of [
@@ -24,9 +25,10 @@ it('показывает утверждённые разделы статьи и
   expect(article.querySelector('a[href*="/blob/master/METHODS.md"]')).toBeNull()
 })
 
-it('различает источники расписания и раскрывает ограничения расчёта', () => {
+it('различает источники расписания и раскрывает ограничения расчёта', async () => {
   render(<MethodologyDialog open officialScheduleUrl="https://dumrt.ru/ru/help-info/prayertime/" onClose={() => {}} />)
-  const article = screen.getByRole('region', { name: 'Как рассчитывается время' })
+  const article = await screen.findByRole('region', { name: 'Как рассчитывается время' })
+  await screen.findByRole('heading', { level: 1, name: 'Как рассчитывается время намаза' })
 
   expect(article).toHaveTextContent('Время берётся непосредственно из таблицы, без повторного расчёта.')
   expect(article).toHaveTextContent('Если официальная таблица не предусмотрена для выбранного места или даты, приложение рассчитывает время самостоятельно по подходящей региональной методике.')

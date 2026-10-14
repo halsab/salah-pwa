@@ -158,6 +158,37 @@ button.religious-event-banner:active { background: var(--text-primary); color: v
 }
 .event-day { font: var(--font-footnote); display: block; color: var(--text-secondary); }
 .home-content > .screen-status, .home-content > .note { margin-top: 16px; }
+.fasting-card {
+  container-type: inline-size;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 16px;
+  display: grid;
+  gap: 10px;
+  border-radius: var(--button-radius);
+  background: var(--background-tertiary);
+  color: var(--text-secondary);
+}
+.fasting-card-heading, .fasting-card-countdown, .fasting-endpoints { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.fasting-card-heading { justify-content: flex-start; flex-wrap: wrap; font: var(--font-body); }
+.fasting-duration { font: var(--font-footnote); font-variant-numeric: tabular-nums; }
+.fasting-card-countdown { flex-wrap: wrap; }
+.fasting-card-label { font: var(--font-footnote); }
+.fasting-card-timer { font: var(--font-title); color: var(--accent-countdown); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fasting-progress { height: 4px; overflow: hidden; border-radius: 999px; background: var(--background-secondary); }
+.fasting-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--accent-countdown); }
+.fasting-endpoints { flex-wrap: wrap; font: var(--font-footnote); font-variant-numeric: tabular-nums; }
+.fasting-endpoint { min-width: 0; white-space: nowrap; }
+.fasting-endpoint-compact { display: none; }
+.fasting-mode-toggle { position: relative; padding-right: 68px; }
+.fasting-mode-toggle::after, .fasting-mode-toggle::before { content: ''; position: absolute; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.fasting-mode-toggle::after { width: 40px; height: 22px; right: 16px; z-index: 1; border-radius: 999px; background: var(--background-secondary); }
+.fasting-mode-toggle::before { width: 14px; height: 14px; right: 38px; z-index: 2; border-radius: 50%; background: var(--text-secondary); }
+.fasting-mode-toggle[aria-checked='true']::before { right: 20px; background: var(--text-primary); }
+@container (max-width: 280px) {
+  .fasting-endpoint-long { display: none; }
+  .fasting-endpoint-compact { display: inline; }
+}
 .location-current { display: grid; gap: 4px; margin-bottom: 16px; }
 .location-coordinates { font-variant-numeric: tabular-nums; }
 .location-timezone { display: grid; gap: 4px; margin-top: 8px; }
