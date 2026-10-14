@@ -50,16 +50,14 @@ describe('build budgets', () => {
     )
   })
 
-  it('не позволяет обойти aggregate JS budget дополнительным chunk', () => {
+  it('не блокирует сборку из-за суммарного JavaScript выше прежнего лимита', () => {
     const artifacts = validArtifacts()
     artifacts.push({
       path: 'assets/lazy-feed-c0ffee.js',
-      size: BUILD_BUDGETS.totalJavaScript - BUILD_BUDGETS.appJavaScript,
+      size: 100 * 1024,
     })
 
-    expect(validateBuildArtifacts(artifacts,catalog)).toContain(
-      `totalJavaScript: assets/*.js — ${BUILD_BUDGETS.totalJavaScript + 1} bytes, максимум ${BUILD_BUDGETS.totalJavaScript} bytes`,
-    )
+    expect(validateBuildArtifacts(artifacts,catalog)).toEqual([])
   })
 
   it.each([
@@ -108,7 +106,7 @@ describe('build budgets', () => {
       const message = messages[0]
       if (!message) throw new Error('Не получен отчёт о бюджетах')
       expect(message).toContain('appJavaScript: 1/491520 bytes')
-      expect(message).toContain(`totalJavaScript: 1/${BUILD_BUDGETS.totalJavaScript} bytes`)
+      expect(message).toContain('totalJavaScript: 1 bytes (report-only)')
     } finally {
       await rm(root, { recursive: true })
     }

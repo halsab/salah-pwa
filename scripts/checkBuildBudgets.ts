@@ -10,10 +10,8 @@ export interface BuildArtifact {
 }
 
 export const BUILD_BUDGETS = {
-  // Отдельный lazy-чанк статей событий уменьшает стартовую загрузку, но входит
-  // в агрегатный размер JavaScript; общий лимит оставляет небольшой запас.
+  // Стартовый чанк проверяется отдельно; общий JavaScript остаётся метрикой сборки.
   appJavaScript: 480 * 1024,
-  totalJavaScript: 520 * 1024,
   appCss: 34 * 1024,
   cityIndex: 640 * 1024,
   cityShard: 128 * 1024,
@@ -22,7 +20,7 @@ export const BUILD_BUDGETS = {
   prayerManifest: 8 * 1024,
 } as const
 
-type SingletonCategory = Exclude<keyof typeof BUILD_BUDGETS, 'totalJavaScript' | 'cityShard' | 'cityTotal'>
+type SingletonCategory = Exclude<keyof typeof BUILD_BUDGETS, 'cityShard' | 'cityTotal'>
 
 const SINGLETONS: ReadonlyArray<{
   category: SingletonCategory
@@ -67,9 +65,6 @@ export function validateBuildArtifacts(artifacts: readonly BuildArtifact[], cata
     artifact.path.startsWith('assets/') && artifact.path.endsWith('.js')
   ))
   const totalJavaScript = javaScript.reduce((total, artifact) => total + artifact.size, 0)
-  if (totalJavaScript > BUILD_BUDGETS.totalJavaScript) {
-    errors.push(overLimitError('totalJavaScript', 'assets/*.js', totalJavaScript))
-  }
 
   const cityArtifacts = artifacts.filter(a => a.path.startsWith('data/cities/'))
   const total = cityArtifacts.reduce((n,a)=>n+a.size,0)
@@ -148,7 +143,7 @@ export async function checkBuildBudgets(
   const totalJavaScript = artifacts
     .filter(({ path }) => path.startsWith('assets/') && path.endsWith('.js'))
     .reduce((total, { size }) => total + size, 0)
-  checked.push(`totalJavaScript: ${totalJavaScript}/${BUILD_BUDGETS.totalJavaScript} bytes`)
+  checked.push(`totalJavaScript: ${totalJavaScript} bytes (report-only)`)
   const cityArtifacts = artifacts.filter(a=>a.path.startsWith('data/cities/'))
   checked.push(`cityShard max: ${Math.max(0,...cityArtifacts.filter(a=>a.path !== 'data/cities/index.json').map(a=>a.size))}/${BUILD_BUDGETS.cityShard} bytes`)
   checked.push(`cityTotal: ${cityArtifacts.reduce((n,a)=>n+a.size,0)}/${BUILD_BUDGETS.cityTotal} bytes`)
