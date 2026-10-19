@@ -4,8 +4,8 @@ import { fastingProgress, resolveFastingTimeline, type FastingModePreferences, t
 import { getCivilDate } from '../../domain/locationTime'
 import { formatLocalizedGregorianDate } from '../../localization/calendar'
 import { formatClockTime } from '../../localization/formatters'
-import { useLocalization } from '../../localization'
 import { formatRemainingDuration } from '../../localization/countdown'
+import { useLocalization } from '../../localization'
 import { useLiveClock } from '../../ui/useLiveClock'
 
 function formatDuration(start: number, end: number, t: ReturnType<typeof useLocalization>['t']): string {

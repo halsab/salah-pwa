@@ -94,6 +94,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
 }: ScheduleContentProps) {
   const { t } = useLocalization()
   useClockCorrection(true, onSystemClockChange)
+  // Обновляет время, если часы изменились, пока экран расписания был размонтирован.
   useEffect(() => { onSystemClockChange?.() }, [onSystemClockChange])
   const [boundary, setBoundary] = useState<{ time: Date; parentTime: number; schedules: DisplaySchedule[] } | null>(null)
   // Граница относится к загруженному набору, а не к предыдущему расписанию.
