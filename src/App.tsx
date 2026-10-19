@@ -63,8 +63,9 @@ import { ActionButton, IconActionButton, ScreenFooter } from './ui/controls'
 import { useDataReset } from './features/settings/useDataReset'
 import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation, type AppScreen } from './ui/useAppNavigation'
-import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
+import { restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
+import { clearThemePreferenceCache, isThemeFamily, isThemePreferenceCacheEvent, readThemePreferenceCache, writeThemePreferenceCache } from './ui/themePreferenceCache'
 import { useSystemAppearance } from './ui/useSystemAppearance'
 import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
@@ -155,7 +156,9 @@ export function App({
   const repositoryRevision = useRef(meta ? getDatasetRevision(meta) : null)
   const [preferences, setPreferences] = useState<SourcePreferences>(() => startupSnapshot?.preferences ?? automaticPreferences())
   const [storedCalendarPreferences, setCalendarPreferences] = useState<CalendarPreferences>(DEFAULT_CALENDAR_PREFERENCES)
-  const [themeFamily, setThemeFamily] = useState<ThemeFamily>(DEFAULT_THEME_FAMILY)
+  const [themeFamily, setThemeFamily] = useState<ThemeFamily>(readThemePreferenceCache)
+  const [themeEditedLocally, setThemeEditedLocally] = useState(false)
+  const persistedThemeFamily = useRef(themeFamily)
   const [fastingMode, setFastingMode] = useState<FastingModePreferences>({ ...DEFAULT_FASTING_MODE_PREFERENCES })
   const [hijriSupported] = useState(supportsHijriCalendar)
   const calendarPreferences = useMemo<CalendarPreferences>(() => hijriSupported ? storedCalendarPreferences
@@ -188,6 +191,20 @@ export function App({
   const saveSettings = persistence.save
   const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain
+  const themeChannel = useRef<BroadcastChannel | null>(null)
+  useEffect(() => {
+    if (persistence.status !== 'saved' || !themeEditedLocally) return
+    persistedThemeFamily.current = themeFamily
+    writeThemePreferenceCache(themeFamily)
+    themeChannel.current?.postMessage(themeFamily)
+  }, [persistence.status, themeFamily, themeEditedLocally])
+  useEffect(() => {
+    if (typeof BroadcastChannel === 'undefined') return
+    const channel = new BroadcastChannel('salah-theme-preference-v1')
+    themeChannel.current = channel
+    channel.onmessage = event => { if (isThemeFamily(event.data)) retrySelectionSync.current() }
+    return () => { themeChannel.current = null; channel.close() }
+  }, [])
   const [recentPlaces, setRecentPlaces] = useState<Place[]>([])
   const editedPreferences = useRef(false)
   const editedCalendar = useRef(false)
@@ -257,10 +274,13 @@ export function App({
     pendingFastIdentityWrite.current = true
     setFastCacheReady(false)
     invalidateFastCache()
+    clearThemePreferenceCache()
+    setThemeEditedLocally(false)
     const cleared = await reset()
     if (!cleared) {
       pendingFastIdentityWrite.current = false
       setFastCacheReady(true)
+      writeThemePreferenceCache(persistedThemeFamily.current)
     }
     return cleared
   }, [invalidateFastCache, reset])
@@ -293,6 +313,7 @@ export function App({
         editedRecentPlaces.current = false
         editedCalendar.current = false
         editedTheme.current = false
+        setThemeEditedLocally(false)
         editedFasting.current = false
       }
       if (!editedRecentPlaces.current && state.recentPlaces !== undefined) {
@@ -303,7 +324,12 @@ export function App({
       if (!editedPreferences.current) setPreferences(state.preferences)
       if (state.languagePreference !== undefined) setLanguagePreference(state.languagePreference)
       if (!editedCalendar.current && state.calendarPreferences !== undefined) setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
-      if (!editedTheme.current) setThemeFamily(restoreThemeFamily(state.themeFamily))
+      if (!editedTheme.current) {
+        const nextThemeFamily = restoreThemeFamily(state.themeFamily)
+        persistedThemeFamily.current = nextThemeFamily
+        setThemeFamily(nextThemeFamily)
+        writeThemePreferenceCache(nextThemeFamily)
+      }
       if (!editedFasting.current && state.fastingMode !== undefined) setFastingMode(restoreFastingModePreferences(state.fastingMode))
       sessionHasPlace.current = Boolean(state.locationChoice)
       setError(false)
@@ -323,7 +349,12 @@ export function App({
           setRecentPlaces(value.recentPlaces)
         }
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))
-        if (!editedTheme.current) setThemeFamily(restoreThemeFamily(value.themeFamily))
+        if (!editedTheme.current) {
+          const nextThemeFamily = restoreThemeFamily(value.themeFamily)
+          persistedThemeFamily.current = nextThemeFamily
+          setThemeFamily(nextThemeFamily)
+          writeThemePreferenceCache(nextThemeFamily)
+        }
         if (!editedFasting.current) setFastingMode(restoreFastingModePreferences(value.fastingMode))
         setLanguagePreference(value.languagePreference)
         setOptionalSettingsError(false)
@@ -406,6 +437,14 @@ export function App({
     }
     retrySelectionSync.current = reconcileSelection
     const handleStorage = (event: StorageEvent) => {
+      if (isThemePreferenceCacheEvent(event)) {
+        const nextThemeFamily = readThemePreferenceCache()
+        editedTheme.current = false
+        setThemeEditedLocally(false)
+        persistedThemeFamily.current = nextThemeFamily
+        setThemeFamily(nextThemeFamily)
+        return
+      }
       if (event.key === FAST_SCHEDULE_STORAGE_KEYS.activeContext) {
         const generation = currentFastScheduleGeneration()
         if (generation && generation !== fastGenerationRef.current) {
@@ -586,6 +625,7 @@ export function App({
   const updateThemeFamily = (next: ThemeFamily) => {
     editedTheme.current = true
     setThemeFamily(next)
+    setThemeEditedLocally(true)
     persistence.save({ themeFamily: next })
   }
   const updateFastingMode = (enabled: boolean) => {
