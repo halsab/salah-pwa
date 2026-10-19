@@ -238,7 +238,8 @@ describe('Salah', () => {
     expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
-    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('20 раби I')
+    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('20 раби авв.')
+    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveAccessibleDescription(/раби аль-авваль/)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveFocus())
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'День' }), '21')
@@ -296,7 +297,7 @@ describe('Salah', () => {
 
   it('восстанавливает календарь и поправку при запуске; метод доступен только в сведениях', async () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ calendarPreferences: { calendar: 'hijri', correction: -1 } })) })} />)
-    expect(await screen.findByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('18 раби I')
+    expect(await screen.findByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('18 раби авв.')
     await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
     expect(screen.queryByText('Календарь')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))

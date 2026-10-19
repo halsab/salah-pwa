@@ -7,8 +7,10 @@ import {
   restoreLanguagePreference,
 } from './locale'
 import { formatCivilDate, formatClockTime, formatDateLabel, formatCompactDateLabel, formatDateTime, formatLocaleDate, formatNumber, interpolate, pluralCategory } from './formatters'
-import { translate, validateCatalog } from './messages'
-import { formatLocalizedCalendarDate, formatLocalizedGregorianDate, formatLocalizedGregorianNightRange } from './calendar'
+import { createTranslator, translate, validateCatalog } from './messages'
+import { calendarMonthLabels, formatLocalizedCalendarDate, formatLocalizedCalendarFullDate, formatLocalizedGregorianDate, formatLocalizedGregorianNightRange, formatLocalizedHijriDate, formatLocalizedHijriMonth } from './calendar'
+import { civilDateFromCalendar } from '../domain/calendar'
+import { addDays } from '../domain/date'
 
 describe('локализация', () => {
   it('регистрирует только полностью поддержанный русский интерфейс', () => {
@@ -41,9 +43,45 @@ describe('локализация', () => {
     expect(formatCivilDate('2026-09-01')).toBe('1 сентября')
     expect(formatDateLabel('2026-09-01')).toBe('вторник, 1 сентября')
     expect(formatCompactDateLabel('2026-09-01')).toBe('1 сентября')
-    expect(formatLocalizedCalendarDate('2026-09-10', { calendar: 'hijri', correction: 0 })).toBe('28 раби I')
+    expect(formatLocalizedCalendarDate('2026-09-10', { calendar: 'hijri', correction: 0 })).toBe('28 раби авв.')
+    expect(formatLocalizedCalendarFullDate('2026-09-10', { calendar: 'hijri', correction: 0 })).toBe('28 раби аль-авваль')
     expect(formatLocalizedCalendarDate('2026-09-10', { calendar: 'gregorian', correction: 1 })).toBe('10 сентября')
     expect(formatNumber(1_234.5)).toBe('1 234,5')
+  })
+
+  it('сохраняет канонические, компактные и picker-названия всех месяцев по стабильному номеру', () => {
+    const full = ['мухаррам', 'сафар', 'раби аль-авваль', 'раби аль-ахир', 'джумада аль-уля', 'джумада аль-ахира',
+      'раджаб', 'шаабан', 'рамадан', 'шавваль', 'зуль-када', 'зуль-хиджа']
+    const compact = ['мухаррам', 'сафар', 'раби авв.', 'раби ахир', 'джум. уля', 'джум. ах.',
+      'раджаб', 'шаабан', 'рамадан', 'шавваль', 'зуль-када', 'зуль-хиджа']
+    const picker = ['Мухаррам', 'Сафар', 'Раби аль-авваль', 'Раби аль-ахир', 'Джумада аль-уля', 'Джумада аль-ахира',
+      'Раджаб', 'Шаабан', 'Рамадан', 'Шавваль', 'Зуль-када', 'Зуль-хиджа']
+    expect(Array.from({ length: 12 }, (_, index) => formatLocalizedHijriMonth(index + 1))).toEqual(full)
+    expect(Array.from({ length: 12 }, (_, index) => formatLocalizedHijriMonth(index + 1, 'ru', true))).toEqual(compact)
+    const translator = createTranslator('ru')
+    expect(calendarMonthLabels(translator, 'hijri')).toEqual(picker)
+    expect(calendarMonthLabels(translator, 'gregorian')).toEqual([
+      'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+    ])
+    for (let month = 1; month <= 12; month += 1) {
+      const civilDate = civilDateFromCalendar({ year: 1448, month, day: 8 }, 'hijri')
+      expect(formatLocalizedCalendarDate(civilDate, { calendar: 'hijri', correction: 0 })).toBe(`8 ${compact[month - 1]}`)
+      expect(formatLocalizedCalendarFullDate(civilDate, { calendar: 'hijri', correction: 0 })).toBe(`8 ${full[month - 1]}`)
+    }
+  })
+
+  it('формирует полную доступную дату Hijri без компактной подписи', () => {
+    expect(formatLocalizedHijriDate('2026-09-10', { calendar: 'hijri', correction: 0 })).toBe('28 раби аль-авваль 1448')
+  })
+
+  it('обновляет компактное и полное представление при переходах месяца и года с поправкой', () => {
+    const newYear = civilDateFromCalendar({ year: 1448, month: 1, day: 1 }, 'hijri')
+    expect(formatLocalizedCalendarDate(addDays(newYear, -1), { calendar: 'hijri', correction: 0 })).toBe('29 зуль-хиджа')
+    expect(formatLocalizedCalendarFullDate(addDays(newYear, -1), { calendar: 'hijri', correction: 0 })).toBe('29 зуль-хиджа')
+    expect(formatLocalizedCalendarDate(newYear, { calendar: 'hijri', correction: 0 })).toBe('1 мухаррам')
+    expect(formatLocalizedHijriDate(newYear, { calendar: 'hijri', correction: 0 })).toBe('1 мухаррам 1448')
+    expect(formatLocalizedCalendarDate(newYear, { calendar: 'hijri', correction: -1 })).toBe('29 зуль-хиджа')
+    expect(formatLocalizedCalendarDate(addDays(newYear, -1), { calendar: 'hijri', correction: 1 })).toBe('1 мухаррам')
   })
 
   it.each(['th-TH-u-ca-buddhist', 'ar-SA-u-ca-islamic-umalqura'])('явно форматирует Gregorian даты для locale %s', locale => {

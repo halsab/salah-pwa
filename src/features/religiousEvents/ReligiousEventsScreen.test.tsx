@@ -68,3 +68,12 @@ it.each([
     contentId: 'baraat',
   })).toBe(expected)
 })
+
+it.each([
+  [{ year: 1448, month: 4, day: 8 }, '8 апреля 2027 · 8 раби аль-ахир 1448'],
+  [{ year: 1448, month: 6, day: 8 }, '8 апреля 2027 · 8 джумада аль-ахира 1448'],
+] as const)('использует каноническое полное имя месяца в дате события', (hijriDate, expected) => {
+  expect(formatReligiousEventOccurrenceDate({
+    eventId: 'ashura', kind: 'day', civilDate: '2027-04-08', hijriDate, contentId: null,
+  })).toBe(expected)
+})
