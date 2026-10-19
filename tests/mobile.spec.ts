@@ -23,8 +23,10 @@ test('поиск города остаётся доступным при уме�
   await page.getByRole('button', { name: 'Найти город' }).click()
   const search = page.getByRole('searchbox')
   await search.fill('Москва')
+  expect(await page.locator('.screen-content').evaluate(element => parseFloat(getComputedStyle(element).paddingTop))).toBe(16)
   const city = page.getByRole('button', { name: 'Москва, Москва, Россия', exact: true })
   await expect(city).toBeVisible()
+  const shellBottomBeforeKeyboard = await page.locator('.app-layout').evaluate(element => element.getBoundingClientRect().bottom)
 
   await page.evaluate(() => {
     const viewport = window.visualViewport
@@ -39,14 +41,39 @@ test('поиск города остаётся доступным при уме�
 
   await expect(search).toBeVisible()
   await expect(city).toBeVisible()
-  const withinVisualViewport = await city.evaluate(element => {
-    const bounds = element.getBoundingClientRect()
+  const keyboardGeometry = await page.evaluate(() => {
     const viewport = window.visualViewport
-    if (!viewport) return false
-    return bounds.top >= viewport.offsetTop
-      && bounds.bottom <= viewport.offsetTop + viewport.height
+    const shell = document.querySelector<HTMLElement>('.app-layout')
+    const content = document.querySelector<HTMLElement>('.screen-content')
+    if (!viewport || !shell || !content) throw new Error('Не найдена геометрия keyboard shell')
+    const safeAreaProbe = document.createElement('div')
+    safeAreaProbe.style.cssText = 'position:fixed;padding-bottom:env(safe-area-inset-bottom, 0px)'
+    document.body.append(safeAreaProbe)
+    const safeAreaBottom = parseFloat(getComputedStyle(safeAreaProbe).paddingBottom)
+    safeAreaProbe.remove()
+    const layoutHeight = document.documentElement.clientHeight
+    const keyboardInset = Math.max(0, layoutHeight - Math.max(0, viewport.offsetTop) - viewport.height)
+    return {
+      shellBottom: shell.getBoundingClientRect().bottom,
+      panelBottom: content.parentElement?.getBoundingClientRect().bottom ?? 0,
+      keyboardInset,
+      appliedKeyboardInset: parseFloat(getComputedStyle(shell).getPropertyValue('--app-keyboard-inset')),
+      contentBottomPadding: parseFloat(getComputedStyle(content).paddingBottom),
+      expectedBottomPadding: Math.max(16, safeAreaBottom, keyboardInset + 16),
+      visibleBottom: viewport.offsetTop + viewport.height,
+      contentCanScroll: content.scrollHeight > content.clientHeight,
+    }
   })
-  expect(withinVisualViewport).toBe(true)
+  expect(keyboardGeometry.shellBottom).toBeCloseTo(shellBottomBeforeKeyboard, 0)
+  expect(keyboardGeometry.panelBottom).toBeCloseTo(shellBottomBeforeKeyboard, 0)
+  expect(keyboardGeometry.appliedKeyboardInset).toBe(keyboardGeometry.keyboardInset)
+  expect(keyboardGeometry.contentBottomPadding).toBe(keyboardGeometry.expectedBottomPadding)
+  expect(keyboardGeometry.contentCanScroll).toBe(true)
+
+  await page.locator('.screen-content').evaluate(element => { element.scrollTop = element.scrollHeight })
+  const lastContentBottom = await page.locator('.screen-content').evaluate(element => element.lastElementChild?.getBoundingClientRect().bottom ?? 0)
+  expect(lastContentBottom).toBeLessThanOrEqual(keyboardGeometry.visibleBottom - 15)
+  await page.locator('.screen-content').evaluate(element => { element.scrollTop = 0 })
   await city.click()
   await expect(page.locator('#home-location')).toHaveAccessibleName(/^Москва(?: \d{2}:\d{2})?$/)
 })
