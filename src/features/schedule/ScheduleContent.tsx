@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DEFAULT_CALENDAR_PREFERENCES, type CalendarPreferences } from '../../domain/calendar'
 import { resolveReligiousBanner, type ReligiousEventId } from '../../domain/religiousEvents'
-import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
+import { buildScheduleEvents, selectEventPair, selectOfficialEventPair, type OfficialEventHorizon, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
 import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
 import { Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
@@ -62,6 +62,10 @@ interface ScheduleContentProps {
   schedules: DisplaySchedule[]
   scheduleLoading: boolean
   scheduleError: ScheduleError | null
+  officialHorizon?: OfficialEventHorizon | undefined
+  contextReady?: boolean
+  enrichmentError?: boolean
+  onRetryEnrichment?: () => void
   selectedDate: string
   calendarPreferences?: CalendarPreferences
   today: string
@@ -83,6 +87,7 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
+  contextReady = true, officialHorizon, enrichmentError = false, onRetryEnrichment = () => {},
   currentTime, now, officialMode, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
   fastingModeEnabled = false, fastingEvents, timeZone, onOpenReligiousEvent = () => {},
   onChangeDate, onRetrySchedule, onSystemClockChange, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
@@ -98,8 +103,8 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
   const fastingScheduleEvents = useMemo(() => fastingEvents ?? buildFastingScheduleEvents(schedules, timeZone), [fastingEvents, schedules, timeZone])
   const ready = !scheduleLoading && !scheduleError && schedule !== null
-  const live = selectedDate === today && ready
-  const { current, next } = live ? selectEventPair(effectiveNow, events) : { current: null, next: null }
+  const live = selectedDate === today && ready && contextReady
+  const { current, next } = live ? officialMode && officialHorizon ? selectOfficialEventPair(effectiveNow, events, selectedDate, schedule.timeZone ?? 'Europe/Moscow', officialHorizon) : selectEventPair(effectiveNow, events) : { current: null, next: null }
   const religiousBanner = resolveReligiousBanner({
     now: effectiveNow,
     today,
@@ -129,9 +134,13 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
           : <>
             {religiousBanner ? <ReligiousEventBanner state={religiousBanner} onOpen={onOpenReligiousEvent} /> : null}
             <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} calendarPreferences={calendarPreferences} />
+            {enrichmentError ? <div className="screen-status" role="alert">
+              <span>{t(contextReady ? 'cachedScheduleContextUnavailable' : 'scheduleContextUnavailable')}</span>
+              <ActionButton onClick={onRetryEnrichment}>{t('retry')}</ActionButton>
+            </div> : null}
             {live && fastingModeEnabled && timeZone ? <FastingCard events={fastingScheduleEvents} preferences={fastingMode}
               selectedDate={selectedDate} today={today} timeZone={timeZone} correction={calendarPreferences.correction}
-              hijriSupported={hijriSupported} now={now} /> : null}
+              hijriSupported={hijriSupported} now={now} officialHorizon={officialHorizon} /> : null}
             {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">{t('estimatedByHighLatitude')}</p> : null}
             {live && !next ? <p className="note screen-space">{t(officialMode ? 'nextOfficialUnavailable' : 'nextEventUnavailable')}</p> : null}
           </>}

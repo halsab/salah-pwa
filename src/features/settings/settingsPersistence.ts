@@ -12,6 +12,7 @@ export function createSettingsPersistence(write: SaveSettings) {
   let status: PersistenceStatus = 'idle'
   const listeners = new Set<() => void>()
   const notify = (next: PersistenceStatus) => { status = next; for (const listener of listeners) listener() }
+  const discardPending = () => { epoch += 1; revision += 1; latest = {} }
   const save = (patch: SettingsPatch) => {
     latest = { ...latest, ...patch }
     const snapshot = latest
@@ -24,7 +25,10 @@ export function createSettingsPersistence(write: SaveSettings) {
       if (!isCurrent()) return
       try {
         const result = await write(snapshot, isCurrent)
-        if (isCurrent()) notify(result.ok ? 'saved' : 'failed')
+        if (isCurrent()) {
+          if (result.ok) latest = {}
+          notify(result.ok ? 'saved' : 'failed')
+        }
       } catch {
         if (isCurrent()) notify('failed')
       }
@@ -33,9 +37,10 @@ export function createSettingsPersistence(write: SaveSettings) {
   return {
     save,
     retry: () => save({}),
+    rebase: () => { discardPending(); notify('idle') },
     getStatus: () => status,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     drain: async () => { let current; do { current = queue; await current } while (current !== queue) },
-    invalidateAndDrain: async () => { epoch += 1; latest = {}; await queue; notify('idle') },
+    invalidateAndDrain: async () => { discardPending(); await queue; notify('idle') },
   }
 }

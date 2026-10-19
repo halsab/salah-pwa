@@ -17,12 +17,12 @@ function NavigationExample() {
   </>
 }
 
-function PreparedNavigationExample({ prepare }: { prepare: () => Promise<void> }) {
+function PreparedNavigationExample({ prepare, onFailure }: { prepare: () => Promise<void>; onFailure?: () => void }) {
   const navigation = useAppNavigation()
   if (navigation.screen === 'share') return <><p>share</p><button onClick={navigation.back}>Back</button></>
   return <>
     <p>{navigation.screen}</p>
-    <button id="prepared-caller" onClick={() => { void navigation.openPrepared('share', prepare) }}>Open when ready</button>
+    <button id="prepared-caller" onClick={() => { void navigation.openPrepared('share', prepare).catch(() => onFailure?.()) }}>Open when ready</button>
     <button id="other-focus">Other focus</button>
     <button onClick={() => navigation.open('settings')}>Settings</button>
   </>
@@ -169,4 +169,16 @@ describe('навигация экранов', () => {
     await user.click(screen.getByRole('button', { name: 'На главную' }))
     await waitFor(() => expect(screen.getByText('home')).toBeInTheDocument())
   })
+})
+
+
+it('does not surface a late preparation failure after navigation to another screen', async () => {
+  let rejectPreparation: ((reason: Error) => void) | undefined
+  const onFailure = vi.fn()
+  render(<PreparedNavigationExample prepare={() => new Promise((_resolve, reject) => { rejectPreparation = reject })} onFailure={onFailure} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Open when ready' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  await act(async () => { rejectPreparation?.(new Error('chunk unavailable')); await Promise.resolve() })
+  expect(onFailure).not.toHaveBeenCalled()
+  expect(screen.getByText('settings')).toBeVisible()
 })

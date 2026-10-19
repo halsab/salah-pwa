@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { failure, success } from '../../domain/result'
 import { automaticPreferences } from '../../domain/sourcePreferences'
+import type { SettingsPatch } from '../../storage/database'
 import { createSettingsPersistence, type SaveSettings } from './settingsPersistence'
 
 function deferred<T>() {
@@ -51,4 +52,45 @@ it('invalidates queued writes and waits for in-flight completion before reset', 
   await drain
   expect(save).toHaveBeenCalledTimes(1)
   expect(writer.getStatus()).toBe('idle')
+})
+
+it('rebases accumulated writes after accepting an external settings state', async () => {
+  const save = vi.fn().mockResolvedValue(success(undefined))
+  const writer = createSettingsPersistence(save)
+  writer.save(a)
+  await writer.drain()
+
+  writer.rebase()
+  writer.save({ themeFamily: 'classic' })
+  await writer.drain()
+
+  expect(save.mock.lastCall?.[0]).toEqual({ themeFamily: 'classic' })
+})
+
+it('reconciles an external theme over queued local writes without losing unrelated changes', async () => {
+  const stale = deferred<ReturnType<typeof success<void>>>()
+  const reconciled = deferred<ReturnType<typeof success<void>>>()
+  const save = vi.fn<SaveSettings>()
+    .mockReturnValueOnce(stale.promise)
+    .mockReturnValueOnce(reconciled.promise)
+    .mockResolvedValue(success(undefined))
+  const writer = createSettingsPersistence(save)
+  const localCalendar: SettingsPatch = { calendarPreferences: { calendar: 'gregorian', correction: 1 } }
+
+  writer.save({ themeFamily: 'classic' })
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+  writer.save(localCalendar)
+  writer.save({ themeFamily: 'seasonal' })
+  expect(save.mock.calls[0]?.[1]).toBeDefined()
+  expect(save.mock.calls[0]?.[1]?.()).toBe(false)
+
+  stale.resolve(success(undefined))
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+  expect(save.mock.calls[1]?.[0]).toEqual({ ...localCalendar, themeFamily: 'seasonal' })
+  reconciled.resolve(success(undefined))
+  await writer.drain()
+
+  writer.save({ languagePreference: 'ru' })
+  await writer.drain()
+  expect(save.mock.calls[2]?.[0]).toEqual({ languagePreference: 'ru' })
 })

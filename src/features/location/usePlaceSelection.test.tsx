@@ -24,7 +24,7 @@ function deferred<T>() {
   const promise = new Promise<T>(r => { resolve = r })
   return { resolve, promise }
 }
-function setup(overrides: Partial<AppServices & TestSettingsServices> = {}) {
+function setup(overrides: Partial<AppServices & TestSettingsServices> = {}, initial?: { place: Place; source: 'automatic' | 'manual' | 'default' }) {
   const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
   const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
   const lookup = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
@@ -40,11 +40,21 @@ function setup(overrides: Partial<AppServices & TestSettingsServices> = {}) {
   const chosen = vi.fn()
   const writer = createSettingsPersistence(services.saveSettings)
   const persist = (choice: Parameters<typeof writer.save>[0]['locationChoice']) => writer.save(choice ? { locationChoice: choice } : {})
-  const hook = renderHook(() => usePlaceSelection(services, locations, chosen, persist))
+  const hook = renderHook(() => usePlaceSelection(services, locations, chosen, persist, initial))
   return { ...hook, services, coarse, precise, lookup, chosen }
 }
 
 describe('one-shot GPS operations', () => {
+  it('does not reacquire a fresh restored GPS fix', () => {
+    const place = createGpsPlace({ ...goodCoarseFix, timestamp: 1000 }, 'America/Los_Angeles', geometry, 'gps:cached')
+    const h = setup({}, { place, source: 'automatic' })
+
+    expect(h.result.current.place).toMatchObject({ id: 'gps:cached', timestamp: 1000 })
+    expect(h.services.getPermission).not.toHaveBeenCalled()
+    expect(h.services.getPosition).not.toHaveBeenCalled()
+    h.unmount()
+  })
+
   it('publishes a poor coarse point and waits for precise refinement before navigation', async () => {
     const h = setup()
     let pending!: Promise<void>

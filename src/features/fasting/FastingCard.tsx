@@ -1,3 +1,4 @@
+import type { OfficialEventHorizon } from '../../domain/scheduleEvents'
 import { addDays } from '../../domain/date'
 import { fastingProgress, resolveFastingTimeline, type FastingModePreferences, type FastingScheduleEvents } from '../../domain/fasting'
 import { getCivilDate } from '../../domain/locationTime'
@@ -35,7 +36,7 @@ function FastingEndpoint({ prefix, dateLabel, time, compact }: FastingEndpointDa
   </span>
 }
 
-export function FastingCard({ events, preferences, selectedDate, today, timeZone, correction, hijriSupported, now }: {
+export function FastingCard({ events, preferences, selectedDate, today, timeZone, correction, hijriSupported, now, officialHorizon }: {
   events: FastingScheduleEvents
   preferences: FastingModePreferences
   selectedDate: string
@@ -44,6 +45,7 @@ export function FastingCard({ events, preferences, selectedDate, today, timeZone
   correction: -1 | 0 | 1
   hijriSupported: boolean
   now: () => Date
+  officialHorizon?: OfficialEventHorizon | undefined
 }) {
   const { locale, t } = useLocalization()
   const currentTime = now()
@@ -57,6 +59,7 @@ export function FastingCard({ events, preferences, selectedDate, today, timeZone
     hijriSupported,
     preferences,
     events,
+    officialHorizon,
   }) : null
   useLiveClock(timeline !== null)
 

@@ -99,7 +99,11 @@ export function useAppNavigation() {
   const openPrepared = useCallback(async (target: NavigationTarget, prepare: () => Promise<void>) => {
     const generation = ++intentGeneration.current
     const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement.id || null : null
-    await prepare()
+    try { await prepare() }
+    catch (error) {
+      if (intentGeneration.current !== generation) return
+      throw error
+    }
     if (intentGeneration.current !== generation) return
     open(target, returnFocus)
   }, [open])

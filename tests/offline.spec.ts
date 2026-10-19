@@ -38,6 +38,10 @@ test('сохранённое расписание и поиск города р�
 
     await page.reload({ waitUntil: 'domcontentloaded' })
     await expectSchedule(page, 7)
+    await page.locator('#home-settings').click()
+    await expect(page.getByRole('button', { name: 'Данные и конфиденциальность' })).toBeVisible()
+    await page.goBack()
+    await expectSchedule(page, 7)
     await page.locator('#home-date').click()
     await page.getByRole('button', { name: 'Праздники и события' }).click()
     await expect(page.locator('.religious-event-list-row').first()).toBeVisible()

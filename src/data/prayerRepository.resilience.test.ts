@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { completeDataset } from '../test/prayerDataset'
 import { deleteSalahDatabase, getDatasetMeta, replaceDataset } from '../storage/database'
+import * as database from '../storage/database'
 import { createPrayerRepository } from './prayerRepository'
+import { getDatasetRevision } from '../domain/scheduleContext'
 import type { PrayerDataset, PrayerDatasetManifest } from '../domain/types'
 import type { PrayerProvider } from './prayerProviders'
 
@@ -147,4 +149,56 @@ it('refreshes independent provider manifests without replacing the other provide
   expect(secondFetch.mock.calls[0]?.[0]).toBe(secondProvider.manifestUrl)
   expect(firstResult.meta?.providerInfo?.timeZone).toBe('Asia/Almaty')
   expect(secondResult.meta?.providerInfo?.timeZone).toBe('Europe/Istanbul')
+})
+
+
+it.each(['unchanged', 'offline'] as const)('routine %s refresh validates metadata without reading every prayer row', async scenario => {
+  await replaceDataset(dataset, manifest())
+  const scan = vi.spyOn(database, 'getStoredDataset')
+  const fetcher = scenario === 'offline'
+    ? vi.fn().mockRejectedValue(new TypeError('offline'))
+    : vi.fn().mockResolvedValue(response(manifest()))
+  const repo = createPrayerRepository({ fetch: fetcher })
+  await repo.initializeStartup()
+  await repo.refresh()
+  await repo.refresh()
+  expect(scan).not.toHaveBeenCalled()
+  expect(await repo.getDays('kazan', [dataset.days[0]?.date ?? '2026-01-01'],
+    databaseResultRevision(await getDatasetMeta()))).toMatchObject({ ok: true })
+})
+
+function databaseResultRevision(result: Awaited<ReturnType<typeof getDatasetMeta>>): string {
+  if (!result.ok || !result.value) throw new Error('Missing fixture metadata')
+  return getDatasetRevision(result.value)
+}
+
+
+it('a late startup read cannot replace the repository generation after reset', async () => {
+  const old = await database.getStartupData()
+  if (!old.ok) throw new Error('Fixture startup failed')
+  let finish: ((value: typeof old) => void) | undefined
+  const read = vi.spyOn(database, 'getStartupData').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+  const repo = createPrayerRepository()
+  const stale = repo.initializeStartup()
+  await repo.invalidateAndDrain()
+  await database.clearAppData()
+  await repo.initializeStartup()
+  finish?.(old)
+  await stale
+  expect(await repo.saveSettings({ languagePreference: 'ru' })).toMatchObject({ ok: true })
+  expect(await database.getSetting('languagePreference')).toMatchObject({ ok: true, value: 'ru' })
+  read.mockRestore()
+})
+
+
+it('repairs a corrupt served row even when a lightweight update manifest matches its stored identity', async () => {
+  const missing = dataset.days[0]
+  if (!missing) throw new Error('Missing dataset fixture')
+  await replaceDataset({ ...dataset, days: dataset.days.slice(1) }, manifest())
+  const repo = createPrayerRepository({ fetch: update(), digest: () => Promise.resolve('a'.repeat(64)) })
+  await repo.initializeStartup()
+  const revision = databaseResultRevision(await getDatasetMeta())
+  expect(await repo.getDays(missing.locationId, [missing.date], revision)).toMatchObject({ ok: true, value: [undefined] })
+  expect(await repo.refresh()).toMatchObject({ dataState: 'ready' })
+  expect(await repo.getDays(missing.locationId, [missing.date], revision)).toMatchObject({ ok: true, value: [missing] })
 })

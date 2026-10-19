@@ -1,5 +1,6 @@
 import { createOfficialPlace, type Place } from '../../domain/place'
-import { getDatasetRevision } from '../../domain/scheduleContext'
+import { getDatasetRevision, type ScheduleContext } from '../../domain/scheduleContext'
+import { automaticPreferences } from '../../domain/sourcePreferences'
 import type { SavedCoordinates } from '../../domain/types'
 import { required } from '../../test/required'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -11,6 +12,7 @@ import { buildScheduleEvents, selectEventPair } from '../../domain/scheduleEvent
 import * as calculation from '../../domain/prayerCalculation'
 import type { PrayerDay } from '../../domain/types'
 import type { DatasetMeta } from '../../storage/database'
+import type { FastScheduleStartup } from './fastScheduleSnapshot'
 import { usePrayerSchedules } from './usePrayerSchedules'
 
 type Options = { services: Parameters<typeof usePrayerSchedules>[0]['services']; meta: DatasetMeta; locationId: string; locationMode: 'official' | 'calculated'; calculatedLocation: SavedCoordinates | null; calculationSettings: calculation.CalculationSettings; selectedDate: string; timeZone: string }
@@ -44,7 +46,7 @@ function observe(initialProps: Options) {
     const local = required(props.meta.locations.find(l => l.id === props.locationId))
     const place: Place = { ...createOfficialPlace(local, 0), ...(props.calculatedLocation ?? {}), id: official ? local.id : String(props.calculatedLocation?.cityId ?? 'coordinates') }
     const value = usePrayerSchedules({ services: props.services, location: place, selectedDate: props.selectedDate, mode: 'manual',
-      resolution: official ? { kind: 'official', status: 'ready', provider: 'dumRt', version: props.meta.identity?.version ?? 'legacy', revision: getDatasetRevision(props.meta), coverage: 'RU-TA', locationId: props.locationId, timeZone: props.timeZone }
+      resolution: official ? { kind: 'official', status: 'ready', provider: 'dumRt', version: props.meta.identity?.version ?? 'legacy', revision: getDatasetRevision(props.meta), coverage: 'RU-TA', locationId: props.locationId, timeZone: props.timeZone, dateCoverage: { schemaVersion: props.meta.schemaVersion, years: props.meta.source.years, ...props.meta.providerInfo?.coverage } }
         : { kind: 'calculated', status: 'ready', settings: props.calculationSettings, timeZone: props.timeZone, strategy: 'manual' } })
     renders.push(value)
     return value
@@ -56,6 +58,35 @@ function expectHidden(result: ReturnType<typeof usePrayerSchedules> | undefined)
 }
 
 describe('usePrayerSchedules', () => {
+  it('keeps a degraded snapshot visible but waits for missing covered neighbors before live readiness', async () => {
+    const selectedDate = '2026-09-01'
+    const location = required(meta.locations.find(item => item.id === 'A'))
+    const place = { ...createOfficialPlace(location, 0), id: 'A' }
+    const context: ScheduleContext = {
+      location: { id: place.id, latitude: place.latitude, longitude: place.longitude },
+      date: selectedDate, timeZone: 'Europe/Moscow', mode: 'automatic', source: 'official',
+      provider: 'dumRt', datasetRevision: getDatasetRevision(meta), datasetVersion: 'v1', coverage: 'RU-TA', localityId: 'A',
+    }
+    const snapshot: FastScheduleStartup = {
+      generation: 'generation', context,
+      schedule: { ...day('A', selectedDate), timeZone: 'Europe/Moscow',
+        coordinates: { latitude: place.latitude, longitude: place.longitude } },
+      neighbors: [{ ...day('A', '2026-08-31'), timeZone: 'Europe/Moscow',
+        coordinates: { latitude: place.latitude, longitude: place.longitude } }],
+      place, selectionSource: 'default', preferences: automaticPreferences(), meta,
+    }
+    const services = { getDays: vi.fn((_id: string, dates: readonly string[]) => Promise.resolve(dates.map(date => day('A', date)))) }
+    const hook = renderHook(() => usePrayerSchedules({ services, location: place,
+      resolution: { kind: 'official', status: 'ready', provider: 'dumRt', version: 'v1', revision: getDatasetRevision(meta),
+        coverage: 'RU-TA', locationId: 'A', timeZone: 'Europe/Moscow',
+        dateCoverage: { schemaVersion: 2, years: [2026] } }, mode: 'automatic', selectedDate, initialSnapshot: snapshot }))
+
+    expect(hook.result.current.schedule).toMatchObject({ locationId: 'A', date: selectedDate })
+    expect(hook.result.current.contextReady).toBe(false)
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+    expect(hook.result.current.schedules.map(item => item.date).sort()).toEqual(['2026-08-31', selectedDate, '2026-09-02'])
+  })
+
   it.each([
     ['место', (o: Options) => ({ ...o, locationId: 'B' })],
     ['дата', (o: Options) => ({ ...o, selectedDate: '2026-09-02' })],
@@ -84,34 +115,62 @@ describe('usePrayerSchedules', () => {
   })
 
   it('при A → B → C не принимает прежние ответы и ошибки даже после готовности C', async () => {
-    const pending = new Map<string, ReturnType<typeof deferred<(PrayerDay | undefined)[]>>>()
+    const pending: { id: string; dates: readonly string[]; request: ReturnType<typeof deferred<(PrayerDay | undefined)[]>> }[] = []
     const initial = options()
-    initial.services.getDays = vi.fn((id: string) => {
+    initial.services.getDays = vi.fn((id: string, dates: readonly string[]) => {
       const request = deferred<(PrayerDay | undefined)[]>()
-      pending.set(id, request)
+      pending.push({ id, dates, request })
       return request.promise
     })
     const hook = observe(initial)
     hook.rerender({ ...initial, locationId: 'B' })
     hook.rerender({ ...initial, locationId: 'C' })
-    const requestedDates = Array.from({ length: 9 }, (_, index) => addDays('2026-09-01', index - 4))
+    const resolveDays = (item: typeof pending[number]) => item.dates.map(date => day(item.id, date))
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'A') request.resolve(requestedDates.map((date) => day('A', date)))
+      for (const item of pending) if (item.id === 'A' && item.dates.length === 1) item.request.resolve(resolveDays(item))
       await Promise.resolve()
     })
     expectHidden(hook.result.current)
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'C') request.resolve(requestedDates.map((date) => day('C', date)))
+      for (const item of pending) if (item.id === 'C' && item.dates.length === 1) item.request.resolve(resolveDays(item))
       await Promise.resolve()
     })
-    expect(hook.result.current.schedule).toMatchObject({ locationId: 'C' })
+    await waitFor(() => expect(hook.result.current.schedule).toMatchObject({ locationId: 'C' }))
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'B') request.reject(new Error('old error'))
+      for (const item of pending) if (item.id === 'C' && item.dates.length === 2) item.request.resolve(resolveDays(item))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+    await act(async () => {
+      for (const item of pending) if (item.id === 'B') item.request.reject(new Error('old error'))
       await Promise.resolve()
     })
     expect(hook.result.current.scheduleError).toBeNull()
     expect(hook.result.current.previousSchedule).toMatchObject({ locationId: 'C' })
     expect(hook.result.current.tomorrow).toMatchObject({ locationId: 'C' })
+  })
+
+  it('оставляет выбранный официальный день видимым, пока оба соседних дня не загружены, и повторяет дополнение', async () => {
+    const initial = options()
+    let enrichmentCalls = 0
+    initial.services.getDays = vi.fn((id: string, dates: readonly string[]) => Promise.resolve(
+      dates.length === 1 ? [day(id, dates[0] ?? '')]
+        : enrichmentCalls++ === 0 ? [undefined, day(id, dates[1] ?? '')]
+          : [day(id, dates[0] ?? ''), day(id, dates[1] ?? '')],
+    ))
+    const hook = observe(initial)
+
+    await waitFor(() => expect(hook.result.current.schedule).toMatchObject({ locationId: 'A', date: initial.selectedDate }))
+    await waitFor(() => expect(hook.result.current.enrichmentError).toBe(true))
+    expect(hook.result.current.contextReady).toBe(false)
+    expect(hook.result.current.schedules).toHaveLength(1)
+    expect(hook.result.current.scheduleError).toBeNull()
+
+    act(() => hook.result.current.retryEnrichment())
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+    expect(hook.result.current.enrichmentError).toBe(false)
+    expect(hook.result.current.previousSchedule?.date).toBe(addDays(initial.selectedDate, -1))
+    expect(hook.result.current.tomorrow?.date).toBe(addDays(initial.selectedDate, 1))
   })
 
   it('смена расчётных координат, timezone, даты и каждой эффективной настройки сразу скрывает старые значения', async () => {
@@ -136,7 +195,7 @@ describe('usePrayerSchedules', () => {
       const first = hook.renders.length
       hook.rerender(current)
       expectHidden(hook.renders[first])
-      await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+      await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
     }
   })
 
@@ -161,7 +220,7 @@ describe('usePrayerSchedules', () => {
     const first = hook.renders.length
     act(() => hook.result.current.retrySchedule())
     expectHidden(hook.renders[first])
-    await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
     expect(vi.mocked(initial.services.getDays).mock.lastCall?.[0]).toBe('C')
   })
 })
@@ -173,7 +232,7 @@ describe('окно событий и гонки источников', () => {
   ])('покрывает календарные сутки даже при смещениях рассчитанных событий: $timeZone', async (place) => {
     const initial: Options = { ...options(), locationMode: 'calculated', timeZone: place.timeZone, selectedDate: '2026-06-21', calculatedLocation: { ...place, accuracy: null, timestamp: 0 } }
     const hook = observe(initial)
-    await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
     expect(hook.result.current.scheduleError).toBeNull()
     expect(hook.result.current.schedules.map(({ date }) => date)).toEqual(['2026-06-17', '2026-06-18', '2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25'])
     const loaded = hook.result.current.schedules.flatMap(buildScheduleEvents)
@@ -228,4 +287,19 @@ it('invalidates official schedule context when the real GPS point changes under 
   expect(hook.result.current.contextKey).not.toBe(oldKey)
   expect(hook.result.current.schedule).toBeNull()
   await act(async () => { next.resolve([day('A', initial.selectedDate)]); await next.promise })
+})
+
+
+it.each(['2026-01-01', '2026-12-31'])('uses only verified covered neighbors at official boundary %s', async selectedDate => {
+  const initial = { ...options(), selectedDate }
+  initial.services.getDays = vi.fn((id: string, dates: readonly string[]) => Promise.resolve(dates.map(date => date.startsWith('2026-') ? day(id, date) : undefined)))
+  const hook = observe(initial)
+  await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+  await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+  expect(hook.result.current.enrichmentError).toBe(false)
+  expect(hook.result.current.schedules.every(row => row.date.startsWith('2026-'))).toBe(true)
+  const events = hook.result.current.schedules.flatMap(buildScheduleEvents)
+  const late = selectEventPair(zonedDateTimeToInstant(selectedDate, '23:59', 'Europe/Moscow'), events)
+  if (selectedDate === '2026-12-31') expect(late.next).toBeNull()
+  else expect(late.next?.scheduleDate).toBe('2026-01-02')
 })

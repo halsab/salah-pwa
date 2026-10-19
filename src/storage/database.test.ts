@@ -8,6 +8,9 @@ import type { PrayerDataset } from '../domain/types'
 import {
   deleteSalahDatabase,
   getDatasetMeta,
+  getStartupData,
+  getSettings,
+  clearAppData,
   getLocationChoice,
   getPrayerDay,
   getPrayerDays,
@@ -532,4 +535,26 @@ it.each([0, 2])('preserves the implicit old default only before any reset (gener
   database.close()
   expect(unwrap(await getLocationChoice())).toEqual(generation === 0
     ? { mode: 'official', locationId: 'kazan', source: 'default' } : undefined)
+})
+
+
+it('reads startup generation, revision and selection in one coherent transaction across reset', async () => {
+  await saveLocationChoice({ mode: 'official', locationId: 'kazan', source: 'manual' })
+  const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction')
+  const startup = getStartupData()
+  const reset = clearAppData()
+  const before = await startup
+  await reset
+  expect(before).toMatchObject({ ok: true, value: { generation: 0, choice: { locationId: 'kazan' } } })
+  expect(transaction.mock.calls.filter(call => Array.isArray(call[0]) && call[0].includes('control') && call[0].includes('settings') && !call[0].includes('days'))).toHaveLength(1)
+  expect(await getStartupData()).toMatchObject({ ok: true, value: { generation: 1, choice: undefined, meta: undefined } })
+  transaction.mockRestore()
+})
+
+it('reads optional preferences in a single transaction', async () => {
+  await getSetting('themeFamily')
+  const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction')
+  expect(await getSettings(['themeFamily', 'calendarPreferences', 'fastingMode'])).toMatchObject({ ok: true })
+  expect(transaction).toHaveBeenCalledTimes(1)
+  transaction.mockRestore()
 })
