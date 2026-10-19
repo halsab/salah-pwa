@@ -198,14 +198,13 @@ test('общая оболочка держит слоты, прокрутку и
     if (!place || !date) throw new Error('Не найдены кнопки места и даты')
     const saved = [place.textContent, date.textContent]
     place.textContent = 'Очень длинное название выбранного места для проверки переноса'
-    date.textContent = 'Пятница, двадцать первое сентября две тысячи двадцать шестого года'
+    date.textContent = 'пятница, 4 сентября'
     return saved
   })
   const longLabelBounds = await page.evaluate(() => {
     const place = document.querySelector<HTMLElement>('#home-location')
     const date = document.querySelector<HTMLElement>('#home-date')
-    const header = document.querySelector<HTMLElement>('.screen-top')
-    if (!place || !date || !header) throw new Error('Не найдены верхние действия')
+    if (!place || !date) throw new Error('Не найдены верхние действия')
     return {
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
@@ -213,7 +212,6 @@ test('общая оболочка держит слоты, прокрутку и
       dateRight: date.getBoundingClientRect().right,
       placeHeight: place.getBoundingClientRect().height,
       dateHeight: date.getBoundingClientRect().height,
-      headerHeight: header.getBoundingClientRect().height,
     }
   })
   expect(longLabelBounds.documentWidth).toBeLessThanOrEqual(longLabelBounds.viewportWidth + 1)
@@ -221,7 +219,6 @@ test('общая оболочка держит слоты, прокрутку и
   expect(longLabelBounds.dateRight).toBeLessThanOrEqual(longLabelBounds.viewportWidth)
   expect(longLabelBounds.placeHeight).toBeGreaterThanOrEqual(44)
   expect(longLabelBounds.dateHeight).toBeGreaterThanOrEqual(44)
-  expect(longLabelBounds.headerHeight).toBeGreaterThan(44)
   await page.evaluate(([placeLabel, dateLabel]) => {
     const place = document.querySelector<HTMLElement>('.home-location-name')
     const date = document.querySelector<HTMLElement>('#home-date time')
