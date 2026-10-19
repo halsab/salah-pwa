@@ -370,6 +370,65 @@ describe('Salah', () => {
     })
   })
 
+  it('не отменяет ожидающую внешнюю смену места при приходе темы из другой вкладки', async () => {
+    const localStore = memoryStorage()
+    vi.stubGlobal('localStorage', localStore)
+    const remote = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
+    const remoteState: PrayerRepositoryState = { ...initialized({
+      locationChoice: { mode: 'official', locationId: 'naberezhnye-chelny', source: 'manual' },
+    }).value }
+    delete remoteState.themeFamily
+    const initialize = vi.fn().mockImplementation(() => initialize.mock.calls.length === 1
+      ? Promise.resolve(initialized()) : remote.promise)
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    render(<App services={createServices({ initialize, saveSettings })} />)
+    await screen.findByRole('timer')
+
+    invalidateFastScheduleSnapshot()
+    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.activeContext })) })
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2))
+
+    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
+    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+    await act(async () => { remote.resolve(success(remoteState)); await remote.promise })
+
+    expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()
+    expect(await screen.findByText('16:37')).toBeVisible()
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+    expect(screen.queryByText('Расписание временно скрыто')).not.toBeInTheDocument()
+  })
+
+  it('применяет необязательные настройки при теме, пришедшей во время их чтения', async () => {
+    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, JSON.stringify({ version: 1, themeFamily: 'classic' }))
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const startupState: PrayerRepositoryState = { ...initializedState }
+    delete startupState.themeFamily
+    const loadOptionalSettings = vi.fn(() => optional.promise)
+    render(<App services={createServices({
+      initializeStartup: vi.fn().mockResolvedValue(success(startupState)), loadOptionalSettings,
+      saveSettings: vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined)),
+    })} />)
+    await screen.findByRole('timer')
+    await waitFor(() => expect(loadOptionalSettings).toHaveBeenCalledTimes(1))
+
+    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
+    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
+    await act(async () => {
+      optional.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'hijri', correction: 1 },
+        themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
+      await optional.promise
+    })
+
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+    expect(document.documentElement.lang).toBe('ru')
+    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
+    expect(screen.getByRole('combobox', { name: 'Календарь' })).toHaveValue('hijri')
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    expect(await screen.findByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('сбрасывает устаревшее место из очереди записи после внешней синхронизации', async () => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)
@@ -502,6 +561,36 @@ describe('Salah', () => {
     expect(restoredMarker.contextKey).toBe(scheduleContextKey(restoredSnapshot.context))
     expect(restoredMarker.generation).not.toBe(oldMarker.generation)
     view.unmount()
+  })
+
+  it('игнорирует необязательные настройки, прочитанные до успешного сброса', async () => {
+    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, JSON.stringify({ version: 1, themeFamily: 'classic' }))
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const clearAppData = vi.fn().mockResolvedValue(success(undefined))
+    const loadOptionalSettings = vi.fn(() => optional.promise)
+    const startupState: PrayerRepositoryState = { ...initializedState }
+    delete startupState.themeFamily
+    render(<App services={createServices({
+      initializeStartup: vi.fn().mockResolvedValue(success(startupState)),
+      loadOptionalSettings, clearAppData,
+    })} />)
+    await screen.findByRole('timer')
+    await waitFor(() => expect(loadOptionalSettings).toHaveBeenCalledTimes(1))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Данные и конфиденциальность' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
+    await waitFor(() => expect(clearAppData).toHaveBeenCalledTimes(1))
+    expect(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY)).toBeNull()
+
+    await act(async () => {
+      optional.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'hijri', correction: 1 },
+        themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
+      await optional.promise
+    })
+    expect(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY)).toBeNull()
+    expect(document.documentElement.dataset.theme).toBe('classic')
   })
 
   it('не повторяет инициализацию и не сбрасывает текущий экран при смене языкового предпочтения', async () => {
@@ -1264,6 +1353,33 @@ describe('Salah', () => {
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('seasonal'))
     await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'seasonal' }, expect.any(Function)))
+    expect(initialize).toHaveBeenCalledTimes(1)
+  })
+
+  it('объединяет дублирующие storage и BroadcastChannel уведомления темы', async () => {
+    let receive: ((event: MessageEvent) => void) | null = null
+    class TestBroadcastChannel {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      constructor(name: string) { if (name === 'salah-theme-preference-v1') receive = event => this.onmessage?.(event) }
+      postMessage = vi.fn()
+      close = vi.fn()
+    }
+    vi.stubGlobal('BroadcastChannel', TestBroadcastChannel)
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const initialize = vi.fn().mockResolvedValue(initialized({ themeFamily: 'classic' }))
+    render(<App services={createServices({ initialize, saveSettings })} />)
+    await screen.findByRole('timer')
+
+    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value }))
+      receive?.({ data: 'seasonal' } as MessageEvent)
+      receive?.({ data: 'seasonal' } as MessageEvent)
+      window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value }))
+    })
+
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('seasonal'))
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1))
     expect(initialize).toHaveBeenCalledTimes(1)
   })
 

@@ -139,6 +139,10 @@ export function App({
   const fastGenerationRef = useRef(fastGeneration)
   const activeFastContext = useRef(startupSnapshot ? scheduleContextKey(startupSnapshot.context) : null)
   const selectionSyncToken = useRef(0)
+  const optionalSettingsToken = useRef(0)
+  const retryOptionalSettings = useRef<() => void>(() => {})
+  const themePreferenceRevision = useRef(0)
+  const lastRemoteThemeFamily = useRef<ThemeFamily | null>(null)
   const [remoteSelectionPending, setRemoteSelectionPending] = useState(false)
   const retrySelectionSync = useRef<() => void>(() => {})
   const invalidateFastCache = useCallback(() => {
@@ -195,7 +199,10 @@ export function App({
   const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain
   const acceptRemoteTheme = useCallback((nextThemeFamily: ThemeFamily) => {
-    selectionSyncToken.current += 1
+    if (lastRemoteThemeFamily.current === nextThemeFamily) return
+    lastRemoteThemeFamily.current = nextThemeFamily
+    if (!editedTheme.current && persistedThemeFamily.current === nextThemeFamily) return
+    themePreferenceRevision.current += 1
     editedTheme.current = false
     setThemeEditedLocally(false)
     persistedThemeFamily.current = nextThemeFamily
@@ -283,18 +290,25 @@ export function App({
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
   const resetWithFastCache = useCallback(async () => {
     pendingFastIdentityWrite.current = true
+    optionalSettingsToken.current += 1
+    themePreferenceRevision.current += 1
     setFastCacheReady(false)
     invalidateFastCache()
     clearThemePreferenceCache()
     setThemeEditedLocally(false)
     const cleared = await reset()
-    if (!cleared) {
+    if (cleared) {
+      lastRemoteThemeFamily.current = null
+    } else {
       pendingFastIdentityWrite.current = false
       setFastCacheReady(true)
+      themePreferenceRevision.current += 1
       editedTheme.current = false
       setThemeEditedLocally(false)
       setThemeFamily(persistedThemeFamily.current)
+      lastRemoteThemeFamily.current = persistedThemeFamily.current
       writeThemePreferenceCache(persistedThemeFamily.current)
+      retryOptionalSettings.current()
     }
     return cleared
   }, [invalidateFastCache, reset])
@@ -340,6 +354,8 @@ export function App({
       if (!editedCalendar.current && state.calendarPreferences !== undefined) setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
       if (!editedTheme.current && state.themeFamily !== undefined) {
         const nextThemeFamily = restoreThemeFamily(state.themeFamily)
+        themePreferenceRevision.current += 1
+        lastRemoteThemeFamily.current = nextThemeFamily
         persistedThemeFamily.current = nextThemeFamily
         setThemeFamily(nextThemeFamily)
         writeThemePreferenceCache(nextThemeFamily)
@@ -352,10 +368,13 @@ export function App({
       setStartupInitialized(true)
       setRemoteSelectionPending(false)
     }
-    const hydrateOptionalSettings = (locationId?: string, token = selectionSyncToken.current) => {
+    const hydrateOptionalSettings = (locationId?: string) => {
       if (!services.loadOptionalSettings) return
+      retryOptionalSettings.current = () => hydrateOptionalSettings(locationId)
+      const token = ++optionalSettingsToken.current
+      const themeRevision = themePreferenceRevision.current
       void services.loadOptionalSettings(locationId).then(result => {
-        if (!active || token !== selectionSyncToken.current) return
+        if (!active || token !== optionalSettingsToken.current) return
         if (!result.ok) { setOptionalSettingsError(true); return }
         const value: PrayerRepositoryOptionalSettings = result.value
         if (!editedRecentPlaces.current) {
@@ -363,8 +382,9 @@ export function App({
           setRecentPlaces(value.recentPlaces)
         }
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))
-        if (!editedTheme.current) {
+        if (!editedTheme.current && themeRevision === themePreferenceRevision.current) {
           const nextThemeFamily = restoreThemeFamily(value.themeFamily)
+          lastRemoteThemeFamily.current = nextThemeFamily
           persistedThemeFamily.current = nextThemeFamily
           setThemeFamily(nextThemeFamily)
           writeThemePreferenceCache(nextThemeFamily)
@@ -373,7 +393,7 @@ export function App({
         setLanguagePreference(value.languagePreference)
         setOptionalSettingsError(false)
       }).catch(() => {
-        if (active && token === selectionSyncToken.current) setOptionalSettingsError(true)
+        if (active && token === optionalSettingsToken.current) setOptionalSettingsError(true)
       })
     }
     const unsubscribe = services.subscribe(snapshot => {
@@ -435,7 +455,7 @@ export function App({
         }
         acceptState(result.value, false, 'external')
         setSelectionSyncError(false)
-        hydrateOptionalSettings(result.value.locationChoice?.place?.id, token)
+        hydrateOptionalSettings(result.value.locationChoice?.place?.id)
       }).catch(() => {
         if (active && token === selectionSyncToken.current) {
           setSelectionSyncError(true)
@@ -480,7 +500,16 @@ export function App({
     window.addEventListener('online', refresh)
     window.addEventListener('pageshow', refresh)
     window.addEventListener('storage', handleStorage)
-    return () => { active = false; retrySelectionSync.current = () => {}; unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('pageshow', refresh); window.removeEventListener('storage', handleStorage); void services.invalidateAndDrain() }
+    return () => {
+      active = false
+      retrySelectionSync.current = () => {}
+      retryOptionalSettings.current = () => {}
+      unsubscribe()
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('pageshow', refresh)
+      window.removeEventListener('storage', handleStorage)
+      void services.invalidateAndDrain()
+    }
   }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
@@ -634,6 +663,8 @@ export function App({
     persistence.save({ calendarPreferences: next })
   }
   const updateThemeFamily = (next: ThemeFamily) => {
+    themePreferenceRevision.current += 1
+    lastRemoteThemeFamily.current = null
     editedTheme.current = true
     setThemeFamily(next)
     setThemeEditedLocally(true)
