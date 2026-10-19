@@ -136,9 +136,11 @@ html[data-input='pointer'] .select-field { outline: none; }
 }
 
 .app-layout { container-type: inline-size; }
-.home-location { min-width: 44px; height: var(--button-height); flex: 0 1 auto; max-width: min(100%, 24rem); gap: 6px; white-space: nowrap; }
+.screen-top:has(#home-date) { flex-wrap: nowrap; gap: 8px; }
+.home-location { min-width: 44px; height: var(--button-height); flex: 0 1 auto; max-width: min(100%, 24rem); overflow: hidden; gap: 6px; white-space: nowrap; }
 .home-location-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; }
 .home-location-time { flex: 0 0 auto; }
+#home-date { flex: 0 0 auto; white-space: nowrap; }
 .event-countdown { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; color: var(--text-primary); }
 .event-countdown .countdown-label, .event-countdown .countdown-value { line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-countdown .countdown-label { font: var(--font-emphasis); line-height: 1.05; color: var(--text-secondary); }

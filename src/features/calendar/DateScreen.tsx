@@ -32,12 +32,12 @@ export function DateScreen({ selectedDate, today, preferences, hijriSupported, o
   onDateChange: (date: string) => void; onPreferencesChange: (preferences: CalendarPreferences) => void
   onOpenReligiousEvents: () => void; onBack: () => void; notice?: ReactNode
 }) {
-  const { t } = useLocalization()
+  const { locale, t } = useLocalization()
   const dayRef = useRef<HTMLSelectElement>(null)
   const { calendar, correction } = preferences
   const date = calendarDateFromCivil(selectedDate, calendar, correction)
   const currentYear = calendarDateFromCivil(today, calendar, correction).year
-  const months = calendarMonthLabels(t, calendar)
+  const months = calendarMonthLabels(t, calendar, locale)
   const updateDate = (patch: Partial<CalendarDate>) => onDateChange(civilDateFromCalendar({ ...date, ...patch }, calendar, correction))
 
   return <Screen label={t('dateSetup')} top={<BackButton onClick={onBack} />} contentClassName="screen-center"

@@ -11,7 +11,7 @@ import type { ScheduleError } from './usePrayerSchedules'
 import { PROFILE_LABEL_KEYS } from '../../ui/calculationLabels'
 import type { DisplaySchedule } from './usePrayerSchedules'
 import { useLocalization } from '../../localization'
-import { formatLocalizedCalendarDate } from '../../localization/calendar'
+import { formatLocalizedCalendarFullDate } from '../../localization/calendar'
 import { FastingCard } from '../fasting/FastingCard'
 import { DEFAULT_FASTING_MODE_PREFERENCES, buildFastingScheduleEvents, type FastingModePreferences, type FastingScheduleEvents } from '../../domain/fasting'
 import { useClockCorrection } from '../../ui/useLiveClock'
@@ -47,7 +47,7 @@ function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
       return <li key={event.key} className={`event-row${past ? ' event-past' : ''}${active ? ' event-current' : ''}`} aria-current={active || undefined}>
         <div className="event-name"><span>{t(LABELS[event.key])}</span>
           {event.key === 'zenith' && event.provenance === 'calculated' ? <small className="event-provenance">{t('calculatedZenith')}</small> : null}
-          {event.status === 'resolved' && event.dayOffset ? <small className="event-day">{formatLocalizedCalendarDate(event.date, calendarPreferences, locale)}</small> : null}
+          {event.status === 'resolved' && event.dayOffset ? <small className="event-day">{formatLocalizedCalendarFullDate(event.date, calendarPreferences, locale)}</small> : null}
         </div>
         {event.status === 'resolved'
           ? <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>

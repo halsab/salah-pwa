@@ -24,9 +24,12 @@ const COMPACT_HIJRI_MONTH_KEYS = [
   'hijriRamadan', 'hijriShawwal', 'hijriDhulQadah', 'hijriDhulHijjah',
 ] as const satisfies readonly MessageKey[]
 
-export function calendarMonthLabels(t: Translator, calendar: CalendarKind): string[] {
+export function calendarMonthLabels(t: Translator, calendar: CalendarKind, locale: SupportedLocale = 'ru'): string[] {
   const keys = calendar === 'hijri' ? HIJRI_MONTH_KEYS : GREGORIAN_MONTH_KEYS
-  return keys.map(key => t(key))
+  return keys.map(key => {
+    const label = t(key)
+    return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1)
+  })
 }
 
 export function formatLocalizedCalendarDate(
@@ -40,6 +43,29 @@ export function formatLocalizedCalendarDate(
   const parts = calendarDateFromCivil(date, 'hijri', preferences.correction)
   const monthKey = COMPACT_HIJRI_MONTH_KEYS[parts.month - 1]
   return monthKey ? `${parts.day} ${translate(locale, monthKey)}` : String(parts.day)
+}
+
+export function formatLocalizedCalendarFullDate(
+  date: string,
+  preferences: CalendarPreferences,
+  locale: SupportedLocale = 'ru',
+): string {
+  if (preferences.calendar === 'gregorian') {
+    return formatLocaleDate(date, locale, { day: 'numeric', month: 'long' })
+  }
+  const parts = calendarDateFromCivil(date, 'hijri', preferences.correction)
+  const month = formatLocalizedHijriMonth(parts.month, locale)
+  return month ? `${parts.day} ${month}` : String(parts.day)
+}
+
+export function formatLocalizedHijriDate(
+  date: string,
+  preferences: CalendarPreferences,
+  locale: SupportedLocale = 'ru',
+): string {
+  const parts = calendarDateFromCivil(date, 'hijri', preferences.correction)
+  const month = formatLocalizedHijriMonth(parts.month, locale)
+  return month ? `${parts.day} ${month} ${parts.year}` : `${parts.day} ${parts.year}`
 }
 
 export function formatLocalizedGregorianDate(
