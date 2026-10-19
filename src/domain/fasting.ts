@@ -1,5 +1,5 @@
 import { getCivilDate, isValidTimeZone } from './locationTime'
-import { buildScheduleEvents, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
+import { buildScheduleEvents, isOfficialEventHorizonComplete, type OfficialEventHorizon, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
 import type { DateCorrection } from './calendar'
 import { ramadanOccurrenceIdForDate, type RamadanOccurrenceId } from './religiousEvents'
 import { addDays } from './date'
@@ -112,12 +112,14 @@ export function resolveActiveRamadanOccurrence(input: {
   now?: Date
   timeZone?: string | null | undefined
   events?: FastingScheduleEvents
+  officialHorizon?: OfficialEventHorizon | undefined
 }): RamadanOccurrenceId | null {
   if (!input.hijriSupported) return null
   const currentOccurrence = occurrenceForFastDate(input.today, input.correction, true)
   if (currentOccurrence) return currentOccurrence
   if (!input.now || !input.timeZone || !input.events || !isValidTimeZone(input.timeZone)
-    || getCivilDate(input.now, input.timeZone) !== input.today) return null
+    || getCivilDate(input.now, input.timeZone) !== input.today
+    || !isOfficialEventHorizonComplete(input.now, input.today, input.timeZone, input.officialHorizon)) return null
 
   const now = input.now.getTime()
   for (const fajr of input.events.fajr) {
@@ -147,9 +149,11 @@ export function resolveFastingTimeline(input: {
   hijriSupported: boolean
   preferences: FastingModePreferences
   events: FastingScheduleEvents
+  officialHorizon?: OfficialEventHorizon | undefined
 }): FastingTimeline | null {
   if (input.selectedDate !== input.today || !isValidTimeZone(input.timeZone)
-    || getCivilDate(input.now, input.timeZone) !== input.today) return null
+    || getCivilDate(input.now, input.timeZone) !== input.today
+    || !isOfficialEventHorizonComplete(input.now, input.today, input.timeZone, input.officialHorizon)) return null
 
   const occurrence = resolveActiveRamadanOccurrence({
     ...input, now: input.now, timeZone: input.timeZone, events: input.events,

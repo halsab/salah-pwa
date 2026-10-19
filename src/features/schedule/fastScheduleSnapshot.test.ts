@@ -197,3 +197,43 @@ describe('fast prayer schedule snapshot', () => {
     expect(seed()).toBe(false)
   })
 })
+
+
+it('restores verified official neighbor context within the existing size cap', () => {
+  store = memoryStorage()
+  vi.stubGlobal('localStorage', store)
+  try {
+    const neighbors = [{ ...schedule, date: '2026-10-18' }, { ...schedule, date: '2026-10-20' }]
+    expect(seed({ neighbors })).toBe(true)
+    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
+    expect(restored?.neighbors?.map(row => row.date)).toEqual(['2026-10-18', '2026-10-20'])
+    expect(new TextEncoder().encode(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot) ?? '').length).toBeLessThanOrEqual(4096)
+    expect(seed({ neighbors: [requiredNeighbor(neighbors)] })).toBe(false)
+    expect(seed({ neighbors: neighbors.map(row => ({ ...row, locationId: 'wrong' })) })).toBe(false)
+  } finally { vi.unstubAllGlobals() }
+})
+
+function requiredNeighbor(neighbors: PrayerDay[]): PrayerDay {
+  const row = neighbors[0]
+  if (!row) throw new Error('Missing neighbor fixture')
+  return row
+}
+
+
+it('accepts only the declared schema-v3 partial coverage neighbors, including a single-day dataset', () => {
+  store = memoryStorage()
+  vi.stubGlobal('localStorage', store)
+  try {
+    const coverage = { geographic: 'RU-TA', startDate: context.date, endDate: context.date }
+    if (!meta.providerInfo) throw new Error('Missing provider fixture')
+    const single = { ...meta, providerInfo: { ...meta.providerInfo, coverage } }
+    const singleContext = { ...context, datasetRevision: getDatasetRevision(single) }
+    expect(seed({ meta: single, context: singleContext, neighbors: [] })).toBe(true)
+    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })?.neighbors).toEqual([])
+    expect(seed({ meta: single, context: singleContext, neighbors: [{ ...schedule, date: '2026-10-20' }] })).toBe(false)
+    const partial = { ...single, providerInfo: { ...single.providerInfo, coverage: { ...coverage, endDate: '2026-10-20' } } }
+    const partialContext = { ...context, datasetRevision: getDatasetRevision(partial) }
+    expect(seed({ meta: partial, context: partialContext, neighbors: [] })).toBe(false)
+    expect(seed({ meta: partial, context: partialContext, neighbors: [{ ...schedule, date: '2026-10-20' }] })).toBe(true)
+  } finally { vi.unstubAllGlobals() }
+})

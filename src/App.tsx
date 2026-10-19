@@ -41,14 +41,12 @@ import { rememberPlace, restoreRecentPlaces } from './domain/recentPlaces'
 import { homePlaceLabel, type Place } from './domain/place'
 import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
-import { MethodologyDialog } from './features/methodology/MethodologyDialog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
 import { ReligiousEventsScreen } from './features/religiousEvents/ReligiousEventsScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
 import { activateFastScheduleContext, currentFastScheduleGeneration, FAST_SCHEDULE_STORAGE_KEYS, invalidateFastScheduleSnapshot,
   notifyFastScheduleSelectionChanged, readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
-import { SettingsScreens } from './features/settings/SettingsScreens'
 import { ShareDialog } from './features/share/ShareDialog'
 import {
   getCurrentPosition,
@@ -62,10 +60,9 @@ import type { LocationChoice } from './storage/database'
 import { AppShell } from './ui/AppShell'
 import { AppHeader } from './ui/AppHeader'
 import { ActionButton, IconActionButton, ScreenFooter } from './ui/controls'
-import { SourceInfo } from './features/source/SourceInfo'
 import { useDataReset } from './features/settings/useDataReset'
 import { BackButton, Screen } from './ui/Screen'
-import { useAppNavigation } from './ui/useAppNavigation'
+import { useAppNavigation, type AppScreen } from './ui/useAppNavigation'
 import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
 import { useSystemAppearance } from './ui/useSystemAppearance'
@@ -82,6 +79,8 @@ import {
   type FastingModePreferences,
 } from './domain/fasting'
 
+const loadSecondaryScreens = () => import('./features/SecondaryScreens')
+const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about']
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
   'clearAppData' | 'getDataGeneration' | 'initializeStartup' | 'loadOptionalSettings'>>,
@@ -214,7 +213,21 @@ export function App({
     saveSettings({ locationChoice: choice, recentPlaces: recent })
   }, [invalidateFastCache, saveSettings])
   const navigation = useAppNavigation()
-  const { open: openScreen, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
+  const { open: openImmediately, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
+  const [secondaryScreens, setSecondaryScreens] = useState<typeof import('./features/SecondaryScreens') | null>(null)
+  const [screenLoadFailed, setScreenLoadFailed] = useState(false)
+  const openScreen = useCallback((target: AppScreen) => {
+    setScreenLoadFailed(false)
+    if (!secondaryScreens && SECONDARY_SCREENS.includes(target)) {
+      void openScreenPrepared(target, async () => {
+        const screens = await loadSecondaryScreens()
+        flushSync(() => setSecondaryScreens(screens))
+      }).catch(() => setScreenLoadFailed(true))
+    } else openImmediately(target)
+  }, [openImmediately, openScreenPrepared, secondaryScreens])
+  const SettingsScreens = secondaryScreens?.SettingsScreens
+  const SourceInfo = secondaryScreens?.SourceInfo
+  const MethodologyDialog = secondaryScreens?.MethodologyDialog
   const sessionHasPlace = useRef(Boolean(startupSnapshot?.place))
   const [religiousEventScreen, setReligiousEventScreen] = useState<typeof import('./features/religiousEvents/ReligiousEventScreen')['ReligiousEventScreen'] | null>(null)
   const [religiousEventLoadError, setReligiousEventLoadError] = useState<string | null>(null)
@@ -445,7 +458,7 @@ export function App({
   const scheduleServices = useMemo(() => ({
     getDays: async (nextLocationId: string, dates: readonly string[], datasetRevision: string, provider: string) => {
       const result = await services.getDays(nextLocationId, dates, datasetRevision, provider)
-      if (!result.ok) throw new Error(result.error.reason)
+      if (!result.ok) throw Object.assign(new Error(result.error.reason), { kind: result.error.kind })
       return result.value
     },
   }), [services])
@@ -460,6 +473,7 @@ export function App({
     scheduleLoading,
     scheduleError,
     contextReady,
+    officialHorizon,
     enrichmentError,
     retrySchedule,
     retryEnrichment,
@@ -487,6 +501,8 @@ export function App({
     initialSnapshot: selectedDate === today ? null : startupSnapshot,
   })
   const todaySchedule = selectedDate === today ? schedule : currentSchedules.schedule
+  const todaySchedules = selectedDate === today ? schedules : currentSchedules.schedules
+  const todayContextReady = selectedDate === today ? contextReady : currentSchedules.contextReady
   const todayContext = selectedDate === today ? context : currentSchedules.context
   const todayContextKey = todayContext?.date === today
     ? selectedDate === today ? selectedContextKey : currentSchedules.contextKey
@@ -504,9 +520,12 @@ export function App({
     writeFastScheduleSnapshot({
       appVersion, now: services.now(), deviceTimeZone, context: todayContext, schedule: todaySchedule, generation: fastGeneration,
       place, selectionSource: placeSelectionSource, preferences, meta,
+      ...(todayContext.source === 'official' && todayContextReady ? {
+        neighbors: todaySchedules.filter((row): row is import('./domain/types').PrayerDay => !('entries' in row) && row.date !== today),
+      } : {}),
     })
   }, [appVersion, fastCacheReady, fastGeneration, meta, place, placeSelectionSource, preferences,
-    deviceTimeZone, services, today, todayContext, todaySchedule])
+    deviceTimeZone, services, today, todayContext, todaySchedule, todayContextReady, todaySchedules])
   const activeScheduleContext = selectedDate === today ? context : currentSchedules.context
   const activeFastingEvents = useMemo(() => selectedDate === today
     ? fastingEvents
@@ -515,6 +534,7 @@ export function App({
   const activeRamadanOccurrence = resolveActiveRamadanOccurrence({
     today, correction: calendarPreferences.correction, hijriSupported,
     now: currentTime, timeZone: activeScheduleContext?.timeZone, events: activeFastingEvents,
+    officialHorizon: selectedDate === today ? officialHorizon : currentSchedules.officialHorizon,
   })
   const fastingModeEnabled = isFastingModeActive(fastingMode, activeRamadanOccurrence)
 
@@ -595,6 +615,10 @@ export function App({
       ) : null
   const nearbyCityNotice = place?.selection === 'gps' ? nameLookupMessage(nameLookupState, locale) : null
   const recoveryNotices = <>
+    {screenLoadFailed ? <div className="screen-status" role="alert">
+      <span>{t('screenLoadFailed')}</span>
+      <ActionButton onClick={() => window.location.reload()}>{t('retry')}</ActionButton>
+    </div> : null}
     {startupRecoveryError ? <div className="screen-status" role="alert">
       <span>{t('startupRecoveryError')}</span>
       <ActionButton onClick={() => setRetryCount(count => count + 1)}>{t('retry')}</ActionButton>
@@ -622,7 +646,7 @@ export function App({
             schedules={remoteSelectionPending ? [] : schedules}
             scheduleLoading={scheduleLoading || (remoteSelectionPending && !selectionSyncError)}
             scheduleError={remoteSelectionPending ? null : scheduleError}
-            contextReady={contextReady && !remoteSelectionPending}
+            contextReady={contextReady && !remoteSelectionPending} officialHorizon={officialHorizon}
             enrichmentError={enrichmentError && !remoteSelectionPending}
             onRetryEnrichment={() => { retryEnrichment(); if (officialMode) void services.refresh() }}
             selectedDate={selectedDate}
@@ -667,21 +691,21 @@ export function App({
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
         onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
       {navigation.screen === 'source-info' ? schedule && context
-        ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={sourcePlaceLabel}
-            checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} />
+        ? SourceInfo ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={sourcePlaceLabel}
+            checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} /> : null
         : <Screen label={t('scheduleInfo')} top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? t('scheduleForDate') : t('noSchedulePlace')}</p></Screen>
         : null}
       {navigation.screen === 'religious-event' && navigation.religiousEventId
         ? LoadedReligiousEventScreen ? <LoadedReligiousEventScreen eventId={navigation.religiousEventId} onBack={backScreen} /> : null
         : null}
-      {settingsDialogOpen ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
+      {settingsDialogOpen && SettingsScreens ? <SettingsScreens screen={navigation.screen} preferences={preferences} onChange={updatePreferences}
         fastingModeEnabled={fastingModeEnabled} onFastingModeChange={updateFastingMode}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={resetWithFastCache} version={version} notice={persistenceNotice}
         sourceLabel={officialMode ? t('dumRt') : t(PROFILE_LABEL_KEYS[calculationSettings.profile])}
         effectiveSource={resolution}
         initialManualCalculation={place ? initialManualCalculation(place, selectedDate, datasets, capabilities) : undefined} /> : null}
-      <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} />
+      {MethodologyDialog ? <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} /> : null}
       <ShareDialog open={shareDialogOpen} onClose={backScreen} />
     </AppShell>
   )

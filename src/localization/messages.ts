@@ -16,6 +16,7 @@ type PercentParams = { percent: number }
 type FastingEndpointsParams = { first: string; second: string }
 
 export const RU_MESSAGES = Object.freeze({
+  screenLoadFailed: 'Не удалось открыть экран. Перезапустите приложение и попробуйте снова.',
   appLoading: 'Открываем расписание…',
   appLoadError: 'Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.',
   loading: 'Загрузка',
@@ -297,6 +298,7 @@ export const RU_MESSAGES = Object.freeze({
   disclaimer: 'Время рассчитано по выбранной методике и может отличаться от расписания местной религиозной организации.',
   adhanProfilesLink: 'Профили Adhan',
   scheduleLoadFailed: 'Не удалось загрузить расписание. Попробуйте ещё раз.',
+  cachedScheduleContextUnavailable: 'Не удалось проверить события в хранилище. Показаны сохранённые данные; попробуйте ещё раз.',
   scheduleContextUnavailable: 'Не удалось загрузить события соседних дней. Счётчик и режим поста появятся после повтора.',
   startupRecoveryError: 'Не удалось проверить данные в хранилище. Показано сохранённое расписание; повторите попытку.',
   optionalSettingsRecoveryError: 'Не удалось загрузить дополнительные настройки из хранилища. Повторите попытку.',

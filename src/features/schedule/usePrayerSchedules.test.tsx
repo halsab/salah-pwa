@@ -44,7 +44,7 @@ function observe(initialProps: Options) {
     const local = required(props.meta.locations.find(l => l.id === props.locationId))
     const place: Place = { ...createOfficialPlace(local, 0), ...(props.calculatedLocation ?? {}), id: official ? local.id : String(props.calculatedLocation?.cityId ?? 'coordinates') }
     const value = usePrayerSchedules({ services: props.services, location: place, selectedDate: props.selectedDate, mode: 'manual',
-      resolution: official ? { kind: 'official', status: 'ready', provider: 'dumRt', version: props.meta.identity?.version ?? 'legacy', revision: getDatasetRevision(props.meta), coverage: 'RU-TA', locationId: props.locationId, timeZone: props.timeZone }
+      resolution: official ? { kind: 'official', status: 'ready', provider: 'dumRt', version: props.meta.identity?.version ?? 'legacy', revision: getDatasetRevision(props.meta), coverage: 'RU-TA', locationId: props.locationId, timeZone: props.timeZone, dateCoverage: { schemaVersion: props.meta.schemaVersion, years: props.meta.source.years, ...props.meta.providerInfo?.coverage } }
         : { kind: 'calculated', status: 'ready', settings: props.calculationSettings, timeZone: props.timeZone, strategy: 'manual' } })
     renders.push(value)
     return value
@@ -256,4 +256,19 @@ it('invalidates official schedule context when the real GPS point changes under 
   expect(hook.result.current.contextKey).not.toBe(oldKey)
   expect(hook.result.current.schedule).toBeNull()
   await act(async () => { next.resolve([day('A', initial.selectedDate)]); await next.promise })
+})
+
+
+it.each(['2026-01-01', '2026-12-31'])('uses only verified covered neighbors at official boundary %s', async selectedDate => {
+  const initial = { ...options(), selectedDate }
+  initial.services.getDays = vi.fn((id: string, dates: readonly string[]) => Promise.resolve(dates.map(date => date.startsWith('2026-') ? day(id, date) : undefined)))
+  const hook = observe(initial)
+  await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+  await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+  expect(hook.result.current.enrichmentError).toBe(false)
+  expect(hook.result.current.schedules.every(row => row.date.startsWith('2026-'))).toBe(true)
+  const events = hook.result.current.schedules.flatMap(buildScheduleEvents)
+  const late = selectEventPair(zonedDateTimeToInstant(selectedDate, '23:59', 'Europe/Moscow'), events)
+  if (selectedDate === '2026-12-31') expect(late.next).toBeNull()
+  else expect(late.next?.scheduleDate).toBe('2026-01-02')
 })

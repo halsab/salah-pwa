@@ -9,7 +9,7 @@ import { scheduleContextKey, type ScheduleContext } from '../../domain/scheduleC
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
 import type { PrayerDay } from '../../domain/types'
 import type { Place } from '../../domain/place'
-import type { ResolvedPrayerSource } from '../../domain/prayerSource'
+import { coversOfficialDate, type ResolvedPrayerSource } from '../../domain/prayerSource'
 import { isPrayerDay } from '../../domain/prayerDatasetValidation'
 import type { CalculationProfileId } from '../../domain/prayerCalculation'
 import type { FastScheduleStartup } from './fastScheduleSnapshot'
@@ -65,10 +65,12 @@ export function usePrayerSchedules({
     : null
   const serialized = description ? JSON.stringify(description) : null
   const context = useMemo<ScheduleContext | null>(() => serialized ? JSON.parse(serialized) as ScheduleContext : null, [serialized])
+  const coverageKey = resolution?.kind === 'official' && resolution.dateCoverage ? JSON.stringify(resolution.dateCoverage) : null
+  const dateCoverage = useMemo(() => coverageKey ? JSON.parse(coverageKey) as NonNullable<Extract<ResolvedPrayerSource, { kind: 'official' }>['dateCoverage']> : null, [coverageKey])
   const key = context ? scheduleContextKey(context) : null
   const [result, setResult] = useState<ScheduleResult | null>(() => initialSnapshot
     ? { context: initialSnapshot.context, key: scheduleContextKey(initialSnapshot.context), retry: 0,
-      services, schedules: [initialSnapshot.schedule], error: null, contextReady: false, enrichmentError: false }
+      services, schedules: [initialSnapshot.schedule, ...(initialSnapshot.neighbors ?? [])], error: null, contextReady: initialSnapshot.neighbors !== undefined, enrichmentError: false }
     : null)
   const [retry, setRetry] = useState(0)
   const [enrichmentRetry, setEnrichmentRetry] = useState(0)
@@ -101,14 +103,13 @@ export function usePrayerSchedules({
     const enrich = async (selected: DisplaySchedule) => {
       try {
         if (context.source === 'official') {
-          const dates = [addDays(context.date, -1), addDays(context.date, 1)]
+          const dates = [addDays(context.date, -1), addDays(context.date, 1)].filter(date => !dateCoverage || coversOfficialDate(dateCoverage, date))
           const days = await services.getDays(context.localityId, dates, context.datasetRevision, context.provider)
           if (days.length !== dates.length) throw new Error('dataset-shape-mismatch')
-          const previous = officialDay(days[0], dates[0] ?? '', context.localityId, context.timeZone)
-          const tomorrow = officialDay(days[1], dates[1] ?? '', context.localityId, context.timeZone)
-          if (!previous || !tomorrow) throw new Error('dataset-neighbor-missing')
+          const neighbors = dates.map((date, index) => officialDay(days[index], date, context.localityId, context.timeZone))
+          if (neighbors.some(day => !day)) throw new Error('dataset-neighbor-missing')
           if (active) setResult({ context, key, retry, services,
-            schedules: [previous, selected, tomorrow],
+            schedules: [...neighbors.filter((day): day is DisplaySchedule => day !== null), selected],
             error: null, contextReady: true, enrichmentError: false })
           return
         }
@@ -123,16 +124,18 @@ export function usePrayerSchedules({
           throw new Error('schedule-event-outside-window')
         }
         setResult({ context, key, retry, services, schedules, error: null, contextReady: true, enrichmentError: false })
-      } catch {
-        // Проверенный день остаётся видимым, но неполный контекст не участвует в live UI.
+      } catch (error) {
+        // Ошибка доступа не отменяет проверенный снимок; несовместимые данные отменяют live-контекст.
+        const storageUnavailable = error !== null && typeof error === 'object' && 'kind' in error && error.kind === 'storage'
         if (active) setResult(current => current?.key === key && current.retry === retry
-          ? { ...current, schedules: [selected], contextReady: false, enrichmentError: true }
+          ? storageUnavailable && current.contextReady ? { ...current, enrichmentError: true }
+            : { ...current, schedules: [selected], contextReady: false, enrichmentError: true }
           : current)
       }
     }
     if (selectedDay) {
       setResult(current => current?.key === key && current.retry === retry
-        ? { ...current, schedules: [selectedDay], contextReady: false, enrichmentError: false }
+        ? { ...current, enrichmentError: false }
         : current)
       void enrich(selectedDay)
       return () => { active = false }
@@ -158,7 +161,7 @@ export function usePrayerSchedules({
     }
     void load()
     return () => { active = false }
-  }, [context, enrichmentRetry, initialSnapshot, key, retry, services])
+  }, [context, dateCoverage, enrichmentRetry, initialSnapshot, key, retry, services])
   useEffect(() => { resultRef.current = result }, [result])
 
   // Проверка во время render закрывает промежуток до cleanup/effect нового запроса.
@@ -181,6 +184,10 @@ export function usePrayerSchedules({
     scheduleLoading: !matching && !unavailable,
     scheduleError: unavailable ?? matching?.error ?? null,
     contextReady: Boolean(matching?.contextReady),
+    officialHorizon: context?.source === 'official' ? {
+      previous: !dateCoverage || coversOfficialDate(dateCoverage, addDays(context.date, -1)),
+      next: !dateCoverage || coversOfficialDate(dateCoverage, addDays(context.date, 1)),
+    } : undefined,
     enrichmentError: Boolean(matching?.enrichmentError),
     retrySchedule: () => setRetry((count) => count + 1),
     retryEnrichment: () => setEnrichmentRetry(count => count + 1),

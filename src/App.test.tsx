@@ -180,7 +180,7 @@ function memoryStorage(): Storage {
   }
 }
 
-function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test') {
+function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test', includeNeighbors = false) {
   const location = initializedState.meta.locations.find(item => item.id === 'kazan')
   if (!location) throw new Error('Kazan test location is missing')
   const selectedPlace = createOfficialPlace(location, services.now().getTime())
@@ -198,7 +198,7 @@ function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test') {
   }
   if (!writeFastScheduleSnapshot({ appVersion, now: services.now(), deviceTimeZone: services.getDeviceTimeZone(),
     generation, context, schedule, place: selectedPlace, selectionSource: 'default', preferences: automaticPreferences(),
-    meta: initializedState.meta })) throw new Error('Could not write the test cache')
+    meta: initializedState.meta, ...(includeNeighbors ? { neighbors: [kazanYesterday, kazanTomorrow].map(day => ({ ...day, timeZone: context.timeZone, coordinates: schedule.coordinates })) } : {}) })) throw new Error('Could not write the test cache')
   return context
 }
 
@@ -234,6 +234,30 @@ describe('Salah', () => {
 
     await act(async () => { initialization.resolve(initialized()); await initialization.promise })
     await waitFor(() => expect(services.refresh).toHaveBeenCalledTimes(1))
+  })
+
+  it('shows the complete cached official home in the first render while authoritative reads remain pending', () => {
+    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
+    const neighbors = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
+    const services = createServices({ initialize: vi.fn(() => initialization.promise), getDays: vi.fn(() => neighbors.promise) })
+    seedStartupSnapshot(services, 'warm-test', true)
+    const view = render(<App services={services} version="warm-test" />)
+    expect(screen.getByRole('timer', { name: 'До Асра, осталось 3 ч 24 мин' })).toBeVisible()
+    expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Настройки' })).toBeEnabled()
+    view.unmount()
+  })
+
+  it('retains a verified complete snapshot and exposes recovery when authoritative storage is unavailable', async () => {
+    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
+    const services = createServices({ initialize: vi.fn(() => initialization.promise),
+      getDays: vi.fn().mockResolvedValue(failure({ kind: 'storage', reason: 'unavailable' })) })
+    seedStartupSnapshot(services, 'warm-test', true)
+    const view = render(<App services={services} version="warm-test" />)
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.getByRole('timer', { name: 'До Асра, осталось 3 ч 24 мин' })).toBeVisible()
+    expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
+    view.unmount()
   })
 
   it('рисует проверенный однодневный снимок до завершения IndexedDB и дополняет контекст отдельно', async () => {
@@ -452,7 +476,7 @@ describe('Salah', () => {
     expect(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).not.toBeNull()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Данные и конфиденциальность' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Данные и конфиденциальность' }))
     await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
     await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
     await waitFor(() => expect(clearAppData).toHaveBeenCalledTimes(1))

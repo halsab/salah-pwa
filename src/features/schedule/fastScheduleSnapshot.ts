@@ -1,5 +1,5 @@
 import { isCalculationSettings } from '../../domain/calculationSettings'
-import { getSystemDate } from '../../domain/date'
+import { addDays, getSystemDate } from '../../domain/date'
 import { isLocationSelectionSource } from '../../domain/locationSelection'
 import { isPlace } from '../../domain/placeMigration'
 import { gpsCountryCode } from '../../domain/place'
@@ -10,7 +10,8 @@ import { isSourcePreferences } from '../../domain/sourcePreferences'
 import { DUM_RT_TIME_ZONE, isValidTimeZone } from '../../domain/locationTime'
 import type { PrayerSchedule } from '../../domain/scheduleEvents'
 import { CALCULATED_KEYS } from '../../domain/calculationSettings'
-import type { CalculatedPrayerKey } from '../../domain/types'
+import { coversOfficialDate } from '../../domain/prayerSource'
+import type { CalculatedPrayerKey, PrayerDay } from '../../domain/types'
 import type { DatasetMeta } from '../../storage/database'
 import type { Place } from '../../domain/place'
 import type { LocationSelectionSource } from '../../domain/locationSelection'
@@ -30,6 +31,7 @@ export interface FastScheduleStartup {
   generation: string
   context: ScheduleContext
   schedule: PrayerSchedule
+  neighbors?: PrayerDay[] | undefined
   place: Place
   selectionSource: LocationSelectionSource
   preferences: SourcePreferences
@@ -227,7 +229,16 @@ function validRecord(record: FastScheduleRecord, input: { appVersion: string; no
     ? record.meta !== null && isDatasetMeta(record.meta, context) ? record.meta : undefined
     : record.meta === null ? null : undefined
   if (meta === undefined || (context.source === 'official' && !meta)) return false
-  return isSchedule(record.schedule, context, meta)
+  if (!isSchedule(record.schedule, context, meta)) return false
+  if (record.neighbors === undefined) return true
+  if (context.source !== 'official' || !meta || !Array.isArray(record.neighbors)
+    || record.neighbors.some(row => !isRecord(row))) return false
+  const coverage = { schemaVersion: meta.schemaVersion, years: meta.source.years, ...meta.providerInfo?.coverage }
+  const dates = [addDays(context.date, -1), addDays(context.date, 1)].filter(date => coversOfficialDate(coverage, date))
+  return record.neighbors.length === dates.length && dates.every(date => {
+    const rows = record.neighbors?.filter(row => row.date === date)
+    return rows?.length === 1 && isSchedule(rows[0], { ...context, date }, meta)
+  })
 }
 
 export function readFastScheduleSnapshot(input: {
@@ -262,7 +273,7 @@ export function readFastScheduleSnapshot(input: {
       rotateGeneration(store)
       return null
     }
-    return { generation: record.generation, context: record.context, schedule: record.schedule, place: record.place,
+    return { generation: record.generation, context: record.context, schedule: record.schedule, neighbors: record.neighbors, place: record.place,
       selectionSource: record.selectionSource, preferences: record.preferences, meta: record.meta }
   } catch {
     return null
@@ -324,6 +335,7 @@ export function writeFastScheduleSnapshot(input: {
   deviceTimeZone: string
   context: ScheduleContext
   schedule: PrayerSchedule
+  neighbors?: PrayerDay[] | undefined
   place: Place
   selectionSource: LocationSelectionSource
   preferences: SourcePreferences
@@ -343,6 +355,7 @@ export function writeFastScheduleSnapshot(input: {
       savedAt: input.now.getTime(),
       context: input.context,
       schedule: input.schedule,
+      ...(input.neighbors !== undefined ? { neighbors: input.neighbors } : {}),
       place: cachePlace(input.place),
       selectionSource: input.selectionSource,
       preferences: input.preferences,

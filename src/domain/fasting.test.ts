@@ -185,3 +185,14 @@ describe('режим поста', () => {
     expect(resolveFastingTimeline({ ...base, today: '2026-03-09' })).toBeNull()
   })
 })
+
+
+it('does not build a fasting timeline from an incomplete upper official horizon', () => {
+  const today = '2026-12-31'
+  const events = buildFastingScheduleEvents([day(today, '05:00')], 'Europe/Moscow')
+  const input = { today, selectedDate: today, timeZone: 'Europe/Moscow', correction: 0 as const,
+    hijriSupported: false, preferences: { manualEnabled: true }, events,
+    officialHorizon: { previous: true, next: false } }
+  expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T08:00:00+03:00') })).toMatchObject({ kind: 'day' })
+  expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T15:00:00+03:00') })).toBeNull()
+})

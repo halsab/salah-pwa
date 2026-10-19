@@ -410,6 +410,33 @@ export async function getPrayerDays(
   return success(days)
 }
 
+export function getStartupData(provider = DEFAULT_PROVIDER_ID) {
+  return storageResult(async () => {
+    const database = await getDatabase()
+    // Generation, выбранное место и revision принадлежат одному снимку транзакции.
+    const transaction = database.transaction(['control', 'meta', 'settings'], 'readonly')
+    const settings = transaction.objectStore('settings')
+    const [generation, meta, choice, preferences, legacy] = await Promise.all([
+      transaction.objectStore('control').get('generation'),
+      transaction.objectStore('meta').get(provider),
+      settings.get('locationChoice'), settings.get('sourcePreferences'), settings.get('calculationSettings'),
+    ])
+    await transaction.done
+    return { generation: generation ?? 0, meta, choice: choice?.value as SettingValueMap['locationChoice'] | undefined,
+      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined, legacy: legacy?.value as SettingValueMap['calculationSettings'] | undefined }
+  })
+}
+
+export function getSettings<const Keys extends readonly SettingKey[]>(keys: Keys) {
+  return storageResult(async () => {
+    const database = await getDatabase()
+    const transaction = database.transaction('settings', 'readonly')
+    const records = await Promise.all(keys.map(key => transaction.store.get(key)))
+    await transaction.done
+    return Object.fromEntries(keys.map((key, index) => [key, records[index]?.value])) as { [Key in Keys[number]]: SettingValueMap[Key] | undefined }
+  })
+}
+
 export function getDatasetMeta(provider = DEFAULT_PROVIDER_ID): Promise<Result<DatasetMeta | undefined, StorageFailure>> {
   return storageResult(() => getDatabase().then((database) =>
     database.get('meta', provider)))

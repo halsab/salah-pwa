@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { parseDumRtCsv } from '../data/parseDumRtCsv'
 import { calculatePrayerSchedule } from './prayerCalculation'
 import { zonedDateTimeToInstant } from './locationTime'
-import { buildScheduleEvents, selectEventPair } from './scheduleEvents'
+import { buildScheduleEvents, selectEventPair, selectOfficialEventPair } from './scheduleEvents'
 
 function official(csv: string) {
   return required(parseDumRtCsv(csv, 'kazan')[0])
@@ -146,4 +146,36 @@ describe('хронология расписания', () => {
     expect(selectEventPair(new Date('2026-02-07T23:59:59+03:00'), events).next).toBeNull()
     expect(selectEventPair(new Date(), [])).toEqual({ next: null, current: null })
   })
+})
+
+
+it('does not claim a complete event horizon when the following official row is outside coverage', () => {
+  const day = { ...lateFajr, date: '2026-12-31', fajrStart: '05:00' as const, isha: '23:58' as const }
+  const events = buildScheduleEvents(day)
+  const horizon = { previous: true, next: false }
+  expect(selectOfficialEventPair(new Date('2026-12-31T08:00:00+03:00'), events, day.date, 'Europe/Moscow', horizon).next?.key).toBe('zenith')
+  expect(selectOfficialEventPair(new Date('2026-12-31T23:53:00+03:00'), events, day.date, 'Europe/Moscow', horizon)).toEqual({ current: null, next: null })
+})
+
+it('retains the first covered countdown without inventing a preceding current event', () => {
+  const day = { ...lateFajr, date: '2026-01-01', fajrStart: '05:00' as const, fajrJamaat: '05:30' as const, sunrise: '07:00' as const }
+  const pair = selectOfficialEventPair(new Date('2026-01-01T00:01:00+03:00'), buildScheduleEvents(day), day.date, 'Europe/Moscow', { previous: false, next: true })
+  expect(pair.current).toBeNull()
+  expect(pair.next?.key).toBe('fajrStart')
+})
+
+
+it('prefers a verified D+1 late Fajr to a later published D event', () => {
+  const today = { ...lateFajr, date: '2026-12-30', isha: '23:58' as const }
+  const tomorrow = { ...lateFajr, date: '2026-12-31', fajrStart: '23:54' as const }
+  const pair = selectOfficialEventPair(new Date('2026-12-30T23:53:00+03:00'), [today, tomorrow].flatMap(buildScheduleEvents), today.date, 'Europe/Moscow', { previous: true, next: true })
+  expect(pair.next).toMatchObject({ key: 'fajrStart', scheduleDate: tomorrow.date, time: '23:54' })
+})
+
+it('uses the official timezone for the noon horizon across a device DST change', () => {
+  const today = { ...lateFajr, date: '2026-03-29', fajrStart: '05:00' as const }
+  const events = buildScheduleEvents(today)
+  const horizon = { previous: true, next: false }
+  expect(selectOfficialEventPair(new Date('2026-03-29T10:30:00+02:00'), events, today.date, 'Europe/Moscow', horizon).current).not.toBeNull()
+  expect(selectOfficialEventPair(new Date('2026-03-29T11:30:00+02:00'), events, today.date, 'Europe/Moscow', horizon)).toEqual({ current: null, next: null })
 })

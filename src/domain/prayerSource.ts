@@ -19,8 +19,10 @@ export interface OfficialDatasetAvailability {
   version: string
   revision: string
 }
+export type OfficialDateCoverage = Pick<OfficialDatasetAvailability, 'schemaVersion' | 'years' | 'startDate' | 'endDate'>
+
 export type ResolvedPrayerSource =
-  | { kind: 'official'; status: 'ready' | 'not-loaded' | 'invalid' | 'not-covered'; provider: string; version: string | null; revision: string | null; coverage: string | null; locationId: string | null; timeZone: string }
+  | { kind: 'official'; status: 'ready' | 'not-loaded' | 'invalid' | 'not-covered'; provider: string; version: string | null; revision: string | null; coverage: string | null; locationId: string | null; timeZone: string; dateCoverage?: OfficialDateCoverage }
   | { kind: 'calculated'; status: 'ready' | 'unsupported'; settings: CalculationSettings; timeZone: string; strategy: 'manual' | 'regional' | 'default' }
 
 const PORTABLE_PROFILES: readonly CalculationProfileId[] = ['dumRt', 'dumRf', 'turkey', 'muslimWorldLeague', 'karachi', 'northAmerica', 'canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian']
@@ -31,7 +33,7 @@ function isCivilDate(value: string): boolean {
   return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
 }
 
-function coversDate(dataset: OfficialDatasetAvailability, civilDate: string): boolean {
+export function coversOfficialDate(dataset: OfficialDateCoverage, civilDate: string): boolean {
   if (!isCivilDate(civilDate)) return false
   const year = Number(civilDate.slice(0, 4))
   if (dataset.schemaVersion === 3) {
@@ -61,8 +63,8 @@ export function resolvePrayerTimeSource(
     const civilDate = typeof date === 'string'
       ? date
       : getCivilDate(date, dataset.provider === 'dumRt' ? DUM_RT_TIME_ZONE : dataset.timeZone)
-    if (!locality || !coversDate(dataset, civilDate)) continue
-    return { kind: 'official', status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: dataset.provider === 'dumRt' ? DUM_RT_TIME_ZONE : locality.timeZone ?? dataset.timeZone }
+    if (!locality || !coversOfficialDate(dataset, civilDate)) continue
+    return { kind: 'official', dateCoverage: { years: dataset.years, ...(dataset.schemaVersion !== undefined ? { schemaVersion: dataset.schemaVersion } : {}), ...(dataset.startDate ? { startDate: dataset.startDate } : {}), ...(dataset.endDate ? { endDate: dataset.endDate } : {}) }, status: dataset.state, provider: dataset.provider, version: dataset.version, revision: dataset.revision, coverage: dataset.coverage, locationId: locality.id, timeZone: dataset.provider === 'dumRt' ? DUM_RT_TIME_ZONE : locality.timeZone ?? dataset.timeZone }
   }
   if (manual?.kind === 'official') {
     const providerTimeZone = datasets.find(d => d.provider === manual.provider)?.timeZone

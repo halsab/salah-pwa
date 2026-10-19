@@ -118,3 +118,25 @@ export function selectEventPair(now: Date, events: readonly ScheduleEvent[]): {
   }
   return { current, next }
 }
+
+
+export interface OfficialEventHorizon { previous: boolean; next: boolean }
+
+export function isOfficialEventHorizonComplete(now: Date, date: string, timeZone: string, horizon: OfficialEventHorizon | undefined): boolean {
+  return !horizon || horizon.next || now.getTime() < createLocationClock(timeZone).toInstant(date, '12:00').getTime()
+}
+
+export function selectOfficialEventPair(
+  now: Date, events: readonly ScheduleEvent[], date: string, timeZone: string,
+  horizon: OfficialEventHorizon,
+): ReturnType<typeof selectEventPair> {
+  const pair = selectEventPair(now, events)
+  const noon = createLocationClock(timeZone).toInstant(date, '12:00').getTime()
+  // Неизвестный D+1 может содержать Фаджр на D, но никогда раньше местного полудня.
+  if (!horizon.next) {
+    if (!isOfficialEventHorizonComplete(now, date, timeZone, horizon)) pair.current = null
+    if (pair.next && pair.next.instant >= noon) pair.next = null
+  }
+  if (!horizon.previous && pair.current && pair.current.date < date) pair.current = null
+  return pair
+}

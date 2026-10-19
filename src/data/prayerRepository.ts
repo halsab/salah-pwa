@@ -3,14 +3,13 @@ import { isCalendarPreferences, restoreCalendarPreferences, type CalendarPrefere
 import { restoreRecentPlaces } from '../domain/recentPlaces'
 import type { Place } from '../domain/place'
 import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
-import { isPrayerDataset } from '../domain/prayerDatasetValidation'
 import { getDatasetRevision } from '../domain/scheduleContext'
 import { isValidTimeZone, DUM_RT_TIME_ZONE } from '../domain/locationTime'
 import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
-  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getStoredDataset,
+  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset,
   replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance,
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
@@ -63,8 +62,7 @@ async function readLocalSnapshot(provider: PrayerProvider): Promise<Result<Praye
     if (stored.error.kind === 'data') return success({ meta: null, dataState: 'invalid', update: { status: 'idle' }, checkedAt: null })
     return failure(stored.error)
   }
-  const valid = stored.value && isPrayerDataset(stored.value.dataset)
-  return success({ meta: valid ? stored.value.meta : null, dataState: valid ? 'ready' : stored.value ? 'invalid' : 'not-loaded', update: { status: 'idle' }, checkedAt: null })
+  return success({ meta: stored.value?.meta ?? null, dataState: stored.value ? 'ready' : 'not-loaded', update: { status: 'idle' }, checkedAt: null })
 }
 
 function isCivilDate(value: unknown): value is string {
@@ -135,24 +133,30 @@ function isStoredMeta(value: unknown, provider: PrayerProvider): value is Datase
   return true
 }
 
-export async function initializePrayerRepositoryStartup(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [meta, choice, preferences, legacy] = await Promise.all([
-    getDatasetMeta(provider.id), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'),
-  ])
-  if (!meta.ok) return meta
-  if (!choice.ok) return choice
-  if (!preferences.ok) return preferences
-  if (!legacy.ok) return legacy
-  const validMeta = meta.value && isStoredMeta(meta.value, provider) ? meta.value : null
-  const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, validMeta ?? provider.bundled)
-  return success({
+function storedMetadataState(value: DatasetMeta | undefined, provider: PrayerProvider, invalidRevision: string | null = null): Pick<PrayerRepositorySnapshot, 'meta' | 'dataState'> {
+  const meta = value && isStoredMeta(value, provider) ? value : null
+  return { meta, dataState: !value ? 'not-loaded' : meta && getDatasetRevision(meta) !== invalidRevision ? 'ready' : 'invalid' }
+}
+
+async function readStartup(provider: PrayerProvider) {
+  const stored = await getStartupData(provider.id)
+  if (!stored.ok) return stored
+  const { meta, choice, preferences, legacy, generation } = stored.value
+  const validMeta = meta && isStoredMeta(meta, provider) ? meta : null
+  const state: PrayerRepositoryState = {
     meta: validMeta,
-    dataState: meta.value ? validMeta ? 'ready' : 'invalid' : 'not-loaded',
+    dataState: meta ? validMeta ? 'ready' : 'invalid' : 'not-loaded',
     update: { status: 'idle' }, checkedAt: null,
-    locationChoice,
-    preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value),
+    locationChoice: choice === undefined ? null : restoreLocationChoice(choice, validMeta ?? provider.bundled),
+    preferences: restoreSourcePreferences(preferences, legacy, choice),
     themeFamily: DEFAULT_THEME_FAMILY,
-  })
+  }
+  return success({ state, generation })
+}
+
+export async function initializePrayerRepositoryStartup(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
+  const result = await readStartup(provider)
+  return result.ok ? success(result.value.state) : result
 }
 
 function restoreOptionalSettings(values: StoredOptionalSettings, currentLocationId?: string): PrayerRepositoryOptionalSettings {
@@ -166,19 +170,8 @@ function restoreOptionalSettings(values: StoredOptionalSettings, currentLocation
 }
 
 export async function loadPrayerRepositoryOptionalSettings(currentLocationId?: string): Promise<Result<PrayerRepositoryOptionalSettings, StorageFailure>> {
-  const [recentPlaces, calendarPreferences, themeFamily, languagePreference, fastingMode] = await Promise.all([
-    getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('themeFamily'),
-    getSetting('languagePreference'), getSetting('fastingMode'),
-  ])
-  if (!recentPlaces.ok) return recentPlaces
-  if (!calendarPreferences.ok) return calendarPreferences
-  if (!themeFamily.ok) return themeFamily
-  if (!languagePreference.ok) return languagePreference
-  if (!fastingMode.ok) return fastingMode
-  return success(restoreOptionalSettings({
-    recentPlaces: recentPlaces.value, calendarPreferences: calendarPreferences.value,
-    themeFamily: themeFamily.value, languagePreference: languagePreference.value, fastingMode: fastingMode.value,
-  }, currentLocationId))
+  const stored = await getSettings(['recentPlaces', 'calendarPreferences', 'themeFamily', 'languagePreference', 'fastingMode'])
+  return stored.ok ? success(restoreOptionalSettings(stored.value, currentLocationId)) : stored
 }
 function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): LocationChoice {
   const locations = meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS
@@ -225,6 +218,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
   let installation: ReturnType<typeof replaceDataset> | null = null
   let epoch = 0
   let generation = 0
+  let invalidRevision: string | null = null
   let latest: PrayerRepositorySnapshot = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null }
   const emit = (snapshot: PrayerRepositorySnapshot) => {
     latest = snapshot
@@ -239,12 +233,11 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     const isCurrent = () => operation === epoch && !signal.aborted
     let timedOut = false
     const task = async (): Promise<PrayerRepositorySnapshot> => {
-      const local = await readLocalSnapshot(provider)
-      if (!isCurrent()) return latest
-      if (local.ok) latest = { ...local.value, checkedAt: latest.checkedAt }
       const initialMeta = await getDatasetMeta(provider.id)
       if (!isCurrent()) return latest
-      const revision = initialMeta.ok && initialMeta.value ? getDatasetRevision(initialMeta.value) : null
+      if (!initialMeta.ok) throw new Error('storage-unavailable')
+      const revision = initialMeta.value ? getDatasetRevision(initialMeta.value) : null
+      latest = { ...latest, ...storedMetadataState(initialMeta.value, provider, invalidRevision) }
       emit({ ...latest, update: { status: 'refreshing' } })
       let reason: Extract<DatasetUpdate, { status: 'failed' }>['reason'] | null = null
       let timeout: ReturnType<typeof setTimeout> | undefined
@@ -262,7 +255,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
         if ((provider.id !== 'dumRt' && manifest.value.provider !== provider.id)
           || (manifest.value.provider !== undefined && manifest.value.provider !== provider.id)) return 'invalid' as const
         if (!isCurrent()) return 'superseded' as const
-        if (latest.meta?.identity?.sha256 === manifest.value.sha256 && latest.meta.identity.sequence === manifest.value.sequence) return null
+        if (latest.dataState === 'ready' && latest.meta?.identity?.sha256 === manifest.value.sha256 && latest.meta.identity.sequence === manifest.value.sequence) return null
         const response = await fetcher(resolvePrayerDatasetUrl(provider.manifestUrl, manifest.value), { cache: 'no-store', signal })
         if (!response.ok) return 'network' as const
         const verified = await verifyPrayerDatasetBytes(new Uint8Array(await response.arrayBuffer()), manifest.value, operations)
@@ -273,13 +266,16 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
         installation = (operations.replace ?? replaceDataset)(verified.value, identity, { revision, isCurrent, provider: provider.id, generation: dataGeneration })
         const replacement = await installation
         if (!replacement.ok) return replacement.error.kind === 'data' ? 'superseded' as const : 'storage' as const
+        invalidRevision = null
         return null
       }
       try { reason = await Promise.race([download(), aborted]) }
       catch { reason = timedOut ? 'timeout' : 'network' }
       finally { clearTimeout(timeout) }
       if (operation !== epoch) return latest
-      const installed = await readLocalSnapshot(provider)
+      const installedMeta = await getDatasetMeta(provider.id)
+      const installed = installedMeta.ok ? success(storedMetadataState(installedMeta.value, provider, invalidRevision)) : installedMeta
+      if (!installed.ok) reason = 'storage'
       if (operation !== epoch) return latest
       const snapshot: PrayerRepositorySnapshot = { ...(installed.ok ? installed.value : latest),
         checkedAt: reason ? latest.checkedAt : Date.now(), update: reason ? { status: 'failed', reason } : { status: 'idle' } }
@@ -295,15 +291,40 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
     return running
   }
   return {
-    initialize: async () => { generation = await getDataGeneration(); return initializePrayerRepository(provider) },
-    initializeStartup: async () => { generation = await getDataGeneration(); return initializePrayerRepositoryStartup(provider) },
+    initialize: async () => {
+      const operation = epoch
+      const dataGeneration = await getDataGeneration()
+      const result = await initializePrayerRepository(provider)
+      const meta = result.ok && result.value.dataState === 'invalid' ? await getDatasetMeta(provider.id) : null
+      if (operation === epoch && result.ok) {
+        generation = dataGeneration
+        latest = result.value
+        if (meta?.ok && meta.value) invalidRevision = getDatasetRevision(meta.value)
+      }
+      return result
+    },
+    initializeStartup: async () => {
+      const operation = epoch
+      const result = await readStartup(provider)
+      if (!result.ok) return result
+      if (operation === epoch) {
+        generation = result.value.generation
+        latest = result.value.state
+      }
+      return success(result.value.state)
+    },
     loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
     clearAppData,
     getDataGeneration,
     refresh,
     subscribe: (listener: (snapshot: PrayerRepositorySnapshot) => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     invalidateAndDrain: async () => { epoch += 1; controller?.abort(); await pending; await installation; latest = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null } },
-    getDays: (locationId: string, dates: readonly string[], revision: string) => getPrayerDays(locationId, dates, revision, provider.id),
+    getDays: async (locationId: string, dates: readonly string[], revision: string) => {
+      const operation = epoch
+      const result = await getPrayerDays(locationId, dates, revision, provider.id)
+      if (operation === epoch && (!result.ok && result.error.kind === 'data' || result.ok && result.value.some(day => !day))) invalidRevision = revision
+      return result
+    },
     saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean): Promise<Result<void, StorageFailure | DataFailure>> => {
       if (patch.calendarPreferences && !isCalendarPreferences(patch.calendarPreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
