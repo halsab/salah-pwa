@@ -1,17 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
 import { addDays } from '../../domain/date'
 import { fastingProgress, resolveFastingTimeline, type FastingModePreferences, type FastingScheduleEvents } from '../../domain/fasting'
 import { getCivilDate } from '../../domain/locationTime'
 import { formatLocalizedGregorianDate } from '../../localization/calendar'
 import { formatClockTime } from '../../localization/formatters'
+import { formatRemainingDuration } from '../../localization/countdown'
 import { useLocalization } from '../../localization'
-
-function formatCountdown(target: number, now: number): string {
-  const totalSeconds = Math.max(0, Math.ceil((target - now) / 1000))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
-}
+import { useLiveClock } from '../../ui/useLiveClock'
 
 function formatDuration(start: number, end: number, t: ReturnType<typeof useLocalization>['t']): string {
   const totalMinutes = Math.max(0, Math.round((end - start) / 60_000))
@@ -52,8 +46,9 @@ export function FastingCard({ events, preferences, selectedDate, today, timeZone
   now: () => Date
 }) {
   const { locale, t } = useLocalization()
-  const [currentTime, setCurrentTime] = useState(now)
-  const timeline = useMemo(() => resolveFastingTimeline({
+  const currentTime = now()
+  const hasValidNow = Number.isFinite(currentTime.getTime())
+  const timeline = hasValidNow ? resolveFastingTimeline({
     now: currentTime,
     today,
     selectedDate,
@@ -62,21 +57,8 @@ export function FastingCard({ events, preferences, selectedDate, today, timeZone
     hijriSupported,
     preferences,
     events,
-  }), [currentTime, today, selectedDate, timeZone, correction, hijriSupported, preferences, events])
-
-  useEffect(() => {
-    const sync = () => setCurrentTime(now())
-    const onVisibilityChange = () => { if (document.visibilityState === 'visible') sync() }
-    const timer = window.setInterval(sync, 1000)
-    window.addEventListener('pageshow', sync)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    sync()
-    return () => {
-      window.clearInterval(timer)
-      window.removeEventListener('pageshow', sync)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-    }
-  }, [now])
+  }) : null
+  useLiveClock(timeline !== null)
 
   if (!timeline) return null
 
@@ -88,7 +70,8 @@ export function FastingCard({ events, preferences, selectedDate, today, timeZone
   const startTime = formatClockTime(timeline.start.instant, timeZone, locale)
   const daytime = timeline.kind === 'day'
   const countdownLabel = t(daytime ? 'fastingUntilEnd' : 'fastingUntilStart')
-  const countdown = formatCountdown(timeline.end.instant, nowInstant)
+  const countdown = formatRemainingDuration(timeline.end.instant - nowInstant, t)
+  if (!countdown) return null
   const endRelative = daytime ? undefined : relativeDate(timeline.start.date, todayInSourceZone, locale, t)
   const startRelative = daytime ? undefined : relativeDate(timeline.end.date, todayInSourceZone, locale, t)
   const endPrefix = t('fastingEnd')
@@ -115,7 +98,7 @@ export function FastingCard({ events, preferences, selectedDate, today, timeZone
     </div>
     <div className="fasting-card-countdown">
       <span className="fasting-card-label">{countdownLabel}</span>
-      <time className="fasting-card-timer" role="timer" aria-label={t('countdownAria', { label: countdownLabel, remaining: countdown })}>
+      <time className="fasting-card-timer" role="timer" aria-live="off" aria-label={t('countdownAria', { label: countdownLabel, remaining: countdown })}>
         {countdown}
       </time>
     </div>

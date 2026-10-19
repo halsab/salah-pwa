@@ -110,6 +110,48 @@ describe('режим поста', () => {
       .toMatchObject({ kind: 'night', start: { time: '19:00' } })
   })
 
+  it('переключает ночной и дневной интервалы до, на и после границ Фаджра и Магриба', () => {
+    const yesterday = day('2026-03-09')
+    const today = day('2026-03-10')
+    const tomorrow = day('2026-03-11')
+    const schedules = [yesterday, today, tomorrow]
+
+    expect(resolve({ now: '2026-03-10T00:59:59Z', today: today.date, schedules }))
+      .toMatchObject({ kind: 'night', end: { scheduleDate: today.date } })
+    expect(resolve({ now: '2026-03-10T01:00:00Z', today: today.date, schedules }))
+      .toMatchObject({ kind: 'day', start: { scheduleDate: today.date } })
+    expect(resolve({ now: '2026-03-10T01:00:01Z', today: today.date, schedules }))
+      .toMatchObject({ kind: 'day', start: { scheduleDate: today.date } })
+
+    expect(resolve({ now: '2026-03-10T15:59:59Z', today: today.date, schedules }))
+      .toMatchObject({ kind: 'day', end: { scheduleDate: today.date } })
+    expect(resolve({ now: '2026-03-10T16:00:00Z', today: today.date, schedules }))
+      .toMatchObject({ kind: 'night', start: { scheduleDate: today.date } })
+    expect(resolve({ now: '2026-03-10T16:00:01Z', today: today.date, schedules }))
+      .toMatchObject({ kind: 'night', start: { scheduleDate: today.date } })
+  })
+
+  it('поддерживает ручной режим вне Рамадана и использует calculated fajr и maghrib instants', () => {
+    const schedules = [day('2026-01-14'), day('2026-01-15'), day('2026-01-16')]
+    expect(resolve({ now: '2026-01-15T12:00:00Z', today: '2026-01-15', schedules,
+      preferences: { manualEnabled: true } })).toMatchObject({ kind: 'day' })
+    expect(resolve({ now: '2026-01-15T12:00:00Z', today: '2026-01-15', schedules,
+      preferences: { manualEnabled: false } })).toBeNull()
+
+    const location = { latitude: 55.75, longitude: 37.62 }
+    const calculated = ['2026-01-14', '2026-01-15', '2026-01-16']
+      .map(date => calculatePrayerSchedule(location, date, 'Europe/Moscow'))
+    const events = buildFastingScheduleEvents(calculated, 'Europe/Moscow')
+    const fajr = events.fajr.find(event => event.scheduleDate === '2026-01-15')
+    if (!fajr) throw new Error('Не найден calculated fajr')
+    const timeline = resolveFastingTimeline({ now: new Date(fajr.instant + 1_000), today: '2026-01-15',
+      selectedDate: '2026-01-15', timeZone: 'Europe/Moscow', correction: 0, hijriSupported: true,
+      preferences: { manualEnabled: true }, events })
+    expect(timeline).toMatchObject({ kind: 'day', start: { key: 'fajr', instant: fajr.instant } })
+    expect(timeline?.end.key).toBe('maghrib')
+    expect(timeline?.end.provenance).toBe('calculated')
+  })
+
   it('показывает ночной интервал до и после полуночи по фактическим датам событий', () => {
     const yesterday = day('2026-03-09')
     const today = day('2026-03-10')

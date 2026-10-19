@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DEFAULT_CALENDAR_PREFERENCES, type CalendarPreferences } from '../../domain/calendar'
 import { resolveReligiousBanner, type ReligiousEventId } from '../../domain/religiousEvents'
 import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
@@ -14,6 +14,7 @@ import { useLocalization } from '../../localization'
 import { formatLocalizedCalendarDate } from '../../localization/calendar'
 import { FastingCard } from '../fasting/FastingCard'
 import { DEFAULT_FASTING_MODE_PREFERENCES, buildFastingScheduleEvents, type FastingModePreferences, type FastingScheduleEvents } from '../../domain/fasting'
+import { useClockCorrection } from '../../ui/useLiveClock'
 
 const LABELS: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
   fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', dhuhrJamaat: 'prayerDhuhrJamaat',
@@ -75,6 +76,7 @@ interface ScheduleContentProps {
   onOpenReligiousEvent?: (eventId: ReligiousEventId, origin: HTMLElement) => void
   onChangeDate: (date: string) => void
   onRetrySchedule: () => void
+  onSystemClockChange?: () => void
   top?: ReactNode
   actions?: ReactNode
   notice?: ReactNode
@@ -83,9 +85,12 @@ interface ScheduleContentProps {
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
   currentTime, now, officialMode, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
   fastingModeEnabled = false, fastingEvents, timeZone, onOpenReligiousEvent = () => {},
-  onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
+  onChangeDate, onRetrySchedule, onSystemClockChange, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
 }: ScheduleContentProps) {
   const { t } = useLocalization()
+  useClockCorrection(true, onSystemClockChange)
+  // Обновляет время, если часы изменились, пока экран расписания был размонтирован.
+  useEffect(() => { onSystemClockChange?.() }, [onSystemClockChange])
   const [boundary, setBoundary] = useState<{ time: Date; parentTime: number; schedules: DisplaySchedule[] } | null>(null)
   // Граница относится к загруженному набору, а не к предыдущему расписанию.
   const effectiveNow = boundary?.schedules === schedules && boundary.parentTime === currentTime.getTime() ? boundary.time : currentTime
