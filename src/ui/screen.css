@@ -21,6 +21,8 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .app-screen {
   --screen-inset-left: max(var(--content-inset), env(safe-area-inset-left));
   --screen-inset-right: max(var(--content-inset), env(safe-area-inset-right));
+  --screen-navigation-inset-left: max(8px, env(safe-area-inset-left, 0px));
+  --screen-navigation-inset-right: max(8px, env(safe-area-inset-right, 0px));
   --screen-bottom-inset: max(var(--content-inset), var(--app-viewport-bottom-padding, env(safe-area-inset-bottom, 0px)));
   width: 100%;
   flex: 1 1 auto;
@@ -28,22 +30,22 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--content-inset);
-  padding-top: var(--content-inset);
+  gap: 8px;
+  padding-top: 8px;
 }
 .app-screen--no-top { gap: 0; padding-top: 0; }
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
-.screen-top { padding-inline: var(--screen-inset-left) var(--screen-inset-right); }
+.screen-top { padding-inline: var(--screen-navigation-inset-left) var(--screen-navigation-inset-right); }
 .screen-panel {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  padding: var(--content-inset) var(--screen-inset-right) 0 var(--screen-inset-left);
+  padding: 0 var(--screen-inset-right) 0 var(--screen-inset-left);
   border-radius: var(--container-radius) var(--container-radius) 0 0;
   background: var(--background-secondary);
   display: flex;
   flex-direction: column;
-  gap: var(--content-inset);
+  gap: 0;
   overflow: hidden;
 }
 .screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
@@ -132,7 +134,7 @@ html[data-input='pointer'] .select-field { outline: none; }
 .event-countdown .countdown-label, .event-countdown .countdown-value { line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-countdown .countdown-label { font: var(--font-emphasis); line-height: 1.05; color: var(--text-secondary); }
 .event-countdown .countdown-value { font: var(--font-title); line-height: 1.05; color: var(--accent-countdown); font-weight: 400; font-variant-numeric: tabular-nums; }
-.event-list { list-style: none; padding: 12px 0 0; margin: 0; }
+.event-list { list-style: none; padding: 0; margin: 0; }
 .religious-event-banner {
   font: var(--font-body);
   width: 100%;
