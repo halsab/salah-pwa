@@ -3,8 +3,10 @@ import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from '..
 import { automaticPreferences } from '../../domain/sourcePreferences'
 import type { PrayerDay } from '../../domain/types'
 import type { DatasetMeta } from '../../storage/database'
-import { createOfficialPlace } from '../../domain/place'
-import { DEFAULT_CALCULATION_SETTINGS } from '../../domain/prayerCalculation'
+import { createGpsPlace, createOfficialPlace, isFreshGpsPlace, withNearbyCity } from '../../domain/place'
+import { DEFAULT_CALCULATION_SETTINGS, calculatePrayerSchedule } from '../../domain/prayerCalculation'
+import { automaticCalculationRecommendation } from '../../domain/calculationSettings'
+import type { City } from '../../domain/cities'
 import {
   activateFastScheduleContext,
   currentFastScheduleGeneration,
@@ -82,10 +84,44 @@ describe('fast prayer schedule snapshot', () => {
       context, schedule, place: { id: place.id, latitude: place.latitude, longitude: place.longitude },
       preferences: automaticPreferences(), meta: { locations: [{ id: 'kazan' }] },
     })
-    expect(restored?.place.timestamp).toBe(0)
+    expect(restored?.place.timestamp).toBe(now.getTime())
     expect(restored?.place.accuracy).toBeNull()
     expect(restored?.place.nearbyCity).toBeUndefined()
     expect(restored?.place.cityId).toBeUndefined()
+  })
+
+  it('сохраняет свежесть GPS и проверенную страну, нужную для автоматического профиля', () => {
+    const city: City = { id: 745044, name: 'Стамбул', countryCode: 'TR', admin1Code: '34', admin1Name: 'Стамбул',
+      latitude: 41.0138, longitude: 28.9497, population: 1, timeZone: 'Europe/Istanbul' }
+    const gps = withNearbyCity(createGpsPlace({ ...city, accuracy: 300, timestamp: now.getTime() - 5 * 60_000 },
+      'Europe/Istanbul', null, 'gps:istanbul'), city)
+    const settings = { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' } as const
+    const calculatedContext: ScheduleContext = {
+      location: { id: gps.id, latitude: gps.latitude, longitude: gps.longitude }, date: context.date,
+      timeZone: 'Europe/Istanbul', mode: 'automatic', source: 'calculated', settings,
+    }
+    const calculatedSchedule = calculatePrayerSchedule(calculatedContext.location, context.date, calculatedContext.timeZone, settings)
+    expect(seed({ context: calculatedContext, schedule: calculatedSchedule, place: gps, meta: null,
+      deviceTimeZone: 'Europe/Istanbul' })).toBe(true)
+
+    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Istanbul' })
+    expect(restored?.place.nearbyCity).toMatchObject({ countryCode: 'TR', latitude: city.latitude, longitude: city.longitude })
+    expect(automaticCalculationRecommendation(restored?.place).profile).toBe('turkey')
+    expect(restored?.place.timestamp).toBe(gps.timestamp)
+    expect(isFreshGpsPlace(restored?.place ?? null, now.getTime())).toBe(true)
+  })
+
+  it('валидирует DUM RT по Europe/Moscow, сохраняя timezone GPS-места устройства', () => {
+    const gpsPlace = { ...place, id: 'gps:kazan', selection: 'gps' as const, timeZone: 'Asia/Tokyo',
+      automaticTimeZone: { id: 'Asia/Tokyo', source: 'device' as const }, timestamp: now.getTime(), accuracy: 250 }
+    const officialGpsContext: ScheduleContext = { ...context,
+      location: { id: gpsPlace.id, latitude: gpsPlace.latitude, longitude: gpsPlace.longitude },
+    }
+    const officialGpsSchedule = { ...schedule, coordinates: { latitude: gpsPlace.latitude, longitude: gpsPlace.longitude } }
+    expect(seed({ context: officialGpsContext, schedule: officialGpsSchedule, place: gpsPlace,
+      deviceTimeZone: 'Asia/Tokyo' })).toBe(true)
+    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Asia/Tokyo' }))
+      .toMatchObject({ context: { timeZone: 'Europe/Moscow' }, place: { timeZone: 'Asia/Tokyo' } })
   })
 
   it.each([

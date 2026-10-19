@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { addDays } from '../../domain/date'
 import {
@@ -45,6 +45,7 @@ interface ScheduleResult {
   schedules: DisplaySchedule[]
   error: ScheduleError | null
   contextReady: boolean
+  enrichmentError: boolean
 }
 
 export function usePrayerSchedules({
@@ -67,13 +68,21 @@ export function usePrayerSchedules({
   const key = context ? scheduleContextKey(context) : null
   const [result, setResult] = useState<ScheduleResult | null>(() => initialSnapshot
     ? { context: initialSnapshot.context, key: scheduleContextKey(initialSnapshot.context), retry: 0,
-      services, schedules: [initialSnapshot.schedule], error: null, contextReady: false }
+      services, schedules: [initialSnapshot.schedule], error: null, contextReady: false, enrichmentError: false }
     : null)
   const [retry, setRetry] = useState(0)
+  const [enrichmentRetry, setEnrichmentRetry] = useState(0)
+  const resultRef = useRef(result)
 
   useEffect(() => {
     if (!context || !key) return
     let active = true
+    const currentResult = resultRef.current?.key === key && resultRef.current.retry === retry
+      && resultRef.current.services === services ? resultRef.current : null
+    const snapshotSelected = initialSnapshot && retry === 0 && scheduleContextKey(initialSnapshot.context) === key
+      ? initialSnapshot.schedule : null
+    const existingSelected = currentResult?.schedules.find(day => day.date === context.date) ?? null
+    const selectedDay = snapshotSelected ?? existingSelected
     const officialDay = (day: PrayerDay | undefined, date: string, locationId: string, timeZone: string): DisplaySchedule | null => {
       if (!day) return null
       if (!isPrayerDay(day) || day.date !== date || day.locationId !== locationId) throw new Error('dataset-shape-mismatch')
@@ -86,7 +95,7 @@ export function usePrayerSchedules({
         error instanceof UnsupportedCalculationProfileError
           ? { code: 'unsupported-profile', profile: error.profile }
           : { code: 'load-failed' },
-        contextReady: false,
+        contextReady: false, enrichmentError: false,
       })
     }
     const enrich = async (selected: DisplaySchedule) => {
@@ -95,11 +104,12 @@ export function usePrayerSchedules({
           const dates = [addDays(context.date, -1), addDays(context.date, 1)]
           const days = await services.getDays(context.localityId, dates, context.datasetRevision, context.provider)
           if (days.length !== dates.length) throw new Error('dataset-shape-mismatch')
-          const neighbors = days.map((day, index) => officialDay(day, dates[index] ?? '', context.localityId, context.timeZone))
-            .filter((day): day is DisplaySchedule => day !== null)
+          const previous = officialDay(days[0], dates[0] ?? '', context.localityId, context.timeZone)
+          const tomorrow = officialDay(days[1], dates[1] ?? '', context.localityId, context.timeZone)
+          if (!previous || !tomorrow) throw new Error('dataset-neighbor-missing')
           if (active) setResult({ context, key, retry, services,
-            schedules: [...neighbors, selected].sort((left, right) => left.date.localeCompare(right.date)),
-            error: null, contextReady: true })
+            schedules: [previous, selected, tomorrow],
+            error: null, contextReady: true, enrichmentError: false })
           return
         }
         // Даём браузеру показать выбранный день до вычисления соседних суток.
@@ -112,16 +122,19 @@ export function usePrayerSchedules({
         if (schedules.flatMap(buildScheduleEvents).some(event => event.status === 'resolved' && Math.abs(event.dayOffset) > 3)) {
           throw new Error('schedule-event-outside-window')
         }
-        setResult({ context, key, retry, services, schedules, error: null, contextReady: true })
+        setResult({ context, key, retry, services, schedules, error: null, contextReady: true, enrichmentError: false })
       } catch {
-        // Сбой соседних дат не делает уже проверенный выбранный день неверным.
+        // Проверенный день остаётся видимым, но неполный контекст не участвует в live UI.
         if (active) setResult(current => current?.key === key && current.retry === retry
-          ? { ...current, contextReady: false }
+          ? { ...current, schedules: [selected], contextReady: false, enrichmentError: true }
           : current)
       }
     }
-    if (initialSnapshot && retry === 0 && scheduleContextKey(initialSnapshot.context) === key) {
-      void enrich(initialSnapshot.schedule)
+    if (selectedDay) {
+      setResult(current => current?.key === key && current.retry === retry
+        ? { ...current, schedules: [selectedDay], contextReady: false, enrichmentError: false }
+        : current)
+      void enrich(selectedDay)
       return () => { active = false }
     }
     const load = async () => {
@@ -137,7 +150,7 @@ export function usePrayerSchedules({
           selected = calculatePrayerSchedule(context.location, context.date, context.timeZone, context.settings)
         }
         if (!active) return
-        setResult({ context, key, retry, services, schedules: [selected], error: null, contextReady: false })
+        setResult({ context, key, retry, services, schedules: [selected], error: null, contextReady: false, enrichmentError: false })
         void enrich(selected)
       } catch (error: unknown) {
         setCriticalError(error)
@@ -145,7 +158,8 @@ export function usePrayerSchedules({
     }
     void load()
     return () => { active = false }
-  }, [context, initialSnapshot, key, retry, services])
+  }, [context, enrichmentRetry, initialSnapshot, key, retry, services])
+  useEffect(() => { resultRef.current = result }, [result])
 
   // Проверка во время render закрывает промежуток до cleanup/effect нового запроса.
   const matching = result?.key === key && result.retry === retry && result.services === services ? result : null
@@ -167,6 +181,8 @@ export function usePrayerSchedules({
     scheduleLoading: !matching && !unavailable,
     scheduleError: unavailable ?? matching?.error ?? null,
     contextReady: Boolean(matching?.contextReady),
+    enrichmentError: Boolean(matching?.enrichmentError),
     retrySchedule: () => setRetry((count) => count + 1),
+    retryEnrichment: () => setEnrichmentRetry(count => count + 1),
   }
 }

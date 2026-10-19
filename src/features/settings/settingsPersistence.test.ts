@@ -52,3 +52,16 @@ it('invalidates queued writes and waits for in-flight completion before reset', 
   expect(save).toHaveBeenCalledTimes(1)
   expect(writer.getStatus()).toBe('idle')
 })
+
+it('rebases accumulated writes after accepting an external settings state', async () => {
+  const save = vi.fn().mockResolvedValue(success(undefined))
+  const writer = createSettingsPersistence(save)
+  writer.save(a)
+  await writer.drain()
+
+  writer.rebase()
+  writer.save({ themeFamily: 'classic' })
+  await writer.drain()
+
+  expect(save.mock.lastCall?.[0]).toEqual({ themeFamily: 'classic' })
+})

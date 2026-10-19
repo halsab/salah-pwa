@@ -119,6 +119,29 @@ describe('usePrayerSchedules', () => {
     expect(hook.result.current.tomorrow).toMatchObject({ locationId: 'C' })
   })
 
+  it('оставляет выбранный официальный день видимым, пока оба соседних дня не загружены, и повторяет дополнение', async () => {
+    const initial = options()
+    let enrichmentCalls = 0
+    initial.services.getDays = vi.fn((id: string, dates: readonly string[]) => Promise.resolve(
+      dates.length === 1 ? [day(id, dates[0] ?? '')]
+        : enrichmentCalls++ === 0 ? [undefined, day(id, dates[1] ?? '')]
+          : [day(id, dates[0] ?? ''), day(id, dates[1] ?? '')],
+    ))
+    const hook = observe(initial)
+
+    await waitFor(() => expect(hook.result.current.schedule).toMatchObject({ locationId: 'A', date: initial.selectedDate }))
+    await waitFor(() => expect(hook.result.current.enrichmentError).toBe(true))
+    expect(hook.result.current.contextReady).toBe(false)
+    expect(hook.result.current.schedules).toHaveLength(1)
+    expect(hook.result.current.scheduleError).toBeNull()
+
+    act(() => hook.result.current.retryEnrichment())
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+    expect(hook.result.current.enrichmentError).toBe(false)
+    expect(hook.result.current.previousSchedule?.date).toBe(addDays(initial.selectedDate, -1))
+    expect(hook.result.current.tomorrow?.date).toBe(addDays(initial.selectedDate, 1))
+  })
+
   it('смена расчётных координат, timezone, даты и каждой эффективной настройки сразу скрывает старые значения', async () => {
     let current: Options = { ...options(), locationMode: 'calculated', calculatedLocation: { latitude: 55.75, longitude: 37.62, timeZone: 'Europe/Moscow', accuracy: null, timestamp: 0, name: 'Москва', cityId: 524901 } }
     const hook = observe(current)

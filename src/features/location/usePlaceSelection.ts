@@ -38,15 +38,15 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       : { mode: 'calculated', coordinates: next, source: selectionSource, place: next })
   }, [locations, persist])
 
-  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[], reconcile = false) => {
-    if (reconcile && current.current && initialPlace.current && current.current !== initialPlace.current) {
+  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[], mode: 'startup' | 'external' = 'startup') => {
+    if (mode === 'startup' && current.current && current.current !== initialPlace.current) {
       restored.current = true
       return
     }
-    if (!reconcile && (restored.current || current.current)) return
+    if (mode === 'startup' && restored.current) return
     restored.current = true
     if (!choice) {
-      if (reconcile) {
+      if (mode === 'external') {
         current.current = null
         setPlace(null)
         setSource('default')

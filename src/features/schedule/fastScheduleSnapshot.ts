@@ -2,6 +2,7 @@ import { isCalculationSettings } from '../../domain/calculationSettings'
 import { getSystemDate } from '../../domain/date'
 import { isLocationSelectionSource } from '../../domain/locationSelection'
 import { isPlace } from '../../domain/placeMigration'
+import { gpsCountryCode } from '../../domain/place'
 import { isPrayerDay } from '../../domain/prayerDatasetValidation'
 import { scheduleContextKey, type ScheduleContext, getDatasetRevision } from '../../domain/scheduleContext'
 import type { SourcePreferences } from '../../domain/sourcePreferences'
@@ -107,8 +108,9 @@ function isContext(value: unknown): value is ScheduleContext {
 }
 
 function isCachedPlace(value: unknown): value is Place {
-  return isPlace(value) && value.accuracy === null && value.timestamp === 0
-    && value.nearbyCity === undefined && value.cityId === undefined && value.source === undefined
+  return isPlace(value) && value.accuracy === null && Number.isFinite(value.timestamp) && value.timestamp >= 0
+    && value.cityId === undefined && value.source === undefined
+    && (value.nearbyCity === undefined || gpsCountryCode(value) !== undefined)
 }
 
 function isCalculatedSchedule(value: unknown, context: Extract<ScheduleContext, { source: 'calculated' }>): value is PrayerSchedule {
@@ -209,10 +211,16 @@ function validRecord(record: FastScheduleRecord, input: { appVersion: string; no
     || !isLocationSelectionSource(record.selectionSource) || !isSourcePreferences(record.preferences)) return false
   const context = record.context
   if (record.place.id !== context.location.id || record.place.latitude !== context.location.latitude
-    || record.place.longitude !== context.location.longitude || record.place.timeZone !== context.timeZone
+    || record.place.longitude !== context.location.longitude
     || getSystemDate(input.now, context.timeZone) !== context.date) return false
-  if (record.place.selection === 'gps' && (context.timeZone !== input.deviceTimeZone
-    || record.place.automaticTimeZone.id !== input.deviceTimeZone)) return false
+  if (record.place.selection === 'gps' && (record.place.timeZone !== input.deviceTimeZone
+    || record.place.automaticTimeZone.id !== input.deviceTimeZone
+    || (context.source === 'calculated' && context.timeZone !== input.deviceTimeZone)
+    || (context.source === 'official' && (context.timeZone !== DUM_RT_TIME_ZONE || context.provider !== 'dumRt')))) return false
+  if (context.source === 'official' && (context.timeZone !== DUM_RT_TIME_ZONE || context.provider !== 'dumRt'
+    || (record.place.selection === 'official' && record.place.timeZone !== DUM_RT_TIME_ZONE)
+    || (record.place.selection === 'city' && record.place.timeZone !== record.place.automaticTimeZone.id))) return false
+  if (context.source === 'calculated' && record.place.selection !== 'gps' && record.place.timeZone !== context.timeZone) return false
   if (record.place.selection === 'official' && context.source === 'official'
     && (context.timeZone !== DUM_RT_TIME_ZONE || context.provider !== 'dumRt')) return false
   const meta = context.source === 'official'
@@ -294,10 +302,20 @@ function cacheMeta(meta: DatasetMeta | null, context: ScheduleContext): DatasetM
 }
 
 function cachePlace(place: Place): Place {
-  // Для первого кадра нужны координаты и подпись, но не история GPS-фиксации.
-  const { accuracy: _accuracy, timestamp: _timestamp, nearbyCity: _nearbyCity,
+  // Для freshness достаточно времени последнего фикса; country hint нужен автоматическому профилю.
+  const { accuracy: _accuracy, nearbyCity: _nearbyCity,
     cityId: _cityId, source: _source, ...displayPlace } = place
-  return { ...displayPlace, accuracy: null, timestamp: 0 }
+  const countryCode = gpsCountryCode(place)
+  const city = place.nearbyCity
+  const nearbyCity = countryCode && city && typeof city.latitude === 'number' && typeof city.longitude === 'number' ? {
+    id: city.id,
+    name: city.name,
+    distanceKm: city.distanceKm,
+    countryCode,
+    latitude: city.latitude,
+    longitude: city.longitude,
+  } : undefined
+  return { ...displayPlace, ...(nearbyCity ? { nearbyCity } : {}), accuracy: null, timestamp: place.timestamp }
 }
 
 export function writeFastScheduleSnapshot(input: {

@@ -62,6 +62,8 @@ interface ScheduleContentProps {
   scheduleLoading: boolean
   scheduleError: ScheduleError | null
   contextReady?: boolean
+  enrichmentError?: boolean
+  onRetryEnrichment?: () => void
   selectedDate: string
   calendarPreferences?: CalendarPreferences
   today: string
@@ -82,7 +84,7 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
-  contextReady = true,
+  contextReady = true, enrichmentError = false, onRetryEnrichment = () => {},
   currentTime, now, officialMode, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
   fastingModeEnabled = false, fastingEvents, timeZone, onOpenReligiousEvent = () => {},
   onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
@@ -126,6 +128,10 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
           : <>
             {religiousBanner ? <ReligiousEventBanner state={religiousBanner} onOpen={onOpenReligiousEvent} /> : null}
             <PrayerSchedule schedule={schedule} current={current} now={effectiveNow} live={live} calendarPreferences={calendarPreferences} />
+            {enrichmentError ? <div className="screen-status" role="alert">
+              <span>{t('scheduleContextUnavailable')}</span>
+              <ActionButton onClick={onRetryEnrichment}>{t('retry')}</ActionButton>
+            </div> : null}
             {live && fastingModeEnabled && timeZone ? <FastingCard events={fastingScheduleEvents} preferences={fastingMode}
               selectedDate={selectedDate} today={today} timeZone={timeZone} correction={calendarPreferences.correction}
               hijriSupported={hijriSupported} now={now} /> : null}

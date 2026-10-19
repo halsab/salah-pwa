@@ -2,17 +2,59 @@ import { required } from '../test/required'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { completeDataset } from '../test/prayerDataset'
 import { createCityPlace, createOfficialPlace } from '../domain/place'
+import { getDatasetRevision } from '../domain/scheduleContext'
 import { getDeviceTimeZone } from '../domain/locationTime'
 import { success } from '../domain/result'
 import { automaticPreferences, manualCalculation } from '../domain/sourcePreferences'
 import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, setSetting, type LocationChoice } from '../storage/database'
-import { createPrayerRepository, initializePrayerRepository } from './prayerRepository'
+import * as database from '../storage/database'
+import { createPrayerRepository, initializePrayerRepository, initializePrayerRepositoryStartup, loadPrayerRepositoryOptionalSettings } from './prayerRepository'
 
 const dataset = completeDataset()
 const repo = createPrayerRepository()
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteSalahDatabase() })
 
 describe('local initialization and persistence', () => {
+  it('loads the selected source identity without scanning the full prayer dataset', async () => {
+    await replaceDataset(dataset, { version: 'startup', sha256: 'b'.repeat(64), url: 'prayer-times-current.json' })
+    const storedDataset = vi.spyOn(database, 'getStoredDataset')
+
+    const state = await initializePrayerRepositoryStartup()
+    expect(state).toMatchObject({ ok: true, value: { dataState: 'ready', meta: { schemaVersion: dataset.schemaVersion } } })
+    expect(storedDataset).not.toHaveBeenCalled()
+    if (!state.ok || !state.value.meta) throw new Error('Startup metadata fixture was not restored')
+    expect(await repo.getDays('kazan', [dataset.days[0]?.date ?? '2026-01-01'], getDatasetRevision(state.value.meta))).toMatchObject({ ok: true })
+  })
+
+  it('hydrates optional settings after the critical startup identity', async () => {
+    const previous = createOfficialPlace(required(dataset.locations[0]), 0)
+    await repo.saveSettings({ recentPlaces: [previous], themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } })
+
+    expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ ok: true, value: {
+      recentPlaces: [previous], themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true },
+    } })
+  })
+
+  it('uses identical normalization for deferred and full optional-settings hydration', async () => {
+    const recent = createOfficialPlace(required(dataset.locations[0]), 0)
+    const calendarPreferences = { calendar: 'hijri', correction: 1 } as const
+    const fastingMode = { manualEnabled: true }
+    await repo.saveSettings({ recentPlaces: [recent], calendarPreferences, themeFamily: 'seasonal', languagePreference: 'ru', fastingMode })
+
+    const full = await initializePrayerRepository()
+    if (!full.ok) throw new Error('Full repository initialization failed')
+    const optional = await loadPrayerRepositoryOptionalSettings(full.value.locationChoice?.place?.id)
+    if (!optional.ok) throw new Error('Optional settings hydration failed')
+
+    expect(optional.value).toEqual({
+      recentPlaces: full.value.recentPlaces,
+      calendarPreferences: full.value.calendarPreferences,
+      themeFamily: full.value.themeFamily,
+      languagePreference: full.value.languagePreference,
+      fastingMode: full.value.fastingMode,
+    })
+  })
+
   it('restores, validates and resets the theme family without using legacy appearance', async () => {
     await setSetting('appearance', 'light')
     expect(await initializePrayerRepository()).toMatchObject({ value: { themeFamily: 'classic' } })

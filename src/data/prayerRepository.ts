@@ -5,6 +5,7 @@ import type { Place } from '../domain/place'
 import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
 import { isPrayerDataset } from '../domain/prayerDatasetValidation'
 import { getDatasetRevision } from '../domain/scheduleContext'
+import { isValidTimeZone, DUM_RT_TIME_ZONE } from '../domain/locationTime'
 import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
@@ -14,7 +15,7 @@ import {
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
-import { restoreThemeFamily, type ThemeFamily } from '../domain/theme'
+import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from '../domain/theme'
 import { restoreLanguagePreference, type LanguagePreference } from '../localization/locale'
 import { isFastingModePreferences, restoreFastingModePreferences, type FastingModePreferences } from '../domain/fasting'
 
@@ -36,6 +37,20 @@ export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   languagePreference?: LanguagePreference
   fastingMode?: FastingModePreferences
 }
+export interface PrayerRepositoryOptionalSettings {
+  recentPlaces: Place[]
+  calendarPreferences: CalendarPreferences
+  themeFamily: ThemeFamily
+  languagePreference: LanguagePreference
+  fastingMode: FastingModePreferences
+}
+interface StoredOptionalSettings {
+  recentPlaces: unknown
+  calendarPreferences: unknown
+  themeFamily: unknown
+  languagePreference: unknown
+  fastingMode: unknown
+}
 export type PrayerRepositoryOperations = Partial<PrayerDatasetByteOperations> & {
   fetch?: Fetcher
   timeoutMs?: number
@@ -50,6 +65,120 @@ async function readLocalSnapshot(provider: PrayerProvider): Promise<Result<Praye
   }
   const valid = stored.value && isPrayerDataset(stored.value.dataset)
   return success({ meta: valid ? stored.value.meta : null, dataState: valid ? 'ready' : stored.value ? 'invalid' : 'not-loaded', update: { status: 'idle' }, checkedAt: null })
+}
+
+function isCivilDate(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const date = new Date(`${value}T00:00:00Z`)
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value
+}
+
+function isStoredMeta(value: unknown, provider: PrayerProvider): value is DatasetMeta {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const meta = value as Record<string, unknown>
+  const source = meta.source && typeof meta.source === 'object' && !Array.isArray(meta.source)
+    ? meta.source as Record<string, unknown> : null
+  const years = source?.years
+  const locations = meta.locations
+  if ((meta.schemaVersion !== 2 && meta.schemaVersion !== 3)
+    || meta.provider !== undefined && meta.provider !== provider.id
+    || !source || typeof source.name !== 'string' || !source.name.trim()
+    || typeof source.url !== 'string' || !source.url.startsWith('https://')
+    || typeof source.updatedAt !== 'string' || !Number.isFinite(Date.parse(source.updatedAt))
+    || !Array.isArray(years) || !years.length
+    || !years.every(year => typeof year === 'number' && Number.isInteger(year) && year >= 1000 && year <= 9999)
+    || new Set(years).size !== years.length
+    || !Array.isArray(locations) || !locations.length) return false
+  const ids = new Set<string>()
+  for (const rawLocation of locations as unknown[]) {
+    if (!rawLocation || typeof rawLocation !== 'object' || Array.isArray(rawLocation)) return false
+    const location = rawLocation as Record<string, unknown>
+    const latitude = location.latitude
+    const longitude = location.longitude
+    if (typeof location.id !== 'string' || !location.id || ids.has(location.id)
+      || typeof location.name !== 'string' || !location.name
+      || typeof latitude !== 'number' || !Number.isFinite(latitude) || Math.abs(latitude) > 90
+      || typeof longitude !== 'number' || !Number.isFinite(longitude) || Math.abs(longitude) > 180
+      || location.timeZone !== undefined && (typeof location.timeZone !== 'string' || !isValidTimeZone(location.timeZone))) return false
+    ids.add(location.id)
+  }
+  if (meta.schemaVersion === 2) {
+    if (source.name !== 'ДУМ Республики Татарстан' || source.url !== 'https://dumrt.ru/ru/help-info/prayertime/') return false
+  } else {
+    const info = meta.providerInfo && typeof meta.providerInfo === 'object' && !Array.isArray(meta.providerInfo)
+      ? meta.providerInfo as Record<string, unknown> : null
+    const coverage = info?.coverage && typeof info.coverage === 'object' && !Array.isArray(info.coverage)
+      ? info.coverage as Record<string, unknown> : null
+    const startDate = coverage?.startDate
+    const endDate = coverage?.endDate
+    if (!info || !coverage
+      || info.id !== provider.id || typeof info.revision !== 'string' || !info.revision.trim()
+      || info.timeZone !== provider.timeZone || typeof info.timeZone !== 'string' || !isValidTimeZone(info.timeZone)
+      || coverage.geographic !== provider.coverage
+      || !isCivilDate(startDate) || !isCivilDate(endDate)
+      || startDate > endDate
+      || !(years as unknown[]).every(year => typeof year === 'number' && year >= Number(startDate.slice(0, 4))
+        && year <= Number(endDate.slice(0, 4)))) return false
+    if (provider.id === 'dumRt' && (source.name !== 'ДУМ Республики Татарстан'
+      || source.url !== 'https://dumrt.ru/ru/help-info/prayertime/' || info.timeZone !== DUM_RT_TIME_ZONE)) return false
+  }
+  const identity = meta.identity
+  if (identity !== undefined) {
+    if (!identity || typeof identity !== 'object' || Array.isArray(identity)) return false
+    const storedIdentity = identity as Record<string, unknown>
+    if (typeof storedIdentity.version !== 'string' || !storedIdentity.version
+      || typeof storedIdentity.url !== 'string' || !storedIdentity.url
+      || typeof storedIdentity.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(storedIdentity.sha256)
+      || storedIdentity.sequence !== undefined && (typeof storedIdentity.sequence !== 'number'
+        || !Number.isInteger(storedIdentity.sequence) || storedIdentity.sequence < 0)) return false
+  }
+  return true
+}
+
+export async function initializePrayerRepositoryStartup(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
+  const [meta, choice, preferences, legacy] = await Promise.all([
+    getDatasetMeta(provider.id), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'),
+  ])
+  if (!meta.ok) return meta
+  if (!choice.ok) return choice
+  if (!preferences.ok) return preferences
+  if (!legacy.ok) return legacy
+  const validMeta = meta.value && isStoredMeta(meta.value, provider) ? meta.value : null
+  const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, validMeta ?? provider.bundled)
+  return success({
+    meta: validMeta,
+    dataState: meta.value ? validMeta ? 'ready' : 'invalid' : 'not-loaded',
+    update: { status: 'idle' }, checkedAt: null,
+    locationChoice,
+    preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value),
+    themeFamily: DEFAULT_THEME_FAMILY,
+  })
+}
+
+function restoreOptionalSettings(values: StoredOptionalSettings, currentLocationId?: string): PrayerRepositoryOptionalSettings {
+  return {
+    recentPlaces: restoreRecentPlaces(values.recentPlaces, currentLocationId),
+    calendarPreferences: restoreCalendarPreferences(values.calendarPreferences),
+    themeFamily: restoreThemeFamily(values.themeFamily),
+    languagePreference: restoreLanguagePreference(values.languagePreference),
+    fastingMode: restoreFastingModePreferences(values.fastingMode),
+  }
+}
+
+export async function loadPrayerRepositoryOptionalSettings(currentLocationId?: string): Promise<Result<PrayerRepositoryOptionalSettings, StorageFailure>> {
+  const [recentPlaces, calendarPreferences, themeFamily, languagePreference, fastingMode] = await Promise.all([
+    getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('themeFamily'),
+    getSetting('languagePreference'), getSetting('fastingMode'),
+  ])
+  if (!recentPlaces.ok) return recentPlaces
+  if (!calendarPreferences.ok) return calendarPreferences
+  if (!themeFamily.ok) return themeFamily
+  if (!languagePreference.ok) return languagePreference
+  if (!fastingMode.ok) return fastingMode
+  return success(restoreOptionalSettings({
+    recentPlaces: recentPlaces.value, calendarPreferences: calendarPreferences.value,
+    themeFamily: themeFamily.value, languagePreference: languagePreference.value, fastingMode: fastingMode.value,
+  }, currentLocationId))
 }
 function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): LocationChoice {
   const locations = meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS
@@ -79,13 +208,13 @@ export async function initializePrayerRepository(provider: PrayerProvider = dumR
   if (!languagePreference.ok) return languagePreference
   if (!fastingMode.ok) return fastingMode
   const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta ?? provider.bundled)
+  const optionalSettings = restoreOptionalSettings({
+    recentPlaces: recentPlaces.value, calendarPreferences: calendarPreferences.value,
+    themeFamily: themeFamily.value, languagePreference: languagePreference.value, fastingMode: fastingMode.value,
+  }, locationChoice?.place?.id)
   return success({ ...snapshot.value, locationChoice,
-    calendarPreferences: restoreCalendarPreferences(calendarPreferences.value),
-    recentPlaces: restoreRecentPlaces(recentPlaces.value, locationChoice?.place?.id),
+    ...optionalSettings,
     appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',
-    themeFamily: restoreThemeFamily(themeFamily.value),
-    languagePreference: restoreLanguagePreference(languagePreference.value),
-    fastingMode: restoreFastingModePreferences(fastingMode.value),
     preferences: restoreSourcePreferences(preferences.value, legacy.value, choice.value) })
 }
 
@@ -167,6 +296,8 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
   }
   return {
     initialize: async () => { generation = await getDataGeneration(); return initializePrayerRepository(provider) },
+    initializeStartup: async () => { generation = await getDataGeneration(); return initializePrayerRepositoryStartup(provider) },
+    loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
     clearAppData,
     getDataGeneration,
     refresh,
