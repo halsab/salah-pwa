@@ -71,7 +71,7 @@ describe('новое расписание', () => {
       vi.setSystemTime(new Date('2026-05-05T03:52:59+03:00'))
       const now = () => new Date()
       render(<ScheduleContent {...base} currentTime={now()} now={now} />)
-      expect(screen.getByRole('timer')).toHaveAccessibleName('До восхода, осталось < 1 мин')
+      expect(screen.getByRole('timer')).toHaveAccessibleName('До восхода, осталось 1 сек')
       act(() => { vi.advanceTimersByTime(1000) })
       expect(screen.getByText('Восход').closest('li')).toHaveAttribute('aria-current', 'true')
       expect(screen.getByRole('timer')).toHaveAccessibleName('До зенита, осталось 7 ч 48 мин')
@@ -129,7 +129,7 @@ describe('новое расписание', () => {
       vi.setSystemTime(new Date('2026-05-05T19:29:59+03:00'))
       const now = () => new Date()
       render(<ScheduleContent {...base} currentTime={now()} now={now} />)
-      expect(screen.getByRole('timer')).toHaveTextContent('< 1 мин')
+      expect(screen.getByRole('timer')).toHaveTextContent('1 сек')
       act(() => { vi.advanceTimersByTime(1000) })
       expect(screen.getByText('Магриб').closest('li')).toHaveAttribute('aria-current', 'true')
       expect(screen.getByRole('timer')).toHaveAccessibleName(/До Иши, осталось 1 ч 30 мин/)
@@ -195,5 +195,32 @@ describe('новое расписание', () => {
     const now = () => new Date('2026-12-31T23:56:00+03:00')
     const { container } = render(<ScheduleContent {...base} schedule={today} schedules={[tomorrow, today]} selectedDate={today.date} today={today.date} currentTime={now()} now={now} officialMode={false} />)
     expect(container.querySelector('[aria-current="true"]')).toBeNull()
+  })
+
+  it('использует один формат для prayer footer и fasting card countdown', () => {
+    const schedules = [day, { ...day, date: '2026-05-06' }]
+    const now = () => new Date('2026-05-05T18:00:00+03:00')
+    render(<ScheduleContent {...base} schedules={schedules} currentTime={now()} now={now} hijriSupported={false}
+      fastingMode={{ manualEnabled: true }} fastingModeEnabled timeZone="Europe/Moscow" />)
+
+    expect(screen.getAllByRole('timer')).toHaveLength(2)
+    expect(screen.getByRole('timer', { name: 'До Магриба, осталось 1 ч 30 мин' })).toBeVisible()
+    expect(screen.getByRole('timer', { name: 'До конца поста, осталось 1 ч 30 мин' })).toBeVisible()
+  })
+
+  it('заменяет оба countdown при обновлении расписания и timezone', () => {
+    const tokyo = { ...day, timeZone: 'Asia/Tokyo' }
+    const now = () => new Date('2026-05-05T09:00:00Z')
+    const props = { ...base, schedule: day, schedules: [day, { ...day, date: '2026-05-06' }],
+      selectedDate: day.date, today: day.date, currentTime: now(), now, officialMode: false,
+      hijriSupported: false, fastingMode: { manualEnabled: true }, fastingModeEnabled: true }
+    const { rerender } = render(<ScheduleContent {...props} timeZone="Europe/Moscow" />)
+    expect(screen.getByRole('timer', { name: 'До Асра, осталось 4 ч 58 мин' })).toBeVisible()
+
+    rerender(<ScheduleContent {...props} schedule={tokyo} schedules={[tokyo, { ...tokyo, date: '2026-05-06' }]}
+      timeZone="Asia/Tokyo" />)
+    expect(screen.getByRole('timer', { name: 'До Магриба, осталось 1 ч 30 мин' })).toBeVisible()
+    expect(screen.getByRole('timer', { name: 'До конца поста, осталось 1 ч 30 мин' })).toBeVisible()
+    expect(screen.queryByRole('timer', { name: /4 ч 58 мин/u })).not.toBeInTheDocument()
   })
 })
