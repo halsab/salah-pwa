@@ -48,11 +48,12 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   gap: 0;
   overflow: hidden;
 }
-.screen-content { flex: 1; min-height: 0; padding-top: var(--content-inset); padding-bottom: var(--screen-content-bottom-inset); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
+.screen-content { flex: 1; min-height: 0; padding-top: var(--content-inset); padding-bottom: max(var(--screen-content-bottom-inset), calc(var(--app-keyboard-inset, 0px) + var(--content-inset))); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
 .screen-bottom { padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
   margin-right: calc(0px - var(--screen-inset-right));
+  padding-top: 0;
   padding-left: var(--screen-inset-left);
   padding-right: var(--screen-inset-right);
 }

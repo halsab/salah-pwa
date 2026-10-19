@@ -110,7 +110,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(homeGeometry.panelTop).toBeCloseTo((homeGeometry.headerBottom ?? 0) + 8, 0)
   expect(homeGeometry.contentTop).toBeCloseTo(homeGeometry.panelTop, 0)
   expect(homeGeometry.contentBottom).toBeCloseTo(homeGeometry.footerTop ?? 0, 0)
-  expect(homeGeometry.contentPaddingTop).toBe(16)
+  expect(homeGeometry.contentPaddingTop).toBe(0)
   expect(homeGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   expect(homeGeometry.panelBackgroundMatchesToken).toBe(true)
   expect(homeGeometry.topLeftRadius).toBe('38px')
@@ -124,7 +124,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(homeGeometry.documentWidth).toBeLessThanOrEqual(homeGeometry.viewportWidth + 1)
   expect(homeGeometry.contentScrollHeight).toBeGreaterThan(homeGeometry.contentClientHeight)
   const firstPrayerTop = await home.locator('.event-list > .event-row').first().evaluate(element => element.getBoundingClientRect().top)
-  expect(firstPrayerTop).toBeCloseTo(homeGeometry.panelTop + 16, 0)
+  expect(firstPrayerTop).toBeCloseTo(homeGeometry.panelTop, 0)
 
   const originalLabels = await page.evaluate(() => {
     const place = document.querySelector<HTMLElement>('.home-location-name')
