@@ -7,7 +7,8 @@ async function readShellGeometry(region: import('@playwright/test').Locator) {
     const top = element.querySelector<HTMLElement>(':scope > .screen-top')
     const content = panel?.querySelector<HTMLElement>(':scope > .screen-content')
     const footer = panel?.querySelector<HTMLElement>(':scope > .screen-bottom')
-    if (!shell || !panel || !content) throw new Error('Не найдена общая структура Screen')
+    const surface = document.querySelector<HTMLElement>('.app-bottom-surface')
+    if (!shell || !panel || !content || !surface) throw new Error('Не найдена общая структура Screen')
     const panelBounds = panel.getBoundingClientRect()
     const shellBounds = shell.getBoundingClientRect()
     const topBounds = top?.getBoundingClientRect()
@@ -43,6 +44,17 @@ async function readShellGeometry(region: import('@playwright/test').Locator) {
       shellBackground: getComputedStyle(shell).backgroundColor,
       documentBackground: getComputedStyle(document.body).backgroundColor,
       primaryBackground,
+      bottomSurface: {
+        backgroundMatchesPanel: getComputedStyle(surface).backgroundColor === panelToken,
+        position: getComputedStyle(surface).position,
+        pointerEvents: getComputedStyle(surface).pointerEvents,
+        hiddenFromAccessibility: surface.getAttribute('aria-hidden'),
+        outsideShell: !shell.contains(surface),
+        height: surface.getBoundingClientRect().height,
+        bottom: surface.getBoundingClientRect().bottom,
+        width: surface.getBoundingClientRect().width,
+        interceptsPointer: document.elementFromPoint(innerWidth / 2, innerHeight - 8) === surface,
+      },
       topLeftRadius: getComputedStyle(panel).borderTopLeftRadius,
       topRightRadius: getComputedStyle(panel).borderTopRightRadius,
       bottomLeftRadius: getComputedStyle(panel).borderBottomLeftRadius,
@@ -120,11 +132,26 @@ test('общая оболочка держит слоты, прокрутку и
   expect(homeGeometry.panelBottom).toBeCloseTo(homeGeometry.shellBottom, 0)
   expect(homeGeometry.shellBackground).toBe(homeGeometry.primaryBackground)
   expect(homeGeometry.documentBackground).toBe(homeGeometry.primaryBackground)
+  expect(homeGeometry.bottomSurface).toMatchObject({ backgroundMatchesPanel: true, position: 'fixed', pointerEvents: 'none', hiddenFromAccessibility: 'true', outsideShell: true, height: 16, interceptsPointer: false })
+  expect(homeGeometry.bottomSurface.bottom).toBeCloseTo(homeGeometry.shellBottom, 0)
+  expect(homeGeometry.bottomSurface.width).toBe(homeGeometry.viewportWidth)
+  expect(homeGeometry.footerBottom).toBeLessThanOrEqual(homeGeometry.bottomSurface.bottom - 16 + 1)
   expect(homeGeometry.scrollRegionCount).toBe(1)
   expect(homeGeometry.documentWidth).toBeLessThanOrEqual(homeGeometry.viewportWidth + 1)
   expect(homeGeometry.contentScrollHeight).toBeGreaterThan(homeGeometry.contentClientHeight)
   const firstPrayerTop = await home.locator('.event-list > .event-row').first().evaluate(element => element.getBoundingClientRect().top)
   expect(firstPrayerTop).toBeCloseTo(homeGeometry.panelTop, 0)
+
+  for (const colorScheme of ['dark', 'light'] as const) {
+    await page.emulateMedia({ colorScheme })
+    await expect.poll(() => page.locator('html').getAttribute('data-theme-tone')).toBe(colorScheme)
+    const classicGeometry = await readShellGeometry(home)
+    expect(classicGeometry.documentBackground).toBe(classicGeometry.primaryBackground)
+    expect(classicGeometry.shellBackground).toBe(classicGeometry.primaryBackground)
+    expect(classicGeometry.bottomSurface.backgroundMatchesPanel).toBe(true)
+    expect(classicGeometry.footerBottom).toBe(homeGeometry.footerBottom)
+    expect(classicGeometry.panelTop).toBe(homeGeometry.panelTop)
+  }
 
   const originalLabels = await page.evaluate(() => {
     const place = document.querySelector<HTMLElement>('.home-location-name')
@@ -262,6 +289,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(autumnGeometry.primaryBackground).not.toBe('rgb(0, 0, 0)')
   expect(autumnGeometry.shellBackground).toBe(autumnGeometry.primaryBackground)
   expect(autumnGeometry.documentBackground).toBe(autumnGeometry.primaryBackground)
+  expect(autumnGeometry.bottomSurface.backgroundMatchesPanel).toBe(true)
 
   await page.emulateMedia({ colorScheme: 'dark' })
   await expect.poll(() => page.locator('html').getAttribute('data-theme-tone')).toBe('dark')
@@ -269,6 +297,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(autumnDarkGeometry.primaryBackground).toBe('rgb(110, 81, 70)')
   expect(autumnDarkGeometry.shellBackground).toBe(autumnDarkGeometry.primaryBackground)
   expect(autumnDarkGeometry.documentBackground).toBe(autumnDarkGeometry.primaryBackground)
+  expect(autumnDarkGeometry.bottomSurface.backgroundMatchesPanel).toBe(true)
 
   await page.emulateMedia({ colorScheme: 'light' })
   await expect.poll(() => page.locator('html').getAttribute('data-theme-tone')).toBe('light')
@@ -276,4 +305,5 @@ test('общая оболочка держит слоты, прокрутку и
   expect(autumnLightGeometry.primaryBackground).toBe('rgb(214, 178, 155)')
   expect(autumnLightGeometry.shellBackground).toBe(autumnLightGeometry.primaryBackground)
   expect(autumnLightGeometry.documentBackground).toBe(autumnLightGeometry.primaryBackground)
+  expect(autumnLightGeometry.bottomSurface.backgroundMatchesPanel).toBe(true)
 })
