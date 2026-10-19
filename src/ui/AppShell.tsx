@@ -15,16 +15,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         const viewportLoss = layoutHeight - viewport.height
         // Небольшие изменения visual viewport при bounce не означают открытие клавиатуры.
         const keyboardVisible = viewport.scale === 1 && viewportLoss > Math.max(120, layoutHeight * 0.15)
+        element.style.removeProperty('--app-viewport-height')
+        element.style.removeProperty('--app-viewport-top')
+        element.style.removeProperty('--app-viewport-bottom-padding')
         if (!keyboardVisible) {
-          element.style.removeProperty('--app-viewport-height')
-          element.style.removeProperty('--app-viewport-top')
-          element.style.removeProperty('--app-viewport-bottom-padding')
+          element.style.removeProperty('--app-keyboard-inset')
           return
         }
-        element.style.setProperty('--app-viewport-height', `${viewport.height}px`)
-        element.style.setProperty('--app-viewport-top', `${Math.max(0, viewport.offsetTop)}px`)
-        // Safari сохраняет safe-area-inset-bottom над клавиатурой; там нужен только небольшой зазор.
-        element.style.setProperty('--app-viewport-bottom-padding', '8px')
+        const keyboardInset = Math.max(0, layoutHeight - Math.max(0, viewport.offsetTop) - viewport.height)
+        element.style.setProperty('--app-keyboard-inset', `${keyboardInset}px`)
       })
     }
     update()

@@ -6,13 +6,12 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .app-layout {
   /* WebKit окрашивает status bar по fixed-потомкам; оболочка остаётся в координатах документа. */
   position: absolute;
-  top: var(--app-viewport-top, 0px);
+  top: 0;
   left: 0;
   right: 0;
-  height: var(--app-viewport-height, 100dvh);
+  height: 100dvh;
   padding: 0;
-  /* Оболочка резервирует только реальную safe-area; сдвиг клавиатуры не дублирует её. */
-  padding-top: max(0px, calc(var(--app-safe-area-top, env(safe-area-inset-top, 0px)) - var(--app-viewport-top, 0px)));
+  padding-top: max(0px, env(safe-area-inset-top, 0px));
   display: flex;
   justify-content: center;
   overflow: hidden;
@@ -23,7 +22,8 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   --screen-inset-right: max(var(--content-inset), env(safe-area-inset-right));
   --screen-navigation-inset-left: max(8px, env(safe-area-inset-left, 0px));
   --screen-navigation-inset-right: max(8px, env(safe-area-inset-right, 0px));
-  --screen-bottom-inset: max(var(--content-inset), var(--app-viewport-bottom-padding, env(safe-area-inset-bottom, 0px)));
+  --screen-bottom-inset: max(var(--content-inset), env(safe-area-inset-bottom, 0px));
+  --screen-content-bottom-inset: max(var(--screen-bottom-inset), var(--app-keyboard-inset, 0px));
   width: 100%;
   flex: 1 1 auto;
   min-width: 0;
@@ -48,7 +48,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   gap: 0;
   overflow: hidden;
 }
-.screen-content { flex: 1; min-height: 0; padding-top: var(--content-inset); padding-bottom: var(--screen-bottom-inset); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
+.screen-content { flex: 1; min-height: 0; padding-top: var(--content-inset); padding-bottom: var(--screen-content-bottom-inset); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
 .screen-bottom { padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));

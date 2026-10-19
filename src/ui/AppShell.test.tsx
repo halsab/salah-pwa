@@ -12,10 +12,8 @@ function renderWithViewport(height = 844, offsetTop = 0) {
   return { viewport, layout: screen.getByRole('main') }
 }
 
-function expectDefaultViewport(layout: HTMLElement) {
-  expect(layout.style.getPropertyValue('--app-viewport-height')).toBe('')
-  expect(layout.style.getPropertyValue('--app-viewport-top')).toBe('')
-  expect(layout.style.getPropertyValue('--app-viewport-bottom-padding')).toBe('')
+function expectDefaultKeyboardInset(layout: HTMLElement) {
+  expect(layout.style.getPropertyValue('--app-keyboard-inset')).toBe('')
 }
 
 async function afterViewportFrame() {
@@ -25,43 +23,45 @@ async function afterViewportFrame() {
 it('использует обычный layout viewport без клавиатуры', async () => {
   const { layout } = renderWithViewport()
   await afterViewportFrame()
-  await waitFor(() => expectDefaultViewport(layout))
+  await waitFor(() => expectDefaultKeyboardInset(layout))
 })
 
 it('не сдвигает оболочку при pull-down bounce и отрицательном offsetTop', async () => {
   const { viewport, layout } = renderWithViewport()
   act(() => { viewport.offsetTop = -20; viewport.dispatchEvent(new Event('scroll')) })
   await afterViewportFrame()
-  await waitFor(() => expectDefaultViewport(layout))
+  await waitFor(() => expectDefaultKeyboardInset(layout))
 })
 
 it('не следует за положительным offsetTop при обычном scroll', async () => {
   const { viewport, layout } = renderWithViewport(840)
   act(() => { viewport.offsetTop = 32; viewport.dispatchEvent(new Event('scroll')) })
   await afterViewportFrame()
-  await waitFor(() => expectDefaultViewport(layout))
+  await waitFor(() => expectDefaultKeyboardInset(layout))
 })
 
-it('подстраивается под клавиатуру и восстанавливает исходную геометрию', async () => {
+it('добавляет высоту перекрытия клавиатуры в inset, не сдвигая оболочку', async () => {
   const { viewport, layout } = renderWithViewport()
   act(() => { viewport.height = 360; viewport.offsetTop = 40; viewport.dispatchEvent(new Event('resize')) })
-  await waitFor(() => expect(layout).toHaveStyle('--app-viewport-height: 360px; --app-viewport-top: 40px; --app-viewport-bottom-padding: 8px'))
+  await waitFor(() => expect(layout).toHaveStyle('--app-keyboard-inset: 444px'))
+  expect(layout.style.getPropertyValue('--app-viewport-height')).toBe('')
+  expect(layout.style.getPropertyValue('--app-viewport-top')).toBe('')
   act(() => { viewport.offsetTop = 60; viewport.dispatchEvent(new Event('scroll')) })
-  await waitFor(() => expect(layout).toHaveStyle('--app-viewport-top: 60px'))
+  await waitFor(() => expect(layout).toHaveStyle('--app-keyboard-inset: 424px'))
   act(() => { viewport.height = 844; viewport.offsetTop = 0; viewport.dispatchEvent(new Event('resize')) })
-  await waitFor(() => expectDefaultViewport(layout))
+  await waitFor(() => expectDefaultKeyboardInset(layout))
 })
 
 it('ограничивает отрицательный offsetTop при открытой клавиатуре', async () => {
   const { layout } = renderWithViewport(400, -20)
-  await waitFor(() => expect(layout).toHaveStyle('--app-viewport-height: 400px; --app-viewport-top: 0px; --app-viewport-bottom-padding: 8px'))
+  await waitFor(() => expect(layout).toHaveStyle('--app-keyboard-inset: 444px'))
 })
 
 it('сбрасывает поправки клавиатуры при масштабировании жестом', async () => {
   const { viewport, layout } = renderWithViewport(360, 40)
-  await waitFor(() => expect(layout).toHaveStyle('--app-viewport-bottom-padding: 8px'))
+  await waitFor(() => expect(layout).toHaveStyle('--app-keyboard-inset: 444px'))
   act(() => { viewport.scale = 2; viewport.dispatchEvent(new Event('resize')) })
-  await waitFor(() => expectDefaultViewport(layout))
+  await waitFor(() => expectDefaultKeyboardInset(layout))
 })
 
 it('перед переходом фиксирует кнопку для возврата фокуса в браузерах без click-focus', () => {
