@@ -26,7 +26,6 @@ export default defineConfig({
         '**/privacy.spec.ts',
         '**/security.spec.ts',
         '**/screen-shell.spec.ts',
-        '**/header-hijri.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

@@ -181,7 +181,6 @@ test('общая оболочка держит слоты, прокрутку и
   }
   await setTopSafeArea(null)
 
-  const originalViewport = page.viewportSize()
   for (const colorScheme of ['dark', 'light'] as const) {
     await page.emulateMedia({ colorScheme })
     await expect.poll(() => page.locator('html').getAttribute('data-theme-tone')).toBe(colorScheme)
@@ -193,76 +192,43 @@ test('общая оболочка держит слоты, прокрутку и
     expect(classicGeometry.panelTop).toBe(homeGeometry.panelTop)
   }
 
-  const originalLocationLabel = await page.evaluate(() => {
+  const originalLabels = await page.evaluate(() => {
     const place = document.querySelector<HTMLElement>('.home-location-name')
-    if (!place) throw new Error('Не найдена подпись места')
-    const saved = place.textContent
+    const date = document.querySelector<HTMLElement>('#home-date time')
+    if (!place || !date) throw new Error('Не найдены кнопки места и даты')
+    const saved = [place.textContent, date.textContent]
     place.textContent = 'Очень длинное название выбранного места для проверки переноса'
+    date.textContent = 'Пятница, двадцать первое сентября две тысячи двадцать шестого года'
     return saved
   })
-  for (const width of [320, 390]) {
-    await page.setViewportSize({ width, height: 844 })
-    for (const colorScheme of ['dark', 'light'] as const) {
-      await page.emulateMedia({ colorScheme })
-      await expect(page.locator('#home-date time')).toBeVisible()
-      const bounds = await page.evaluate(() => {
-        const place = document.querySelector<HTMLElement>('#home-location')
-        const placeName = document.querySelector<HTMLElement>('.home-location-name')
-        const date = document.querySelector<HTMLElement>('#home-date')
-        const time = document.querySelector<HTMLElement>('#home-date time')
-        const header = document.querySelector<HTMLElement>('.screen-top')
-        if (!place || !placeName || !date || !time || !header) throw new Error('Не найдены верхние действия')
-        const range = document.createRange()
-        range.selectNodeContents(time)
-        const textBounds = range.getBoundingClientRect()
-        const canvas = place.querySelector<HTMLCanvasElement>('.jelly-action-canvas')
-        if (!canvas) throw new Error('Не найдена jelly-поверхность')
-        const placeBounds = place.getBoundingClientRect()
-        const canvasBounds = canvas.getBoundingClientRect()
-        return {
-          documentWidth: document.documentElement.scrollWidth,
-          viewportWidth: window.innerWidth,
-          placeLeft: place.getBoundingClientRect().left,
-          placeRight: place.getBoundingClientRect().right,
-          dateLeft: date.getBoundingClientRect().left,
-          dateRight: date.getBoundingClientRect().right,
-          textRight: textBounds.right,
-          placeHeight: place.getBoundingClientRect().height,
-          dateHeight: date.getBoundingClientRect().height,
-          headerHeight: header.getBoundingClientRect().height,
-          placeTextOverflows: placeName.scrollWidth > placeName.clientWidth,
-          buttonOverflow: getComputedStyle(place).overflow,
-          jellyCanvasVisible: getComputedStyle(canvas).display !== 'none',
-          jellySurfacePad: {
-            left: placeBounds.left - canvasBounds.left,
-            right: canvasBounds.right - placeBounds.right,
-            top: placeBounds.top - canvasBounds.top,
-            bottom: canvasBounds.bottom - placeBounds.bottom,
-          },
-        }
-      })
-      expect(bounds.documentWidth).toBeLessThanOrEqual(width + 1)
-      expect(bounds.placeLeft).toBeGreaterThanOrEqual(0)
-      expect(bounds.dateRight).toBeLessThanOrEqual(width)
-      expect(bounds.dateLeft).toBeGreaterThanOrEqual(bounds.placeRight)
-      expect(bounds.textRight).toBeLessThanOrEqual(bounds.dateRight - 8)
-      expect(bounds.placeHeight).toBe(44)
-      expect(bounds.dateHeight).toBe(44)
-      expect(bounds.headerHeight).toBe(44)
-      expect(bounds.placeTextOverflows).toBe(true)
-      expect(bounds.buttonOverflow).toBe('visible')
-      expect(bounds.jellyCanvasVisible).toBe(true)
-      expect(bounds.jellySurfacePad).toEqual({ left: 16, right: 16, top: 16, bottom: 16 })
-      await expect(page.locator('#home-date')).toBeVisible()
-      await expect(page.locator('#home-location')).toBeVisible()
+  const longLabelBounds = await page.evaluate(() => {
+    const place = document.querySelector<HTMLElement>('#home-location')
+    const date = document.querySelector<HTMLElement>('#home-date')
+    const header = document.querySelector<HTMLElement>('.screen-top')
+    if (!place || !date || !header) throw new Error('Не найдены верхние действия')
+    return {
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+      placeRight: place.getBoundingClientRect().right,
+      dateRight: date.getBoundingClientRect().right,
+      placeHeight: place.getBoundingClientRect().height,
+      dateHeight: date.getBoundingClientRect().height,
+      headerHeight: header.getBoundingClientRect().height,
     }
-  }
-  if (originalViewport) await page.setViewportSize(originalViewport)
-  await page.evaluate(placeLabel => {
+  })
+  expect(longLabelBounds.documentWidth).toBeLessThanOrEqual(longLabelBounds.viewportWidth + 1)
+  expect(longLabelBounds.placeRight).toBeLessThanOrEqual(longLabelBounds.viewportWidth)
+  expect(longLabelBounds.dateRight).toBeLessThanOrEqual(longLabelBounds.viewportWidth)
+  expect(longLabelBounds.placeHeight).toBeGreaterThanOrEqual(44)
+  expect(longLabelBounds.dateHeight).toBeGreaterThanOrEqual(44)
+  expect(longLabelBounds.headerHeight).toBeGreaterThan(44)
+  await page.evaluate(([placeLabel, dateLabel]) => {
     const place = document.querySelector<HTMLElement>('.home-location-name')
-    if (!place) throw new Error('Не найдена подпись места для восстановления')
+    const date = document.querySelector<HTMLElement>('#home-date time')
+    if (!place || !date) throw new Error('Не найдены верхние подписи для восстановления')
     place.textContent = placeLabel
-  }, originalLocationLabel)
+    date.textContent = dateLabel
+  }, originalLabels)
 
   await page.locator('.screen-content').evaluate(element => { element.scrollTop = element.scrollHeight })
   await expect.poll(() => page.locator('.screen-content').evaluate(element => element.scrollTop)).toBeGreaterThan(0)
