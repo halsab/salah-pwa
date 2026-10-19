@@ -164,6 +164,14 @@ it('retains the first covered countdown without inventing a preceding current ev
   expect(pair.next?.key).toBe('fajrStart')
 })
 
+it('keeps late Fajr from the first covered row even though its event date is the prior civil day', () => {
+  const firstCovered = { ...lateFajr, date: '2026-01-01', fajrStart: '23:54' as const }
+  const events = buildScheduleEvents(firstCovered)
+  const pair = selectOfficialEventPair(new Date('2025-12-31T20:55:00Z'), events,
+    firstCovered.date, 'Europe/Moscow', { previous: false, next: true })
+  expect(pair.current).toMatchObject({ key: 'fajrStart', scheduleDate: firstCovered.date, date: '2025-12-31', dayOffset: -1 })
+})
+
 
 it('prefers a verified D+1 late Fajr to a later published D event', () => {
   const today = { ...lateFajr, date: '2026-12-30', isha: '23:58' as const }

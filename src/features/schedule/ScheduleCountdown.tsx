@@ -1,17 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 
 import { useLocalization } from '../../localization'
-import type { Translator } from '../../localization/messages'
+import { formatRemainingDuration } from '../../localization/countdown'
+import { useLiveClock } from '../../ui/useLiveClock'
 
 interface ScheduleCountdownProps {
   countdownLabel: string
   targetInstant: number
   now: () => Date
   onElapsed: () => void
-}
-
-function remainingSeconds(targetInstant: number, now: Date): number {
-  return Math.max(0, Math.ceil((targetInstant - now.getTime()) / 1_000))
 }
 
 export function ScheduleCountdown({
@@ -21,55 +18,49 @@ export function ScheduleCountdown({
   onElapsed,
 }: ScheduleCountdownProps) {
   const { t } = useLocalization()
-  const [remaining, setRemaining] = useState(() =>
-    remainingSeconds(targetInstant, now()))
+  const elapsedTarget = useRef<number | null>(null)
+  const targetTimer = useRef<number | undefined>(undefined)
+  const currentTime = now()
+  const currentInstant = currentTime.getTime()
+  const hasValidNow = Number.isFinite(currentInstant)
+  const remainingMs = targetInstant - currentInstant
+  const formattedRemaining = Number.isFinite(remainingMs) && remainingMs > 0
+    ? formatRemainingDuration(remainingMs, t)
+    : null
+  useLiveClock(Number.isFinite(targetInstant) && hasValidNow && remainingMs > 0)
+
+  const reportElapsed = useCallback(() => {
+    if (!Number.isFinite(targetInstant) || elapsedTarget.current === targetInstant) return
+    elapsedTarget.current = targetInstant
+    if (targetTimer.current !== undefined) window.clearTimeout(targetTimer.current)
+    targetTimer.current = undefined
+    onElapsed()
+  }, [onElapsed, targetInstant])
 
   useEffect(() => {
-    let timer: number | undefined
-    let elapsed = false
-    const clearTimer = () => {
-      if (timer === undefined) return
-      window.clearTimeout(timer)
-      timer = undefined
-    }
-    const refresh = () => {
-      clearTimer()
-      const currentTime = now()
-      const nextRemaining = remainingSeconds(targetInstant, currentTime)
-      setRemaining((current) => current === nextRemaining ? current : nextRemaining)
-
-      if (nextRemaining === 0) {
-        if (!elapsed) {
-          elapsed = true
-          onElapsed()
-        }
+    if (!Number.isFinite(targetInstant)) return
+    const checkTarget = () => {
+      const currentInstant = now().getTime()
+      if (!Number.isFinite(currentInstant)) return
+      const delay = targetInstant - currentInstant
+      if (delay <= 0) {
+        reportElapsed()
         return
       }
-
-      timer = window.setTimeout(
-        () => {
-          timer = undefined
-          refresh()
-        },
-        Math.min(1_000, targetInstant - currentTime.getTime()),
-      )
+      targetTimer.current = window.setTimeout(checkTarget, delay)
     }
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') refresh()
-    }
-    const handlePageShow = () => refresh()
-
-    refresh()
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-    window.addEventListener('pageshow', handlePageShow)
+    checkTarget()
     return () => {
-      clearTimer()
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-      window.removeEventListener('pageshow', handlePageShow)
+      if (targetTimer.current !== undefined) window.clearTimeout(targetTimer.current)
+      targetTimer.current = undefined
     }
-  }, [now, onElapsed, targetInstant])
+  }, [now, reportElapsed, targetInstant])
 
-  const formattedRemaining = formatRemainingTime(remaining, t)
+  useEffect(() => {
+    if (Number.isFinite(targetInstant) && Number.isFinite(currentInstant) && targetInstant <= currentInstant) reportElapsed()
+  }, [currentInstant, reportElapsed, targetInstant])
+
+  if (!formattedRemaining) return null
   return (
     <div
       className="event-countdown"
@@ -81,13 +72,4 @@ export function ScheduleCountdown({
       <span className="countdown-value">{formattedRemaining}</span>
     </div>
   )
-}
-
-function formatRemainingTime(totalSeconds: number, t: Translator): string {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds))
-  const hours = Math.floor(safeSeconds / 3_600)
-  const minutes = Math.floor((safeSeconds % 3_600) / 60)
-  if (safeSeconds === 0) return t('minutesZero')
-  if (safeSeconds < 60) return t('minutesLessThanOne')
-  return hours ? t('hoursMinutes', { hours, minutes }) : t('minutes', { count: minutes })
 }

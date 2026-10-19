@@ -1,45 +1,68 @@
 @import './theme.css';
 
 html, body { background: var(--app-shell-background); color: var(--text-primary); }
+.app-bottom-surface { display: none; }
+@media (display-mode: browser) {
+  /* Safari продолжает цвет fixed-элемента под нижнюю панель независимо от фона страницы. */
+  .app-bottom-surface { display: block; position: fixed; bottom: 0; left: 0; width: 100%; height: var(--content-inset); background: var(--background-secondary); pointer-events: none; z-index: 1; }
+}
 body { font-family: 'Old Timey Mono', monospace; font-weight: 400; font-synthesis: none; -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .app-layout {
+  --app-safe-area-top: max(0px, env(safe-area-inset-top, 0px));
   /* WebKit окрашивает status bar по fixed-потомкам; оболочка остаётся в координатах документа. */
   position: absolute;
-  top: var(--app-viewport-top, 0px);
+  top: 0;
   left: 0;
   right: 0;
-  height: var(--app-viewport-height, 100dvh);
+  height: 100dvh;
   padding: 0;
-  /* Оболочка резервирует только реальную safe-area; сдвиг клавиатуры не дублирует её. */
-  padding-top: max(0px, calc(var(--app-safe-area-top, env(safe-area-inset-top, 0px)) - var(--app-viewport-top, 0px)));
+  padding-top: var(--app-safe-area-top);
   display: flex;
   justify-content: center;
+  overflow: hidden;
   background: var(--app-shell-background);
 }
 .app-screen {
   --screen-inset-left: max(var(--content-inset), env(safe-area-inset-left));
   --screen-inset-right: max(var(--content-inset), env(safe-area-inset-right));
-  --screen-bottom-inset: max(var(--content-inset), var(--app-viewport-bottom-padding, env(safe-area-inset-bottom, 0px)));
+  --screen-navigation-inset-left: max(8px, env(safe-area-inset-left, 0px));
+  --screen-navigation-inset-right: max(8px, env(safe-area-inset-right, 0px));
+  --screen-bottom-inset: max(var(--content-inset), env(safe-area-inset-bottom, 0px));
+  --screen-content-bottom-inset: max(var(--screen-bottom-inset), var(--app-keyboard-inset, 0px));
   width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
-  padding: var(--content-inset) var(--screen-inset-right) var(--screen-bottom-inset) var(--screen-inset-left);
-  border-radius: var(--container-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+.app-screen--no-top { gap: 0; padding-top: 0; }
+@supports (padding-top: calc(8px * (1 - sign(1px)))) {
+  .app-screen:not(.app-screen--no-top) { padding-top: calc(8px * (1 - sign(var(--app-safe-area-top, 0px)))); }
+}
+.screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
+.screen-top { padding-inline: var(--screen-navigation-inset-left) var(--screen-navigation-inset-right); }
+.screen-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0 var(--screen-inset-right) 0 var(--screen-inset-left);
+  border-radius: var(--container-radius) var(--container-radius) 0 0;
   background: var(--background-secondary);
   display: flex;
   flex-direction: column;
-  gap: var(--content-inset);
+  gap: 0;
   overflow: hidden;
 }
-@media (hover: hover) and (pointer: fine) {
-  .app-screen { border-radius: 0; }
-}
-.screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
-.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; view-transition-name: salah-screen-content; }
-.screen-content--edge-bottom { margin-bottom: calc(0px - var(--screen-bottom-inset)); padding-bottom: var(--screen-bottom-inset); }
+.screen-content { flex: 1; min-height: 0; padding-top: var(--content-inset); padding-bottom: max(var(--screen-content-bottom-inset), calc(var(--app-keyboard-inset, 0px) + var(--content-inset))); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
+.screen-bottom { padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
   margin-right: calc(0px - var(--screen-inset-right));
+  padding-top: 0;
   padding-left: var(--screen-inset-left);
   padding-right: var(--screen-inset-right);
 }
@@ -120,7 +143,7 @@ html[data-input='pointer'] .select-field { outline: none; }
 .event-countdown .countdown-label, .event-countdown .countdown-value { line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-countdown .countdown-label { font: var(--font-emphasis); line-height: 1.05; color: var(--text-secondary); }
 .event-countdown .countdown-value { font: var(--font-title); line-height: 1.05; color: var(--accent-countdown); font-weight: 400; font-variant-numeric: tabular-nums; }
-.event-list { list-style: none; padding: 12px 0 0; margin: 0; }
+.event-list { list-style: none; padding: 0; margin: 0; }
 .religious-event-banner {
   font: var(--font-body);
   width: 100%;

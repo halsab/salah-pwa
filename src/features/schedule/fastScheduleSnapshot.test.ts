@@ -208,7 +208,8 @@ it('restores verified official neighbor context within the existing size cap', (
     const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
     expect(restored?.neighbors?.map(row => row.date)).toEqual(['2026-10-18', '2026-10-20'])
     expect(new TextEncoder().encode(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot) ?? '').length).toBeLessThanOrEqual(4096)
-    expect(seed({ neighbors: [requiredNeighbor(neighbors)] })).toBe(false)
+    expect(seed({ neighbors: [requiredNeighbor(neighbors)] })).toBe(true)
+    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })?.neighbors).toHaveLength(1)
     expect(seed({ neighbors: neighbors.map(row => ({ ...row, locationId: 'wrong' })) })).toBe(false)
   } finally { vi.unstubAllGlobals() }
 })
@@ -218,6 +219,33 @@ function requiredNeighbor(neighbors: PrayerDay[]): PrayerDay {
   if (!row) throw new Error('Missing neighbor fixture')
   return row
 }
+
+it('degrades oversized validated neighbor context to a smaller usable snapshot', () => {
+  store = memoryStorage()
+  vi.stubGlobal('localStorage', store)
+  try {
+    const neighbors = [{ ...schedule, date: '2026-10-18' }, { ...schedule, date: '2026-10-20' }]
+    expect(seed({ neighbors, place: { ...place, name: 'x'.repeat(1200) } })).toBe(true)
+    const raw = store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot) ?? ''
+    expect(new TextEncoder().encode(raw).length).toBeLessThanOrEqual(4096)
+    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
+    expect(restored?.schedule).toEqual(schedule)
+    expect(restored?.neighbors?.length).toBe(1)
+    expect(restored?.neighbors?.every(row => ['2026-10-18', '2026-10-20'].includes(row.date))).toBe(true)
+  } finally { vi.unstubAllGlobals() }
+})
+
+it('retains the verified selected day when no neighbor row fits the fast-cache limit', () => {
+  store = memoryStorage()
+  vi.stubGlobal('localStorage', store)
+  try {
+    const neighbors = [{ ...schedule, date: '2026-10-18' }, { ...schedule, date: '2026-10-20' }]
+    expect(seed({ neighbors, place: { ...place, name: 'x'.repeat(1700) } })).toBe(true)
+    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
+    expect(restored?.schedule).toEqual(schedule)
+    expect(restored?.neighbors).toEqual([])
+  } finally { vi.unstubAllGlobals() }
+})
 
 
 it('accepts only the declared schema-v3 partial coverage neighbors, including a single-day dataset', () => {
@@ -233,7 +261,7 @@ it('accepts only the declared schema-v3 partial coverage neighbors, including a 
     expect(seed({ meta: single, context: singleContext, neighbors: [{ ...schedule, date: '2026-10-20' }] })).toBe(false)
     const partial = { ...single, providerInfo: { ...single.providerInfo, coverage: { ...coverage, endDate: '2026-10-20' } } }
     const partialContext = { ...context, datasetRevision: getDatasetRevision(partial) }
-    expect(seed({ meta: partial, context: partialContext, neighbors: [] })).toBe(false)
+    expect(seed({ meta: partial, context: partialContext, neighbors: [] })).toBe(true)
     expect(seed({ meta: partial, context: partialContext, neighbors: [{ ...schedule, date: '2026-10-20' }] })).toBe(true)
   } finally { vi.unstubAllGlobals() }
 })

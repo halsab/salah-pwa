@@ -235,9 +235,9 @@ function validRecord(record: FastScheduleRecord, input: { appVersion: string; no
     || record.neighbors.some(row => !isRecord(row))) return false
   const coverage = { schemaVersion: meta.schemaVersion, years: meta.source.years, ...meta.providerInfo?.coverage }
   const dates = [addDays(context.date, -1), addDays(context.date, 1)].filter(date => coversOfficialDate(coverage, date))
-  return record.neighbors.length === dates.length && dates.every(date => {
+  return record.neighbors.length <= dates.length && record.neighbors.every(row => dates.includes(row.date)) && dates.every(date => {
     const rows = record.neighbors?.filter(row => row.date === date)
-    return rows?.length === 1 && isSchedule(rows[0], { ...context, date }, meta)
+    return (rows?.length ?? 0) <= 1 && (!rows?.length || isSchedule(rows[0], { ...context, date }, meta))
   })
 }
 
@@ -363,14 +363,22 @@ export function writeFastScheduleSnapshot(input: {
     }
     if (input.context.source === 'official' && !record.meta) return false
     if (!validRecord(record, { appVersion: input.appVersion, now: input.now, deviceTimeZone: input.deviceTimeZone })) return false
-    const payload = JSON.stringify(record)
-    const encoded = JSON.stringify({ payload, checksum: checksum(payload) })
-    if (byteLength(encoded) > SNAPSHOT_LIMIT_BYTES) {
-      store.removeItem(SNAPSHOT_KEY)
-      return false
+    const neighborCandidates = record.neighbors === undefined ? [undefined] : [
+      record.neighbors,
+      ...record.neighbors.map((_, index) => record.neighbors?.filter((_row, rowIndex) => rowIndex === index)),
+      [],
+    ]
+    for (const neighbors of neighborCandidates) {
+      const candidate = { ...record, ...(neighbors === undefined ? {} : { neighbors }) }
+      if (!validRecord(candidate, { appVersion: input.appVersion, now: input.now, deviceTimeZone: input.deviceTimeZone })) continue
+      const payload = JSON.stringify(candidate)
+      const encoded = JSON.stringify({ payload, checksum: checksum(payload) })
+      if (byteLength(encoded) <= SNAPSHOT_LIMIT_BYTES) {
+        store.setItem(SNAPSHOT_KEY, encoded)
+        return true
+      }
     }
-    store.setItem(SNAPSHOT_KEY, encoded)
-    return true
+    return false
   } catch {
     return false
   }

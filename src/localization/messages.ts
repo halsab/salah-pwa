@@ -3,7 +3,9 @@ import type { SupportedLocale } from './locale'
 
 type MessageValue = string | ((params: never) => string)
 type CountParams = { count: number }
-type HoursMinutesParams = { hours: number; minutes: number }
+type CountdownHoursMinutesParams = { hours: number; minutes: number }
+type CountdownMinutesParams = { minutes: number }
+type CountdownSecondsParams = { seconds: number }
 type CountdownParams = { label: string; remaining: string }
 type CheckedAtParams = { value: string }
 type MinutesAfterSunsetParams = { minutes: number }
@@ -237,10 +239,10 @@ export const RU_MESSAGES = Object.freeze({
   countdownAsr: 'До Асра',
   countdownMaghrib: 'До Магриба',
   countdownIsha: 'До Иши',
-  minutesZero: '0 мин',
-  minutesLessThanOne: '< 1 мин',
+  countdownHoursMinutes: ({ hours, minutes }: CountdownHoursMinutesParams) => `${hours} ч ${minutes} мин`,
+  countdownMinutes: ({ minutes }: CountdownMinutesParams) => `${minutes} мин`,
+  countdownSeconds: ({ seconds }: CountdownSecondsParams) => `${seconds} сек`,
   minutes: ({ count }: CountParams) => `${count} мин`,
-  hoursMinutes: ({ hours, minutes }: HoursMinutesParams) => `${hours} ч${minutes ? ` ${minutes} мин` : ''}`,
   countdownAria: ({ label, remaining }: CountdownParams) => `${label}, осталось ${remaining}`,
   tomorrow: 'завтра',
   inDays: ({ count }: CountParams) => `через ${count} ${pluralCategory(count, { one: 'день', few: 'дня', many: 'дней', other: 'дня' })}`,

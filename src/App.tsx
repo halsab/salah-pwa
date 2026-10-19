@@ -439,6 +439,7 @@ export function App({
     selectedDateOverride,
     currentTime,
     changeDate,
+    syncCurrentTime,
   } = useScheduleDate(services)
   const currentResolution = place
     ? resolvePrayerTimeSource(place, currentTime, preferences, datasets, capabilities)
@@ -660,6 +661,7 @@ export function App({
             fastingModeEnabled={fastingModeEnabled}
             fastingEvents={fastingEvents}
             timeZone={context?.timeZone}
+            onSystemClockChange={syncCurrentTime}
             onOpenReligiousEvent={openReligiousEvent}
             top={<AppHeader locationButtonRef={locationButtonRef} locationLabel={homeLocationLabel} locationTime={locationTime} selectedDate={selectedDate}
               calendarPreferences={calendarPreferences} onOpenLocation={openLocationDialog} onOpenDate={() => openScreen('date')} />}

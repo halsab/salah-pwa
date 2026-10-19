@@ -723,7 +723,7 @@ describe('Salah', () => {
   it('обновляет событие после возвращения из фона', async () => {
     let now = new Date('2026-09-01T13:23:59Z')
     render(<App services={createServices({ now: () => now })} />)
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось < 1 мин')
+    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 1 сек')
     act(() => { now = new Date('2026-09-01T13:24:00Z'); window.dispatchEvent(new Event('pageshow')) })
     expect((await screen.findByText('Аср', { exact: true })).closest('li')).toHaveAttribute('aria-current', 'true')
     expect(screen.getByRole('timer')).toHaveAccessibleName('До Магриба, осталось 2 ч 15 мин')

@@ -1,5 +1,6 @@
 import { createOfficialPlace, type Place } from '../../domain/place'
-import { getDatasetRevision } from '../../domain/scheduleContext'
+import { getDatasetRevision, type ScheduleContext } from '../../domain/scheduleContext'
+import { automaticPreferences } from '../../domain/sourcePreferences'
 import type { SavedCoordinates } from '../../domain/types'
 import { required } from '../../test/required'
 import { act, renderHook, waitFor } from '@testing-library/react'
@@ -11,6 +12,7 @@ import { buildScheduleEvents, selectEventPair } from '../../domain/scheduleEvent
 import * as calculation from '../../domain/prayerCalculation'
 import type { PrayerDay } from '../../domain/types'
 import type { DatasetMeta } from '../../storage/database'
+import type { FastScheduleStartup } from './fastScheduleSnapshot'
 import { usePrayerSchedules } from './usePrayerSchedules'
 
 type Options = { services: Parameters<typeof usePrayerSchedules>[0]['services']; meta: DatasetMeta; locationId: string; locationMode: 'official' | 'calculated'; calculatedLocation: SavedCoordinates | null; calculationSettings: calculation.CalculationSettings; selectedDate: string; timeZone: string }
@@ -56,6 +58,35 @@ function expectHidden(result: ReturnType<typeof usePrayerSchedules> | undefined)
 }
 
 describe('usePrayerSchedules', () => {
+  it('keeps a degraded snapshot visible but waits for missing covered neighbors before live readiness', async () => {
+    const selectedDate = '2026-09-01'
+    const location = required(meta.locations.find(item => item.id === 'A'))
+    const place = { ...createOfficialPlace(location, 0), id: 'A' }
+    const context: ScheduleContext = {
+      location: { id: place.id, latitude: place.latitude, longitude: place.longitude },
+      date: selectedDate, timeZone: 'Europe/Moscow', mode: 'automatic', source: 'official',
+      provider: 'dumRt', datasetRevision: getDatasetRevision(meta), datasetVersion: 'v1', coverage: 'RU-TA', localityId: 'A',
+    }
+    const snapshot: FastScheduleStartup = {
+      generation: 'generation', context,
+      schedule: { ...day('A', selectedDate), timeZone: 'Europe/Moscow',
+        coordinates: { latitude: place.latitude, longitude: place.longitude } },
+      neighbors: [{ ...day('A', '2026-08-31'), timeZone: 'Europe/Moscow',
+        coordinates: { latitude: place.latitude, longitude: place.longitude } }],
+      place, selectionSource: 'default', preferences: automaticPreferences(), meta,
+    }
+    const services = { getDays: vi.fn((_id: string, dates: readonly string[]) => Promise.resolve(dates.map(date => day('A', date)))) }
+    const hook = renderHook(() => usePrayerSchedules({ services, location: place,
+      resolution: { kind: 'official', status: 'ready', provider: 'dumRt', version: 'v1', revision: getDatasetRevision(meta),
+        coverage: 'RU-TA', locationId: 'A', timeZone: 'Europe/Moscow',
+        dateCoverage: { schemaVersion: 2, years: [2026] } }, mode: 'automatic', selectedDate, initialSnapshot: snapshot }))
+
+    expect(hook.result.current.schedule).toMatchObject({ locationId: 'A', date: selectedDate })
+    expect(hook.result.current.contextReady).toBe(false)
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+    expect(hook.result.current.schedules.map(item => item.date).sort()).toEqual(['2026-08-31', selectedDate, '2026-09-02'])
+  })
+
   it.each([
     ['место', (o: Options) => ({ ...o, locationId: 'B' })],
     ['дата', (o: Options) => ({ ...o, selectedDate: '2026-09-02' })],

@@ -137,6 +137,8 @@ export function selectOfficialEventPair(
     if (!isOfficialEventHorizonComplete(now, date, timeZone, horizon)) pair.current = null
     if (pair.next && pair.next.instant >= noon) pair.next = null
   }
-  if (!horizon.previous && pair.current && pair.current.date < date) pair.current = null
+  // Coverage belongs to the source row. A verified row may publish an event
+  // whose actual civil date precedes that row (late Fajr).
+  if (!horizon.previous && pair.current && pair.current.scheduleDate < date) pair.current = null
   return pair
 }

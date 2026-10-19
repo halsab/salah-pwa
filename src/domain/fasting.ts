@@ -1,5 +1,5 @@
 import { getCivilDate, isValidTimeZone } from './locationTime'
-import { buildScheduleEvents, isOfficialEventHorizonComplete, type OfficialEventHorizon, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
+import { buildScheduleEvents, type OfficialEventHorizon, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
 import type { DateCorrection } from './calendar'
 import { ramadanOccurrenceIdForDate, type RamadanOccurrenceId } from './religiousEvents'
 import { addDays } from './date'
@@ -118,17 +118,18 @@ export function resolveActiveRamadanOccurrence(input: {
   const currentOccurrence = occurrenceForFastDate(input.today, input.correction, true)
   if (currentOccurrence) return currentOccurrence
   if (!input.now || !input.timeZone || !input.events || !isValidTimeZone(input.timeZone)
-    || getCivilDate(input.now, input.timeZone) !== input.today
-    || !isOfficialEventHorizonComplete(input.now, input.today, input.timeZone, input.officialHorizon)) return null
+    || getCivilDate(input.now, input.timeZone) !== input.today) return null
 
   const now = input.now.getTime()
   for (const fajr of input.events.fajr) {
+    if (input.officialHorizon?.next === false && fajr.scheduleDate > input.today) continue
     const occurrence = occurrenceForFastDate(fajr.scheduleDate, input.correction, true)
     const maghrib = input.events.maghrib.find(event => event.scheduleDate === fajr.scheduleDate)
     if (occurrence && maghrib && validInterval(fajr, maghrib) && now >= fajr.instant && now < maghrib.instant) return occurrence
   }
 
   for (const fajr of input.events.fajr) {
+    if (input.officialHorizon?.next === false && fajr.scheduleDate > input.today) continue
     const occurrence = occurrenceForFastDate(fajr.scheduleDate, input.correction, true)
     if (!occurrence || fajr.instant <= now) continue
     const precedingMaghrib = input.events.maghrib.reduce<ResolvedScheduleEvent | null>((closest, maghrib) => {
@@ -152,8 +153,7 @@ export function resolveFastingTimeline(input: {
   officialHorizon?: OfficialEventHorizon | undefined
 }): FastingTimeline | null {
   if (input.selectedDate !== input.today || !isValidTimeZone(input.timeZone)
-    || getCivilDate(input.now, input.timeZone) !== input.today
-    || !isOfficialEventHorizonComplete(input.now, input.today, input.timeZone, input.officialHorizon)) return null
+    || getCivilDate(input.now, input.timeZone) !== input.today) return null
 
   const occurrence = resolveActiveRamadanOccurrence({
     ...input, now: input.now, timeZone: input.timeZone, events: input.events,
@@ -164,6 +164,7 @@ export function resolveFastingTimeline(input: {
   const daytime = input.events.fajr.flatMap(fajr => {
     if (!isAutomaticFastDate(fajr.scheduleDate, input.preferences, input.correction, input.hijriSupported)) return []
     const maghrib = input.events.maghrib.find(event => event.scheduleDate === fajr.scheduleDate)
+    // A same-row Fajr→Maghrib interval is complete without D+1.
     if (!maghrib || !validInterval(fajr, maghrib) || now < fajr.instant || now >= maghrib.instant) return []
     return [{ start: fajr, end: maghrib }]
   }).sort((left, right) => right.start.instant - left.start.instant)[0]
@@ -171,8 +172,10 @@ export function resolveFastingTimeline(input: {
 
   for (const fajr of input.events.fajr) {
     if (fajr.instant <= now || !isAutomaticFastDate(fajr.scheduleDate, input.preferences, input.correction, input.hijriSupported)) continue
+    if (input.officialHorizon?.next === false && fajr.scheduleDate > input.today) continue
     const precedingMaghrib = input.events.maghrib.reduce<ResolvedScheduleEvent | null>((closest, maghrib) => {
-      if (maghrib.instant >= fajr.instant || maghrib.instant > now || !validInterval(maghrib, fajr)) return closest
+      if (maghrib.instant >= fajr.instant || maghrib.instant > now || !validInterval(maghrib, fajr)
+        || (input.officialHorizon?.previous === false && maghrib.scheduleDate < input.today)) return closest
       return !closest || maghrib.instant > closest.instant ? maghrib : closest
     }, null)
     if (precedingMaghrib) return { kind: 'night', start: precedingMaghrib, end: fajr }

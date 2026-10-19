@@ -48,6 +48,19 @@ interface ScheduleResult {
   enrichmentError: boolean
 }
 
+function snapshotHasCoveredNeighbors(snapshot: FastScheduleStartup): boolean {
+  if (snapshot.context.source !== 'official' || !snapshot.meta) return snapshot.neighbors !== undefined
+  const coverage = {
+    schemaVersion: snapshot.meta.schemaVersion,
+    years: snapshot.meta.source.years,
+    ...snapshot.meta.providerInfo?.coverage,
+  }
+  const expected = [addDays(snapshot.context.date, -1), addDays(snapshot.context.date, 1)]
+    .filter(date => coversOfficialDate(coverage, date))
+  const actual = snapshot.neighbors?.map(day => day.date) ?? []
+  return actual.length === expected.length && expected.every(date => actual.includes(date))
+}
+
 export function usePrayerSchedules({
   services, location, resolution, mode, selectedDate, initialSnapshot,
 }: UsePrayerSchedulesOptions) {
@@ -70,7 +83,8 @@ export function usePrayerSchedules({
   const key = context ? scheduleContextKey(context) : null
   const [result, setResult] = useState<ScheduleResult | null>(() => initialSnapshot
     ? { context: initialSnapshot.context, key: scheduleContextKey(initialSnapshot.context), retry: 0,
-      services, schedules: [initialSnapshot.schedule, ...(initialSnapshot.neighbors ?? [])], error: null, contextReady: initialSnapshot.neighbors !== undefined, enrichmentError: false }
+      services, schedules: [initialSnapshot.schedule, ...(initialSnapshot.neighbors ?? [])], error: null,
+      contextReady: snapshotHasCoveredNeighbors(initialSnapshot), enrichmentError: false }
     : null)
   const [retry, setRetry] = useState(0)
   const [enrichmentRetry, setEnrichmentRetry] = useState(0)

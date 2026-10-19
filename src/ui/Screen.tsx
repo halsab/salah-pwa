@@ -10,12 +10,14 @@ export function Screen({ label, top, bottom, children, contentClassName = '', bu
   contentClassName?: string
   busy?: boolean
 }) {
-  return <section className="app-screen" aria-label={label} aria-busy={busy || undefined}>
-    {top ? <div className="screen-top">{top}</div> : null}
-    <div className={`screen-content${bottom ? '' : ' screen-content--edge-bottom'}${contentClassName ? ` ${contentClassName}` : ''}`}>
-      {children}
+  return <section className={`app-screen${top ? '' : ' app-screen--no-top'}`} aria-label={label} aria-busy={busy || undefined}>
+    {top ? <header className="screen-top">{top}</header> : null}
+    <div className="screen-panel">
+      <div className={`screen-content${contentClassName ? ` ${contentClassName}` : ''}`}>
+        {children}
+      </div>
+      {bottom ? <footer className="screen-bottom">{bottom}</footer> : null}
     </div>
-    {bottom ? <div className="screen-bottom">{bottom}</div> : null}
   </section>
 }
 

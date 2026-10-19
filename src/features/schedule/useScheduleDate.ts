@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { pulseHaptic } from '../../platform/browser'
 
@@ -9,42 +9,42 @@ interface ScheduleDateServices {
 export function useScheduleDate(services: ScheduleDateServices) {
   const [selectedDateOverride, setSelectedDateOverride] = useState<string | null>(null)
   const [currentTime, setCurrentTime] = useState(() => services.now())
+  const minuteTimer = useRef<number | undefined>(undefined)
+  const scheduleNextMinute = useRef<() => void>(() => undefined)
 
   const syncCurrentTime = useCallback(() => {
     const now = services.now()
     setCurrentTime((current) => current.getTime() === now.getTime() ? current : now)
+    scheduleNextMinute.current()
   }, [services])
 
   useEffect(() => {
     let active = true
-    let timer: number | undefined
-    const scheduleNextMinute = () => {
+    const scheduleMinuteSync = () => {
+      if (minuteTimer.current !== undefined) window.clearTimeout(minuteTimer.current)
       const now = services.now().getTime()
       const remainder = ((now % 60_000) + 60_000) % 60_000
       const delay = remainder === 0 ? 60_000 : 60_000 - remainder
-      timer = window.setTimeout(() => {
-        syncCurrentTime()
-        scheduleNextMinute()
-      }, delay)
-    }
-    const syncAndReschedule = () => {
-      syncCurrentTime()
-      if (timer !== undefined) window.clearTimeout(timer)
-      scheduleNextMinute()
+      minuteTimer.current = window.setTimeout(syncCurrentTime, delay)
     }
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') syncAndReschedule()
+      if (document.visibilityState === 'visible') syncCurrentTime()
     }
+    scheduleNextMinute.current = scheduleMinuteSync
     queueMicrotask(() => {
       if (active) syncCurrentTime()
     })
-    scheduleNextMinute()
-    window.addEventListener('pageshow', syncAndReschedule)
+    scheduleMinuteSync()
+    window.addEventListener('pageshow', syncCurrentTime)
+    window.addEventListener('focus', syncCurrentTime)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
       active = false
-      if (timer !== undefined) window.clearTimeout(timer)
-      window.removeEventListener('pageshow', syncAndReschedule)
+      if (minuteTimer.current !== undefined) window.clearTimeout(minuteTimer.current)
+      minuteTimer.current = undefined
+      scheduleNextMinute.current = () => undefined
+      window.removeEventListener('pageshow', syncCurrentTime)
+      window.removeEventListener('focus', syncCurrentTime)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [services, syncCurrentTime])
@@ -58,5 +58,6 @@ export function useScheduleDate(services: ScheduleDateServices) {
     selectedDateOverride,
     currentTime,
     changeDate,
+    syncCurrentTime,
   }
 }

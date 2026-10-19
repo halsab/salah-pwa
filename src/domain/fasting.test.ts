@@ -187,12 +187,27 @@ describe('режим поста', () => {
 })
 
 
-it('does not build a fasting timeline from an incomplete upper official horizon', () => {
+it('keeps a verified current-day fasting interval when tomorrow is outside official coverage', () => {
   const today = '2026-12-31'
   const events = buildFastingScheduleEvents([day(today, '05:00')], 'Europe/Moscow')
   const input = { today, selectedDate: today, timeZone: 'Europe/Moscow', correction: 0 as const,
     hijriSupported: false, preferences: { manualEnabled: true }, events,
     officialHorizon: { previous: true, next: false } }
   expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T08:00:00+03:00') })).toMatchObject({ kind: 'day' })
-  expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T15:00:00+03:00') })).toBeNull()
+  expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T15:00:00+03:00') }))
+    .toMatchObject({ kind: 'day', start: { scheduleDate: today }, end: { scheduleDate: today } })
+  expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T20:00:00+03:00') })).toBeNull()
+})
+
+it('preserves fasting events from the first covered schedule row with a previous-day event date', () => {
+  const today = '2025-12-31'
+  const coveredScheduleDate = '2026-01-01'
+  const row = day(coveredScheduleDate, '23:54', '23:58')
+  const events = buildFastingScheduleEvents([row], 'Europe/Moscow')
+  const fajr = events.fajr[0]
+  expect(fajr).toMatchObject({ scheduleDate: coveredScheduleDate, date: today, dayOffset: -1 })
+  const timeline = resolveFastingTimeline({ now: new Date('2025-12-31T20:55:00Z'), today,
+    selectedDate: today, timeZone: 'Europe/Moscow', correction: 0, hijriSupported: false,
+    preferences: { manualEnabled: true }, events, officialHorizon: { previous: false, next: true } })
+  expect(timeline).toMatchObject({ kind: 'day', start: { scheduleDate: coveredScheduleDate, date: today } })
 })
