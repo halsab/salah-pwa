@@ -15,6 +15,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   padding-top: max(0px, calc(var(--app-safe-area-top, env(safe-area-inset-top, 0px)) - var(--app-viewport-top, 0px)));
   display: flex;
   justify-content: center;
+  overflow: hidden;
   background: var(--app-shell-background);
 }
 .app-screen {
@@ -22,21 +23,32 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   --screen-inset-right: max(var(--content-inset), env(safe-area-inset-right));
   --screen-bottom-inset: max(var(--content-inset), var(--app-viewport-bottom-padding, env(safe-area-inset-bottom, 0px)));
   width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
-  padding: var(--content-inset) var(--screen-inset-right) var(--screen-bottom-inset) var(--screen-inset-left);
-  border-radius: var(--container-radius);
+  display: flex;
+  flex-direction: column;
+  gap: var(--content-inset);
+  padding-top: var(--content-inset);
+}
+.app-screen--no-top { gap: 0; padding-top: 0; }
+.screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
+.screen-top { padding-inline: var(--screen-inset-left) var(--screen-inset-right); }
+.screen-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--content-inset) var(--screen-inset-right) 0 var(--screen-inset-left);
+  border-radius: var(--container-radius) var(--container-radius) 0 0;
   background: var(--background-secondary);
   display: flex;
   flex-direction: column;
   gap: var(--content-inset);
   overflow: hidden;
 }
-@media (hover: hover) and (pointer: fine) {
-  .app-screen { border-radius: 0; }
-}
-.screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
-.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; view-transition-name: salah-screen-content; }
-.screen-content--edge-bottom { margin-bottom: calc(0px - var(--screen-bottom-inset)); padding-bottom: var(--screen-bottom-inset); }
+.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
+.screen-content--edge-bottom { padding-bottom: var(--screen-bottom-inset); }
+.screen-bottom { padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
   margin-right: calc(0px - var(--screen-inset-right));
