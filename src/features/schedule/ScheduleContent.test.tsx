@@ -3,7 +3,9 @@ import { act, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { parseDumRtCsv } from '../../data/parseDumRtCsv'
 import { calculatePrayerSchedule } from '../../domain/prayerCalculation'
+import { getSystemDate } from '../../domain/date'
 import { ScheduleContent } from './ScheduleContent'
+import { useScheduleDate } from './useScheduleDate'
 
 const day = required(parseDumRtCsv('05.05.2026;23:54;02:22;03:53;11:41;12:00;16:58;19:30;21:00', 'kazan')[0])
 const base = {
@@ -11,6 +13,27 @@ const base = {
   selectedDate: day.date, today: day.date, currentTime: new Date('2026-05-05T17:10:00+03:00'),
   now: () => new Date('2026-05-05T17:10:00+03:00'), officialMode: true,
   onChangeDate: () => {}, onRetrySchedule: () => {},
+}
+
+const clockServices = { now: () => new Date(Date.now()) }
+const followingDay = { ...day, date: '2026-05-06' }
+
+function ClockSyncedSchedule({ onParentRender, schedules = [day, followingDay], fastingModeEnabled = true, showSchedule = true }: {
+  onParentRender?: () => void
+  schedules?: typeof base.schedules
+  fastingModeEnabled?: boolean
+  showSchedule?: boolean
+}) {
+  onParentRender?.()
+  const { currentTime, syncCurrentTime } = useScheduleDate(clockServices)
+  const today = getSystemDate(currentTime, 'Europe/Moscow')
+  return <>
+    <output data-testid="parent-schedule-time">{currentTime.toISOString()}</output>
+    {showSchedule ? <ScheduleContent {...base} schedule={day} schedules={schedules} selectedDate={today} today={today}
+      currentTime={currentTime} now={clockServices.now} officialMode timeZone="Europe/Moscow"
+      hijriSupported={false} fastingMode={{ manualEnabled: true }} fastingModeEnabled={fastingModeEnabled}
+      onSystemClockChange={syncCurrentTime} /> : null}
+  </>
 }
 
 describe('новое расписание', () => {
@@ -222,5 +245,91 @@ describe('новое расписание', () => {
     expect(screen.getByRole('timer', { name: 'До Магриба, осталось 1 ч 30 мин' })).toBeVisible()
     expect(screen.getByRole('timer', { name: 'До конца поста, осталось 1 ч 30 мин' })).toBeVisible()
     expect(screen.queryByRole('timer', { name: /4 ч 58 мин/u })).not.toBeInTheDocument()
+  })
+
+  it('синхронизирует родителя при скачках часов вперёд и назад через несколько событий', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime('2026-05-05T08:50:00.000Z')
+      const onParentRender = vi.fn()
+      render(<ClockSyncedSchedule onParentRender={onParentRender} />)
+      act(() => { vi.runAllTicks() })
+
+      expect(onParentRender).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('parent-schedule-time')).toHaveTextContent('2026-05-05T08:50:00.000Z')
+      expect(screen.getByText('Зенит').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('timer', { name: 'До Зухра, осталось 10 мин' })).toBeVisible()
+      expect(screen.getByRole('timer', { name: 'До конца поста, осталось 7 ч 40 мин' })).toBeVisible()
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000) })
+      expect(screen.getByTestId('parent-schedule-time')).toHaveTextContent('2026-05-05T08:50:00.000Z')
+      expect(onParentRender).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        vi.setSystemTime('2026-05-05T14:10:00.000Z')
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(screen.getByTestId('parent-schedule-time')).toHaveTextContent('2026-05-05T14:10:01.000Z')
+      expect(onParentRender).toHaveBeenCalledTimes(2)
+      expect(screen.getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('timer', { name: 'До Магриба, осталось 2 ч 19 мин' })).toBeVisible()
+      expect(screen.getByRole('timer', { name: 'До конца поста, осталось 2 ч 19 мин' })).toBeVisible()
+
+      await act(async () => {
+        vi.setSystemTime('2026-05-05T08:50:00.000Z')
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+      expect(screen.getByTestId('parent-schedule-time')).toHaveTextContent('2026-05-05T08:50:01.000Z')
+      expect(onParentRender).toHaveBeenCalledTimes(3)
+      expect(screen.getByText('Зенит').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('timer', { name: 'До Зухра, осталось 9 мин' })).toBeVisible()
+      expect(screen.getByRole('timer', { name: 'До конца поста, осталось 7 ч 39 мин' })).toBeVisible()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('обнаруживает коррекцию часов при отсутствии countdown потребителей', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime('2026-05-05T19:10:00.000Z')
+      render(<ClockSyncedSchedule schedules={[day]} fastingModeEnabled={false} />)
+      act(() => { vi.runAllTicks() })
+
+      expect(screen.getByText('Иша').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+      expect(vi.getTimerCount()).toBe(2)
+
+      await act(async () => {
+        vi.setSystemTime('2026-05-05T08:50:00.000Z')
+        await vi.advanceTimersByTimeAsync(1_000)
+      })
+
+      expect(screen.getByTestId('parent-schedule-time')).toHaveTextContent('2026-05-05T08:50:01.000Z')
+      expect(screen.getByText('Зенит').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('timer', { name: 'До Зухра, осталось 9 мин' })).toBeVisible()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('синхронизирует контекст при возврате на расписание после системной коррекции', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime('2026-05-05T08:50:00.000Z')
+      const { rerender } = render(<ClockSyncedSchedule />)
+      act(() => { vi.runAllTicks() })
+      expect(screen.getByText('Зенит').closest('li')).toHaveAttribute('aria-current', 'true')
+
+      await act(async () => {
+        rerender(<ClockSyncedSchedule showSchedule={false} />)
+        await Promise.resolve()
+      })
+      act(() => { vi.setSystemTime('2026-05-05T14:10:00.000Z') })
+      await act(async () => {
+        rerender(<ClockSyncedSchedule />)
+        await Promise.resolve()
+      })
+
+      expect(screen.getByTestId('parent-schedule-time')).toHaveTextContent('2026-05-05T14:10:00.000Z')
+      expect(screen.getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
+      expect(screen.getByRole('timer', { name: 'До Магриба, осталось 2 ч 20 мин' })).toBeVisible()
+    } finally { vi.useRealTimers() }
   })
 })

@@ -1,11 +1,19 @@
 import { act, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { useLiveClock } from './useLiveClock'
+import { useClockCorrection, useLiveClock } from './useLiveClock'
 
-function Counter({ onRender, enabled = true }: { onRender: () => void; enabled?: boolean }) {
+function Counter({ onRender, enabled = true }: {
+  onRender: () => void
+  enabled?: boolean
+}) {
   useLiveClock(enabled)
   onRender()
+  return null
+}
+
+function ClockCorrectionObserver({ onSystemClockChange }: { onSystemClockChange: () => void }) {
+  useClockCorrection(true, onSystemClockChange)
   return null
 }
 
@@ -56,6 +64,35 @@ describe('useLiveClock', () => {
     act(() => { window.dispatchEvent(new PageTransitionEvent('pageshow')) })
     expect(onRender).toHaveBeenCalledTimes(rendersWhileHidden + 1)
     expect(vi.getTimerCount()).toBe(1)
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('notifies parent observers only when wall time jumps relative to monotonic time', () => {
+    vi.useFakeTimers()
+    const start = new Date('2026-10-19T10:00:00.000Z')
+    vi.setSystemTime(start)
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
+    const onSystemClockChange = vi.fn()
+    const { unmount } = render(<>
+      <ClockCorrectionObserver onSystemClockChange={onSystemClockChange} />
+      <ClockCorrectionObserver onSystemClockChange={onSystemClockChange} />
+    </>)
+
+    expect(vi.getTimerCount()).toBe(1)
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(onSystemClockChange).not.toHaveBeenCalled()
+
+    vi.setSystemTime(new Date(Date.now() + 5 * 60 * 60_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(onSystemClockChange).toHaveBeenCalledTimes(1)
+
+    vi.setSystemTime(new Date(Date.now() - 8 * 60 * 60_000))
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(onSystemClockChange).toHaveBeenCalledTimes(2)
+
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(onSystemClockChange).toHaveBeenCalledTimes(2)
     unmount()
     expect(vi.getTimerCount()).toBe(0)
   })

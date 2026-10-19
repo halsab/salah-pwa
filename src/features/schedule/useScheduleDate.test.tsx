@@ -27,6 +27,67 @@ describe('useScheduleDate', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('синхронизирует родительское время сразу после коррекции системных часов и переустанавливает минутный таймер', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-09-01T10:00:00.000Z')
+    const services = { now: () => new Date(Date.now()) }
+    const { result, unmount } = renderHook(() => useScheduleDate(services))
+    const correctedTime = new Date('2026-09-01T15:30:00.000Z')
+
+    act(() => {
+      vi.setSystemTime(correctedTime)
+      result.current.syncCurrentTime()
+    })
+
+    expect(result.current.currentTime).toEqual(correctedTime)
+    expect(vi.getTimerCount()).toBe(1)
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(result.current.currentTime).toEqual(correctedTime)
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('восстанавливает родительское время по focus, pageshow и возврату видимости', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime('2026-09-01T10:00:00.000Z')
+    let visibility: DocumentVisibilityState = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+    const services = { now: () => new Date(Date.now()) }
+    const { result, unmount } = renderHook(() => useScheduleDate(services))
+    act(() => { vi.runAllTicks() })
+
+    const afterFocus = new Date('2026-09-01T15:30:00.000Z')
+    act(() => {
+      vi.setSystemTime(afterFocus)
+      window.dispatchEvent(new Event('focus'))
+    })
+    expect(result.current.currentTime).toEqual(afterFocus)
+
+    const afterPageShow = new Date('2026-09-02T00:30:00.000Z')
+    act(() => {
+      vi.setSystemTime(afterPageShow)
+      window.dispatchEvent(new PageTransitionEvent('pageshow'))
+    })
+    expect(result.current.currentTime).toEqual(afterPageShow)
+
+    const whileHidden = new Date('2026-09-02T01:00:00.000Z')
+    visibility = 'hidden'
+    act(() => {
+      vi.setSystemTime(whileHidden)
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(result.current.currentTime).toEqual(afterPageShow)
+
+    visibility = 'visible'
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(result.current.currentTime).toEqual(whileHidden)
+    expect(vi.getTimerCount()).toBe(1)
+
+    unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('хранит только явную дату и позволяет вернуться к эффективному сегодня', () => {
     vi.useFakeTimers()
     vi.setSystemTime('2026-10-12T21:30:00.000Z')
