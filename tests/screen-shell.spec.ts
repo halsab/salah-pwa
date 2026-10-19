@@ -92,6 +92,11 @@ async function readShellGeometry(region: import('@playwright/test').Locator) {
 test('общая оболочка держит слоты, прокрутку и фокус на всех экранах', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 560 })
   await page.goto('./')
+  const setTopSafeArea = (value: number | null) => page.locator('.app-layout').evaluate((element, inset) => {
+    const shell = element as HTMLElement
+    if (inset === null) shell.style.removeProperty('--app-safe-area-top')
+    else shell.style.setProperty('--app-safe-area-top', `${inset}px`)
+  }, value)
 
   const onboarding = page.getByRole('region', { name: 'Выберите место', exact: true })
   await expect(onboarding).toBeVisible()
@@ -104,6 +109,15 @@ test('общая оболочка держит слоты, прокрутку и
   expect(onboardingGeometry.contentPaddingTop).toBe(16)
   expect(onboardingGeometry.bottomSafeArea).toBeGreaterThanOrEqual(0)
   expect(onboardingGeometry.footerBottom).toBeLessThanOrEqual(onboardingGeometry.panelBottom - Math.max(16, onboardingGeometry.bottomSafeArea) + 1)
+  for (const safeArea of [0, 1, 59, 0]) {
+    await setTopSafeArea(safeArea)
+    const geometry = await readShellGeometry(onboarding)
+    expect(geometry.shellPaddingTop).toBe(safeArea)
+    expect(geometry.screenPaddingTop).toBe(0)
+    expect(geometry.panelTop).toBeCloseTo(geometry.shellTop + safeArea, 0)
+    expect(geometry.panelBottom).toBe(onboardingGeometry.panelBottom)
+  }
+  await setTopSafeArea(null)
 
   await choosePlace(page)
   await expectSchedule(page)
@@ -141,6 +155,31 @@ test('общая оболочка держит слоты, прокрутку и
   expect(homeGeometry.contentScrollHeight).toBeGreaterThan(homeGeometry.contentClientHeight)
   const firstPrayerTop = await home.locator('.event-list > .event-row').first().evaluate(element => element.getBoundingClientRect().top)
   expect(firstPrayerTop).toBeCloseTo(homeGeometry.panelTop, 0)
+
+  for (const safeArea of [0, 1, 59, 0]) {
+    await setTopSafeArea(safeArea)
+    const geometry = await readShellGeometry(home)
+    const extraTop = safeArea > 0 ? 0 : 8
+    expect(geometry.shellPaddingTop).toBe(safeArea)
+    expect(geometry.screenPaddingTop).toBe(extraTop)
+    expect(geometry.headerTop).toBeCloseTo(geometry.shellTop + safeArea + extraTop, 0)
+    expect(geometry.panelTop).toBeCloseTo((geometry.headerBottom ?? 0) + 8, 0)
+    expect(geometry.topPaddingLeft).toBe(8)
+    expect(geometry.topPaddingRight).toBe(8)
+    expect(geometry.footerBottom).toBe(homeGeometry.footerBottom)
+    expect(geometry.documentWidth).toBeLessThanOrEqual(geometry.viewportWidth + 1)
+    if (safeArea === 59) {
+      await page.locator('#home-date').click()
+      const nested = page.getByRole('region', { name: 'Установка даты', exact: true })
+      await expect(nested).toBeVisible()
+      const nestedGeometry = await readShellGeometry(nested)
+      expect(nestedGeometry.screenPaddingTop).toBe(0)
+      expect(nestedGeometry.headerTop).toBeCloseTo(nestedGeometry.shellTop + safeArea, 0)
+      await nested.getByRole('button', { name: 'Назад', exact: true }).click()
+      await expect(home).toBeVisible()
+    }
+  }
+  await setTopSafeArea(null)
 
   for (const colorScheme of ['dark', 'light'] as const) {
     await page.emulateMedia({ colorScheme })

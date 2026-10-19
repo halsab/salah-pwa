@@ -9,6 +9,7 @@ html, body { background: var(--app-shell-background); color: var(--text-primary)
 body { font-family: 'Old Timey Mono', monospace; font-weight: 400; font-synthesis: none; -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
 .app-layout {
+  --app-safe-area-top: max(0px, env(safe-area-inset-top, 0px));
   /* WebKit окрашивает status bar по fixed-потомкам; оболочка остаётся в координатах документа. */
   position: absolute;
   top: 0;
@@ -16,7 +17,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   right: 0;
   height: 100dvh;
   padding: 0;
-  padding-top: max(0px, env(safe-area-inset-top, 0px));
+  padding-top: var(--app-safe-area-top);
   display: flex;
   justify-content: center;
   overflow: hidden;
@@ -39,6 +40,9 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   padding-top: 8px;
 }
 .app-screen--no-top { gap: 0; padding-top: 0; }
+@supports (padding-top: calc(8px * (1 - sign(1px)))) {
+  .app-screen:not(.app-screen--no-top) { padding-top: calc(8px * (1 - sign(var(--app-safe-area-top, 0px)))); }
+}
 .screen-top, .screen-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--button-height); flex-shrink: 0; flex-wrap: wrap; }
 .screen-top { padding-inline: var(--screen-navigation-inset-left) var(--screen-navigation-inset-right); }
 .screen-panel {
