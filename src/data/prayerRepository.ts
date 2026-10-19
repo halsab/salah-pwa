@@ -14,7 +14,7 @@ import {
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
-import { DEFAULT_THEME_FAMILY, restoreThemeFamily, type ThemeFamily } from '../domain/theme'
+import { restoreThemeFamily, type ThemeFamily } from '../domain/theme'
 import { restoreLanguagePreference, type LanguagePreference } from '../localization/locale'
 import { isFastingModePreferences, restoreFastingModePreferences, type FastingModePreferences } from '../domain/fasting'
 
@@ -31,7 +31,7 @@ export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   recentPlaces?: Place[]
   locationChoice: LocationChoice | null
   appearance?: Appearance
-  themeFamily: ThemeFamily
+  themeFamily?: ThemeFamily
   preferences: SourcePreferences
   languagePreference?: LanguagePreference
   fastingMode?: FastingModePreferences
@@ -149,7 +149,6 @@ async function readStartup(provider: PrayerProvider) {
     update: { status: 'idle' }, checkedAt: null,
     locationChoice: choice === undefined ? null : restoreLocationChoice(choice, validMeta ?? provider.bundled),
     preferences: restoreSourcePreferences(preferences, legacy, choice),
-    themeFamily: DEFAULT_THEME_FAMILY,
   }
   return success({ state, generation })
 }

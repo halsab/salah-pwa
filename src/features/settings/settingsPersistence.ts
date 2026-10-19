@@ -25,7 +25,10 @@ export function createSettingsPersistence(write: SaveSettings) {
       if (!isCurrent()) return
       try {
         const result = await write(snapshot, isCurrent)
-        if (isCurrent()) notify(result.ok ? 'saved' : 'failed')
+        if (isCurrent()) {
+          if (result.ok) latest = {}
+          notify(result.ok ? 'saved' : 'failed')
+        }
       } catch {
         if (isCurrent()) notify('failed')
       }

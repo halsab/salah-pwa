@@ -30,6 +30,11 @@ describe('local initialization and persistence', () => {
     const previous = createOfficialPlace(required(dataset.locations[0]), 0)
     await repo.saveSettings({ recentPlaces: [previous], themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } })
 
+    const startup = await initializePrayerRepositoryStartup()
+    expect(startup).toMatchObject({ ok: true })
+    if (!startup.ok) throw new Error('Critical startup initialization failed')
+    expect(startup.value.themeFamily).toBeUndefined()
+
     expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ ok: true, value: {
       recentPlaces: [previous], themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true },
     } })

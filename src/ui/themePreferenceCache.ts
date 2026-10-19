@@ -47,3 +47,15 @@ export function clearThemePreferenceCache(): void {
 export function isThemePreferenceCacheEvent(event: StorageEvent): boolean {
   return event.key === THEME_PREFERENCE_CACHE_KEY
 }
+
+export function themeFamilyFromCacheEvent(event: StorageEvent): ThemeFamily | null {
+  if (!isThemePreferenceCacheEvent(event) || event.newValue === null) return null
+  try {
+    const value: unknown = JSON.parse(event.newValue)
+    return typeof value === 'object' && value !== null
+      && 'version' in value && value.version === CACHE_VERSION
+      && 'themeFamily' in value && isThemeFamily(value.themeFamily) ? value.themeFamily : null
+  } catch {
+    return null
+  }
+}

@@ -65,7 +65,7 @@ import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation, type AppScreen } from './ui/useAppNavigation'
 import { restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
-import { clearThemePreferenceCache, isThemeFamily, isThemePreferenceCacheEvent, readThemePreferenceCache, writeThemePreferenceCache } from './ui/themePreferenceCache'
+import { clearThemePreferenceCache, isThemeFamily, isThemePreferenceCacheEvent, themeFamilyFromCacheEvent, readThemePreferenceCache, writeThemePreferenceCache } from './ui/themePreferenceCache'
 import { useSystemAppearance } from './ui/useSystemAppearance'
 import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
@@ -159,6 +159,7 @@ export function App({
   const [themeFamily, setThemeFamily] = useState<ThemeFamily>(readThemePreferenceCache)
   const [themeEditedLocally, setThemeEditedLocally] = useState(false)
   const persistedThemeFamily = useRef(themeFamily)
+  const editedTheme = useRef(false)
   const [fastingMode, setFastingMode] = useState<FastingModePreferences>({ ...DEFAULT_FASTING_MODE_PREFERENCES })
   const [hijriSupported] = useState(supportsHijriCalendar)
   const calendarPreferences = useMemo<CalendarPreferences>(() => hijriSupported ? storedCalendarPreferences
@@ -183,7 +184,9 @@ export function App({
         setRemoteSelectionPending(false)
         setSelectionSyncError(false)
       }
-      notifyFastScheduleSelectionChanged()
+      if (!(patch.themeFamily !== undefined && Object.keys(patch).length === 1)) {
+        notifyFastScheduleSelectionChanged()
+      }
     }
     return result
   }, [invalidateFastCache, services])
@@ -191,6 +194,15 @@ export function App({
   const saveSettings = persistence.save
   const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain
+  const acceptRemoteTheme = useCallback((nextThemeFamily: ThemeFamily) => {
+    selectionSyncToken.current += 1
+    editedTheme.current = false
+    setThemeEditedLocally(false)
+    persistedThemeFamily.current = nextThemeFamily
+    setThemeFamily(nextThemeFamily)
+    writeThemePreferenceCache(nextThemeFamily)
+    saveSettings({ themeFamily: nextThemeFamily })
+  }, [saveSettings])
   const themeChannel = useRef<BroadcastChannel | null>(null)
   useEffect(() => {
     if (persistence.status !== 'saved' || !themeEditedLocally) return
@@ -202,13 +214,12 @@ export function App({
     if (typeof BroadcastChannel === 'undefined') return
     const channel = new BroadcastChannel('salah-theme-preference-v1')
     themeChannel.current = channel
-    channel.onmessage = event => { if (isThemeFamily(event.data)) retrySelectionSync.current() }
+    channel.onmessage = event => { if (isThemeFamily(event.data)) acceptRemoteTheme(event.data) }
     return () => { themeChannel.current = null; channel.close() }
-  }, [])
+  }, [acceptRemoteTheme])
   const [recentPlaces, setRecentPlaces] = useState<Place[]>([])
   const editedPreferences = useRef(false)
   const editedCalendar = useRef(false)
-  const editedTheme = useRef(false)
   const editedFasting = useRef(false)
   const editedRecentPlaces = useRef(false)
   const recentRef = useRef<Place[]>([])
@@ -280,6 +291,9 @@ export function App({
     if (!cleared) {
       pendingFastIdentityWrite.current = false
       setFastCacheReady(true)
+      editedTheme.current = false
+      setThemeEditedLocally(false)
+      setThemeFamily(persistedThemeFamily.current)
       writeThemePreferenceCache(persistedThemeFamily.current)
     }
     return cleared
@@ -324,7 +338,7 @@ export function App({
       if (!editedPreferences.current) setPreferences(state.preferences)
       if (state.languagePreference !== undefined) setLanguagePreference(state.languagePreference)
       if (!editedCalendar.current && state.calendarPreferences !== undefined) setCalendarPreferences(restoreCalendarPreferences(state.calendarPreferences))
-      if (!editedTheme.current) {
+      if (!editedTheme.current && state.themeFamily !== undefined) {
         const nextThemeFamily = restoreThemeFamily(state.themeFamily)
         persistedThemeFamily.current = nextThemeFamily
         setThemeFamily(nextThemeFamily)
@@ -438,11 +452,8 @@ export function App({
     retrySelectionSync.current = reconcileSelection
     const handleStorage = (event: StorageEvent) => {
       if (isThemePreferenceCacheEvent(event)) {
-        const nextThemeFamily = readThemePreferenceCache()
-        editedTheme.current = false
-        setThemeEditedLocally(false)
-        persistedThemeFamily.current = nextThemeFamily
-        setThemeFamily(nextThemeFamily)
+        const nextThemeFamily = themeFamilyFromCacheEvent(event)
+        if (nextThemeFamily) acceptRemoteTheme(nextThemeFamily)
         return
       }
       if (event.key === FAST_SCHEDULE_STORAGE_KEYS.activeContext) {
@@ -470,7 +481,7 @@ export function App({
     window.addEventListener('pageshow', refresh)
     window.addEventListener('storage', handleStorage)
     return () => { active = false; retrySelectionSync.current = () => {}; unsubscribe(); window.removeEventListener('online', refresh); window.removeEventListener('pageshow', refresh); window.removeEventListener('storage', handleStorage); void services.invalidateAndDrain() }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings])
+  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()

@@ -469,12 +469,12 @@ describe('Salah', () => {
     vi.stubGlobal('localStorage', localStore)
     const clear = deferred<Awaited<ReturnType<NonNullable<AppServices['clearAppData']>>>>()
     const clearAppData = vi.fn(() => clear.promise)
-    const services = createServices({ clearAppData })
+    const services = createServices({ clearAppData, initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal' })) })
     seedStartupSnapshot(services)
     const oldMarker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string }
     const view = render(<App services={services} version="warm-test" />)
     expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
-    expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'classic' })
+    expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
     expect(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).not.toBeNull()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
@@ -491,7 +491,8 @@ describe('Salah', () => {
 
     await act(async () => { clear.resolve(failure({ kind: 'storage', reason: 'unavailable' })); await clear.promise })
     expect(await screen.findByRole('alert')).toBeVisible()
-    expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'classic' })
+    expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
     await waitFor(() => expect(readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(),
       deviceTimeZone: services.getDeviceTimeZone() })).toMatchObject({ context: { date: '2026-09-01' }, schedule: { asr: '16:24' } }))
     const restoredMarker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string; contextKey: string | null }
@@ -1177,6 +1178,31 @@ describe('Salah', () => {
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('classic'))
   })
 
+  it('оставляет seasonal без изменений между initializeStartup и optional hydration', async () => {
+    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, JSON.stringify({ version: 1, themeFamily: 'seasonal' }))
+    const optionalSettings = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const startupState: PrayerRepositoryState = { ...initializedState }
+    delete startupState.themeFamily
+    const initializeStartup = vi.fn().mockResolvedValue(success(startupState))
+    const loadOptionalSettings = vi.fn(() => optionalSettings.promise)
+    const services = createServices({ initializeStartup, loadOptionalSettings })
+    render(<App services={services} />)
+
+    await screen.findByRole('timer')
+    expect(screen.getByRole('button', { name: 'Казань' })).toBeVisible()
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+    expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
+
+    await act(async () => {
+      optionalSettings.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'gregorian', correction: 0 },
+        themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
+      await optionalSettings.promise
+    })
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+    expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
+    expect(services.getDays).toHaveBeenCalled()
+  })
+
   it('принимает подтверждённую смену семейства из другой вкладки', async () => {
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized()) })
     render(<App services={services} />)
@@ -1189,6 +1215,30 @@ describe('Salah', () => {
     expect(document.documentElement.dataset.theme).toBe('seasonal')
     await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
     expect(await screen.findByRole('combobox', { name: 'Тема' })).toHaveValue('seasonal')
+  })
+
+  it('заменяет локальную тему внешней и сохраняет прочую ожидающую настройку', async () => {
+    const staleWrite = deferred<Awaited<ReturnType<AppServices['saveSettings']>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>()
+      .mockReturnValueOnce(staleWrite.promise)
+      .mockResolvedValue(success(undefined))
+    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal' })), saveSettings })} />)
+    await screen.findByRole('button', { name: 'Казань' })
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Тема' }), 'classic')
+    await userEvent.click(screen.getByRole('switch'))
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1))
+
+    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
+    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, value)
+    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+    expect(saveSettings.mock.calls[0]?.[1]?.()).toBe(false)
+
+    staleWrite.resolve(success(undefined))
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2))
+    expect(saveSettings.mock.calls[1]?.[0]).toMatchObject({ themeFamily: 'seasonal', fastingMode: { manualEnabled: true } })
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' }))
   })
 
   it('сверяет тему через BroadcastChannel, если localStorage недоступен', async () => {
@@ -1205,17 +1255,16 @@ describe('Salah', () => {
       setItem: () => { throw new DOMException('denied', 'SecurityError') },
       removeItem: () => { throw new DOMException('denied', 'SecurityError') },
     })
-    const initialize = vi.fn()
-      .mockResolvedValueOnce(initialized({ themeFamily: 'classic' }))
-      .mockResolvedValue(initialized({ themeFamily: 'seasonal' }))
-    render(<App services={createServices({ initialize })} />)
+    const initialize = vi.fn().mockResolvedValue(initialized({ themeFamily: 'classic' }))
+    const saveSettings = vi.fn().mockResolvedValue(success(undefined))
+    render(<App services={createServices({ initialize, saveSettings })} />)
     await screen.findByRole('button', { name: 'Казань' })
 
     act(() => { receive?.({ data: 'seasonal' } as MessageEvent) })
 
-    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2))
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('seasonal'))
-    expect(initialize).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'seasonal' }, expect.any(Function)))
+    expect(initialize).toHaveBeenCalledTimes(1)
   })
 
   it('применяет сезон текущего дня, а не открытой даты, и сохраняет выбор без reload', async () => {
