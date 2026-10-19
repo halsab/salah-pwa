@@ -84,29 +84,34 @@ describe('usePrayerSchedules', () => {
   })
 
   it('при A → B → C не принимает прежние ответы и ошибки даже после готовности C', async () => {
-    const pending = new Map<string, ReturnType<typeof deferred<(PrayerDay | undefined)[]>>>()
+    const pending: { id: string; dates: readonly string[]; request: ReturnType<typeof deferred<(PrayerDay | undefined)[]>> }[] = []
     const initial = options()
-    initial.services.getDays = vi.fn((id: string) => {
+    initial.services.getDays = vi.fn((id: string, dates: readonly string[]) => {
       const request = deferred<(PrayerDay | undefined)[]>()
-      pending.set(id, request)
+      pending.push({ id, dates, request })
       return request.promise
     })
     const hook = observe(initial)
     hook.rerender({ ...initial, locationId: 'B' })
     hook.rerender({ ...initial, locationId: 'C' })
-    const requestedDates = Array.from({ length: 9 }, (_, index) => addDays('2026-09-01', index - 4))
+    const resolveDays = (item: typeof pending[number]) => item.dates.map(date => day(item.id, date))
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'A') request.resolve(requestedDates.map((date) => day('A', date)))
+      for (const item of pending) if (item.id === 'A' && item.dates.length === 1) item.request.resolve(resolveDays(item))
       await Promise.resolve()
     })
     expectHidden(hook.result.current)
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'C') request.resolve(requestedDates.map((date) => day('C', date)))
+      for (const item of pending) if (item.id === 'C' && item.dates.length === 1) item.request.resolve(resolveDays(item))
       await Promise.resolve()
     })
-    expect(hook.result.current.schedule).toMatchObject({ locationId: 'C' })
+    await waitFor(() => expect(hook.result.current.schedule).toMatchObject({ locationId: 'C' }))
     await act(async () => {
-      for (const [key, request] of pending) if (key === 'B') request.reject(new Error('old error'))
+      for (const item of pending) if (item.id === 'C' && item.dates.length === 2) item.request.resolve(resolveDays(item))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
+    await act(async () => {
+      for (const item of pending) if (item.id === 'B') item.request.reject(new Error('old error'))
       await Promise.resolve()
     })
     expect(hook.result.current.scheduleError).toBeNull()
@@ -136,7 +141,7 @@ describe('usePrayerSchedules', () => {
       const first = hook.renders.length
       hook.rerender(current)
       expectHidden(hook.renders[first])
-      await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+      await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
     }
   })
 
@@ -161,7 +166,7 @@ describe('usePrayerSchedules', () => {
     const first = hook.renders.length
     act(() => hook.result.current.retrySchedule())
     expectHidden(hook.renders[first])
-    await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
     expect(vi.mocked(initial.services.getDays).mock.lastCall?.[0]).toBe('C')
   })
 })
@@ -173,7 +178,7 @@ describe('окно событий и гонки источников', () => {
   ])('покрывает календарные сутки даже при смещениях рассчитанных событий: $timeZone', async (place) => {
     const initial: Options = { ...options(), locationMode: 'calculated', timeZone: place.timeZone, selectedDate: '2026-06-21', calculatedLocation: { ...place, accuracy: null, timestamp: 0 } }
     const hook = observe(initial)
-    await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
+    await waitFor(() => expect(hook.result.current.contextReady).toBe(true))
     expect(hook.result.current.scheduleError).toBeNull()
     expect(hook.result.current.schedules.map(({ date }) => date)).toEqual(['2026-06-17', '2026-06-18', '2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22', '2026-06-23', '2026-06-24', '2026-06-25'])
     const loaded = hook.result.current.schedules.flatMap(buildScheduleEvents)

@@ -61,6 +61,7 @@ interface ScheduleContentProps {
   schedules: DisplaySchedule[]
   scheduleLoading: boolean
   scheduleError: ScheduleError | null
+  contextReady?: boolean
   selectedDate: string
   calendarPreferences?: CalendarPreferences
   today: string
@@ -81,6 +82,7 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
+  contextReady = true,
   currentTime, now, officialMode, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
   fastingModeEnabled = false, fastingEvents, timeZone, onOpenReligiousEvent = () => {},
   onChangeDate, onRetrySchedule, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
@@ -93,7 +95,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   const events = useMemo(() => schedules.flatMap(buildScheduleEvents), [schedules])
   const fastingScheduleEvents = useMemo(() => fastingEvents ?? buildFastingScheduleEvents(schedules, timeZone), [fastingEvents, schedules, timeZone])
   const ready = !scheduleLoading && !scheduleError && schedule !== null
-  const live = selectedDate === today && ready
+  const live = selectedDate === today && ready && contextReady
   const { current, next } = live ? selectEventPair(effectiveNow, events) : { current: null, next: null }
   const religiousBanner = resolveReligiousBanner({
     now: effectiveNow,

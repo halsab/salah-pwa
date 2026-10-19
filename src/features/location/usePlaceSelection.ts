@@ -12,13 +12,15 @@ import type { PrayerLocation } from '../../domain/types'
 import { translate } from '../../localization'
 import { geolocationFailureMessage, isLowAccuracy, preferredGeolocationFailure, type GpsUiState, type NameLookupState } from './locationState'
 
-export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void, persist: (choice: LocationChoice) => void) {
-  const [place, setPlace] = useState<Place | null>(null)
-  const [source, setSource] = useState<LocationSelectionSource>('default')
+export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void, persist: (choice: LocationChoice) => void,
+  initial?: { place: Place; source: LocationSelectionSource }) {
+  const [place, setPlace] = useState<Place | null>(() => initial?.place ?? null)
+  const [source, setSource] = useState<LocationSelectionSource>(() => initial?.source ?? 'default')
   const [notice, setNotice] = useState<string | null>(null)
   const [gpsState, setGpsState] = useState<GpsUiState>({ status: 'idle' })
   const [nameLookupState, setNameLookupState] = useState<NameLookupState>('idle')
-  const current = useRef<Place | null>(null)
+  const current = useRef<Place | null>(initial?.place ?? null)
+  const initialPlace = useRef<Place | null>(initial?.place ?? null)
   const epoch = useRef(0)
   const activeInteractive = useRef<{ operation: number; navigated: boolean } | null>(null)
   const started = useRef(false)
@@ -36,10 +38,22 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       : { mode: 'calculated', coordinates: next, source: selectionSource, place: next })
   }, [locations, persist])
 
-  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[]) => {
-    if (restored.current || current.current) return
+  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[], reconcile = false) => {
+    if (reconcile && current.current && initialPlace.current && current.current !== initialPlace.current) {
+      restored.current = true
+      return
+    }
+    if (!reconcile && (restored.current || current.current)) return
     restored.current = true
-    if (!choice) { started.current = true; return }
+    if (!choice) {
+      if (reconcile) {
+        current.current = null
+        setPlace(null)
+        setSource('default')
+      }
+      started.current = true
+      return
+    }
     const saved = placeFromChoice(choice.place && choice.place.selection === 'gps'
       ? { mode: 'calculated', coordinates: choice.place, source: choice.source, place: choice.place }
       : choice, availableLocations)

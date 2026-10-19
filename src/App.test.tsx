@@ -5,7 +5,7 @@ import geometry from '../public/data/tatarstan-boundary.json'
 import { parseCoverageGeometry } from './domain/localGeography'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { App, type AppServices } from './App'
 import type { GeolocationPermission } from './platform/browser'
@@ -16,6 +16,10 @@ import {
   type CityDataset,
 } from './domain/cities'
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
+import { createOfficialPlace } from './domain/place'
+import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from './domain/scheduleContext'
+import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFastScheduleSnapshot,
+  readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
 import { setLanguagePreference } from './localization'
@@ -158,7 +162,148 @@ function createServices(
   }
 }
 
+function memoryStorage(): Storage {
+  const values = new Map<string, string>()
+  return {
+    getItem: key => values.get(key) ?? null,
+    setItem: (key, value) => { values.set(key, value) },
+    removeItem: key => { values.delete(key) },
+    clear: () => values.clear(),
+    key: index => [...values.keys()][index] ?? null,
+    get length() { return values.size },
+  }
+}
+
+function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test') {
+  const location = initializedState.meta.locations.find(item => item.id === 'kazan')
+  if (!location) throw new Error('Kazan test location is missing')
+  const selectedPlace = createOfficialPlace(location, services.now().getTime())
+  const context: ScheduleContext = {
+    location: { id: selectedPlace.id, latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
+    date: '2026-09-01', timeZone: 'Europe/Moscow', mode: 'automatic', source: 'official',
+    provider: 'dumRt', datasetRevision: getDatasetRevision(initializedState.meta), datasetVersion: initializedState.meta.source.updatedAt,
+    coverage: 'RU-TA', localityId: 'kazan',
+  }
+  const schedule = { ...kazanToday, timeZone: context.timeZone,
+    coordinates: { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude } }
+  const generation = invalidateFastScheduleSnapshot()
+  if (!generation || !activateFastScheduleContext(scheduleContextKey(context), generation)) {
+    throw new Error('Could not activate the test cache')
+  }
+  if (!writeFastScheduleSnapshot({ appVersion, now: services.now(), deviceTimeZone: services.getDeviceTimeZone(),
+    generation, context, schedule, place: selectedPlace, selectionSource: 'default', preferences: automaticPreferences(),
+    meta: initializedState.meta })) throw new Error('Could not write the test cache')
+  return context
+}
+
 describe('Salah', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('показывает оболочку холодного запуска, пока IndexedDB ещё не ответила', async () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
+    const services = createServices({ initialize: vi.fn(() => initialization.promise) })
+    const view = render(<App services={services} />)
+
+    expect(screen.getByRole('heading', { name: 'Выберите место' })).toBeVisible()
+    expect(services.initialize).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+
+    await act(async () => { initialization.resolve(initialized()); await initialization.promise })
+    view.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('рисует проверенный однодневный снимок до завершения IndexedDB и дополняет контекст отдельно', async () => {
+    const localStore = memoryStorage()
+    vi.stubGlobal('localStorage', localStore)
+    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
+    const neighbors = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
+    const services = createServices({
+      initialize: vi.fn(() => initialization.promise),
+      getDays: vi.fn<AppServices['getDays']>((_id, dates) => dates.length === 2 ? neighbors.promise : Promise.resolve(success([]))),
+    })
+    seedStartupSnapshot(services)
+
+    const view = render(<App services={services} version="warm-test" />)
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('16:24')).toBeVisible()
+    expect(services.initialize).toHaveBeenCalledTimes(1)
+    expect(services.getDays).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+
+    await act(async () => { neighbors.resolve(success([undefined, kazanTomorrow])); await neighbors.promise })
+    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
+    await act(async () => { initialization.resolve(initialized()); await initialization.promise })
+    await expectSchedule()
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.changeSignal }))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(2))
+    view.unmount()
+    vi.unstubAllGlobals()
+  })
+
+  it('заменяет тёплый снимок после гидратации новой revision официального набора', async () => {
+    const localStore = memoryStorage()
+    vi.stubGlobal('localStorage', localStore)
+    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
+    const updatedMeta = {
+      ...initializedState.meta,
+      source: { ...initializedState.meta.source, updatedAt: '2026-09-02T00:00:00.000Z' },
+    }
+    const updatedRevision = getDatasetRevision(updatedMeta)
+    const services = createServices({
+      initialize: vi.fn(() => initialization.promise),
+      getDays: vi.fn<AppServices['getDays']>((id, dates, revision) => Promise.resolve(success(dates.map(date => {
+        const day = [kazanToday, kazanTomorrow].find(candidate => candidate.locationId === id && candidate.date === date)
+        return day && revision === updatedRevision ? { ...day, asr: '16:25' } : day
+      })))),
+    })
+    seedStartupSnapshot(services)
+    render(<App services={services} version="warm-test" />)
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('16:24')).toBeVisible()
+    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
+
+    await act(async () => { initialization.resolve(initialized({ meta: updatedMeta })); await initialization.promise })
+    expect(await screen.findByText('16:25')).toBeVisible()
+    expect(screen.queryByText('16:24')).not.toBeInTheDocument()
+    await waitFor(() => expect(readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(),
+      deviceTimeZone: services.getDeviceTimeZone() })).toMatchObject({
+      context: { datasetRevision: updatedRevision }, schedule: { asr: '16:25' },
+    }))
+  })
+
+  it('удаляет тёплый снимок синхронно до попытки очистить пользовательские данные', async () => {
+    const localStore = memoryStorage()
+    vi.stubGlobal('localStorage', localStore)
+    const clear = deferred<Awaited<ReturnType<NonNullable<AppServices['clearAppData']>>>>()
+    const clearAppData = vi.fn(() => clear.promise)
+    const services = createServices({ clearAppData })
+    seedStartupSnapshot(services)
+    const oldMarker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string }
+    const view = render(<App services={services} version="warm-test" />)
+    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
+    expect(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).not.toBeNull()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Данные и конфиденциальность' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
+    await waitFor(() => expect(clearAppData).toHaveBeenCalledTimes(1))
+
+    expect(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
+    const marker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string; contextKey: string | null }
+    expect(marker.contextKey).toBeNull()
+    expect(marker.generation).not.toBe(oldMarker.generation)
+
+    await act(async () => { clear.resolve(failure({ kind: 'storage', reason: 'unavailable' })); await clear.promise })
+    expect(await screen.findByRole('alert')).toBeVisible()
+    view.unmount()
+  })
+
   it('не повторяет инициализацию и не сбрасывает текущий экран при смене языкового предпочтения', async () => {
     const services = createServices()
     render(<App services={services} />)
@@ -180,8 +325,9 @@ describe('Salah', () => {
 
   it('показывает icon-only кнопку настроек с доступным именем', async () => {
     render(<App services={createServices()} />)
+    await screen.findByRole('timer')
     const settings = await screen.findByRole('button', { name: 'Настройки' })
-    expect(settings).toHaveTextContent('')
+    expect(settings.querySelectorAll(':scope > span')).toHaveLength(0)
     expect(settings.querySelector('svg[aria-hidden="true"] path')).toBeInTheDocument()
     expect(settings.querySelector('svg[aria-hidden="true"] circle')).toBeInTheDocument()
   })
@@ -191,6 +337,7 @@ describe('Salah', () => {
     const saveSettings = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(success(undefined))
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: initial })), saveSettings })
     render(<App services={services} />)
+    await screen.findByRole('timer', { name: /До Асра/ })
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
     await userEvent.click(screen.getByRole('button', { name: /Расписание/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Параметры' }))
@@ -284,12 +431,14 @@ describe('Salah', () => {
     })
     const firstRun = render(<App services={services} />)
 
+    await screen.findByRole('timer', { name: /До Асра/ })
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
     await userEvent.click(screen.getByRole('switch', { name: 'Режим поста' }))
     await waitFor(() => expect(savedMode).toEqual({ manualEnabled: true }))
     firstRun.unmount()
 
     render(<App services={services} />)
+    await screen.findByRole('timer', { name: /До Асра/ })
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
     expect(screen.getByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
   })
@@ -387,6 +536,7 @@ describe('Salah', () => {
 
   it('показывает версию и лицензии в О приложении', async () => {
     render(<App services={createServices()} version="v26.4" />)
+    await screen.findByRole('timer')
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
     await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))
     expect(screen.getByText('Версия v26.4.')).toBeVisible()
@@ -676,6 +826,7 @@ describe('Salah', () => {
 
   it('открывает сведения и методику отдельными экранами', async () => {
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'karachi', overrides: {} }) })) })} />)
+    await screen.findByRole('timer')
     await openSource()
     await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
     expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toBeVisible()
@@ -704,6 +855,7 @@ describe('Salah', () => {
 
   it('открывает Поделиться и возвращает фокус в настройки', async () => {
     render(<App services={createServices()} />)
+    await screen.findByRole('timer')
     await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
     await userEvent.click(screen.getByRole('button', { name: 'Поделиться' }))
     expect(screen.getByRole('img', { name: 'QR-код ссылки на приложение' })).toBeVisible()
@@ -733,10 +885,10 @@ describe('Salah', () => {
     await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     await chooseCity('Апастово', /Апастово.*ДУМ РТ/, /Набережные Челны/)
-    await act(async () => { chelny.resolve(success(Array.from({ length: 9 }, (_, index) => index === 4 ? chelnyToday : undefined))); await chelny.promise })
+    await act(async () => { chelny.resolve(success([chelnyToday])); await chelny.promise })
     expect(screen.getByText('Загружаем расписание…')).toBeVisible()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    await act(async () => { apastovo.resolve(success(Array.from({ length: 9 }, (_, index) => index === 4 ? { ...kazanToday, locationId: 'apastovo', asr: '16:45' } : undefined))); await apastovo.promise })
+    await act(async () => { apastovo.resolve(success([{ ...kazanToday, locationId: 'apastovo', asr: '16:45' }])); await apastovo.promise })
     expect(await screen.findByText('16:45')).toBeVisible()
     await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('16:45')).toBeVisible()
