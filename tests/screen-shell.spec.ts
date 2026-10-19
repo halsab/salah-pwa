@@ -64,6 +64,7 @@ async function readShellGeometry(region: import('@playwright/test').Locator) {
       footerPaddingBottom: footer ? parseFloat(getComputedStyle(footer).paddingBottom) : null,
       bottomSafeArea,
       contentPaddingBottom: parseFloat(getComputedStyle(content).paddingBottom),
+      contentPaddingTop: parseFloat(getComputedStyle(content).paddingTop),
       contentScrollHeight: content.scrollHeight,
       contentClientHeight: content.clientHeight,
       contentScrollTop: content.scrollTop,
@@ -88,6 +89,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(onboardingGeometry.panelBottom).toBeCloseTo(onboardingGeometry.shellBottom, 0)
   expect(onboardingGeometry.panelTop).toBeCloseTo(onboardingGeometry.shellTop + onboardingGeometry.shellPaddingTop, 0)
   expect(onboardingGeometry.contentTop).toBeCloseTo(onboardingGeometry.panelTop, 0)
+  expect(onboardingGeometry.contentPaddingTop).toBe(16)
   expect(onboardingGeometry.bottomSafeArea).toBeGreaterThanOrEqual(0)
   expect(onboardingGeometry.footerBottom).toBeLessThanOrEqual(onboardingGeometry.panelBottom - Math.max(16, onboardingGeometry.bottomSafeArea) + 1)
 
@@ -108,6 +110,8 @@ test('общая оболочка держит слоты, прокрутку и
   expect(homeGeometry.panelTop).toBeCloseTo((homeGeometry.headerBottom ?? 0) + 8, 0)
   expect(homeGeometry.contentTop).toBeCloseTo(homeGeometry.panelTop, 0)
   expect(homeGeometry.contentBottom).toBeCloseTo(homeGeometry.footerTop ?? 0, 0)
+  expect(homeGeometry.contentPaddingTop).toBe(16)
+  expect(homeGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   expect(homeGeometry.panelBackgroundMatchesToken).toBe(true)
   expect(homeGeometry.topLeftRadius).toBe('38px')
   expect(homeGeometry.topRightRadius).toBe('38px')
@@ -120,7 +124,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(homeGeometry.documentWidth).toBeLessThanOrEqual(homeGeometry.viewportWidth + 1)
   expect(homeGeometry.contentScrollHeight).toBeGreaterThan(homeGeometry.contentClientHeight)
   const firstPrayerTop = await home.locator('.event-list > .event-row').first().evaluate(element => element.getBoundingClientRect().top)
-  expect(firstPrayerTop).toBeCloseTo(homeGeometry.panelTop, 0)
+  expect(firstPrayerTop).toBeCloseTo(homeGeometry.panelTop + 16, 0)
 
   const originalLabels = await page.evaluate(() => {
     const place = document.querySelector<HTMLElement>('.home-location-name')
@@ -167,7 +171,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(scrolledHome.footerTop).toBe(homeGeometry.footerTop)
   expect(scrolledHome.documentScrollTop).toBe(0)
   const lastContentBottom = await home.locator('.screen-content').evaluate(element => element.lastElementChild?.getBoundingClientRect().bottom ?? 0)
-  expect(lastContentBottom).toBeLessThanOrEqual((scrolledHome.footerTop ?? 0) + 1)
+  expect(lastContentBottom).toBeLessThanOrEqual((scrolledHome.footerTop ?? 0) - 15)
 
   await page.setViewportSize({ width: 844, height: 390 })
   const landscapeGeometry = await readShellGeometry(home)
@@ -182,6 +186,7 @@ test('общая оболочка держит слоты, прокрутку и
   expect(dateGeometry.footerBottom).toBeNull()
   expect(dateGeometry.contentTop).toBeCloseTo(dateGeometry.panelTop, 0)
   expect(dateGeometry.contentBottom).toBeCloseTo(dateGeometry.panelBottom, 0)
+  expect(dateGeometry.contentPaddingTop).toBe(16)
   expect(dateGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   expect(dateGeometry.panelBottom).toBeCloseTo(dateGeometry.shellBottom, 0)
 
@@ -193,6 +198,7 @@ test('общая оболочка держит слоты, прокрутку и
   const alternateDateGeometry = await readShellGeometry(date)
   expect(alternateDateGeometry.contentClientHeight).toBeLessThan(dateGeometry.contentClientHeight)
   expect(alternateDateGeometry.contentBottom).toBeCloseTo(alternateDateGeometry.footerTop ?? 0, 0)
+  expect(alternateDateGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   expect(alternateDateGeometry.panelBottom).toBeCloseTo(dateGeometry.panelBottom, 0)
   await date.getByRole('button', { name: 'Сегодня' }).click()
   await expect(date.locator('.screen-bottom')).toHaveCount(0)
@@ -205,10 +211,11 @@ test('общая оболочка держит слоты, прокрутку и
   expect(eventsGeometry.footerBottom).toBeNull()
   expect(eventsGeometry.contentTop).toBeCloseTo(eventsGeometry.panelTop, 0)
   expect(eventsGeometry.contentBottom).toBeCloseTo(eventsGeometry.panelBottom, 0)
+  expect(eventsGeometry.contentPaddingTop).toBe(16)
   expect(eventsGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   expect(eventsGeometry.contentScrollHeight).toBeGreaterThan(eventsGeometry.contentClientHeight)
   const firstReligiousEventTop = await events.locator('.religious-events-list > li').first().evaluate(element => element.getBoundingClientRect().top)
-  expect(firstReligiousEventTop).toBeCloseTo(eventsGeometry.panelTop, 0)
+  expect(firstReligiousEventTop).toBeCloseTo(eventsGeometry.panelTop + 16, 0)
   await events.locator('.screen-content').evaluate(element => { element.scrollTop = element.scrollHeight })
   await expect.poll(() => events.locator('.screen-content').evaluate(element => element.scrollTop)).toBeGreaterThan(0)
   const scrolledEvents = await readShellGeometry(events)
@@ -216,11 +223,18 @@ test('общая оболочка держит слоты, прокрутку и
   expect(scrolledEvents.documentScrollTop).toBe(0)
   expect(scrolledEvents.scrollRegionCount).toBe(1)
   expect(scrolledEvents.documentWidth).toBeLessThanOrEqual(scrolledEvents.viewportWidth + 1)
+  const lastReligiousEventBottom = await events.locator('.religious-events-list > li').last().evaluate(element => element.getBoundingClientRect().bottom)
+  expect(lastReligiousEventBottom).toBeLessThanOrEqual(eventsGeometry.panelBottom - 15)
 
   await events.locator('.screen-content').evaluate(element => { element.scrollTop = 0 })
   const article = events.locator('.religious-events-list').getByRole('button').first()
   await article.click()
   await expect(page.getByRole('button', { name: 'Назад', exact: true })).toBeVisible()
+  const articleScreen = page.getByRole('region').filter({ has: page.locator('.markdown-article') })
+  const articleGeometry = await readShellGeometry(articleScreen)
+  expect(articleGeometry.contentTop).toBeCloseTo(articleGeometry.panelTop, 0)
+  expect(articleGeometry.contentPaddingTop).toBe(16)
+  expect(articleGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   await page.getByRole('button', { name: 'Назад', exact: true }).click()
   await expect(article).toBeFocused()
 
@@ -233,6 +247,13 @@ test('общая оболочка держит слоты, прокрутку и
   expect(wideGeometry.bottomLeftRadius).toBe('0px')
 
   await page.locator('#home-settings').click()
+  const settings = page.getByRole('region', { name: 'Настройки', exact: true })
+  await expect(settings).toBeVisible()
+  const settingsGeometry = await readShellGeometry(settings)
+  expect(settingsGeometry.contentTop).toBeCloseTo(settingsGeometry.panelTop, 0)
+  expect(settingsGeometry.contentBottom).toBeCloseTo(settingsGeometry.footerTop ?? 0, 0)
+  expect(settingsGeometry.contentPaddingTop).toBe(16)
+  expect(settingsGeometry.contentPaddingBottom).toBeGreaterThanOrEqual(16)
   await page.getByRole('combobox', { name: 'Тема' }).selectOption('seasonal')
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.theme)).toBe('seasonal')
   await page.getByRole('button', { name: 'Назад', exact: true }).click()

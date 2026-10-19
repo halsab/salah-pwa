@@ -18,10 +18,9 @@ it('сохраняет доступные верхние и нижние дей�
   expect(screen.getByRole('button', { name: 'Назад' })).toBeInTheDocument()
   expect(screen.getByText('Аср 16:06')).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Сегодня' })).toBeInTheDocument()
-  expect(content).not.toHaveClass('screen-content--edge-bottom')
 })
 
-it('не создаёт пустые слоты и расширяет прокрутку до нижней safe-area без панели действий', () => {
+it('не создаёт пустые слоты и сохраняет внутренние отступы прокрутки без панели действий', () => {
   render(<Screen label="Праздники" busy><p>Список событий</p></Screen>)
   const region = screen.getByRole('region', { name: 'Праздники' })
   const panel = region.querySelector('.screen-panel')
@@ -31,6 +30,5 @@ it('не создаёт пустые слоты и расширяет прокр
   expect(region.querySelector('.screen-bottom')).not.toBeInTheDocument()
   expect(region.children).toHaveLength(1)
   expect(content?.parentElement).toBe(panel)
-  expect(content).toHaveClass('screen-content--edge-bottom')
   expect(region).toHaveAttribute('aria-busy', 'true')
 })

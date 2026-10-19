@@ -48,8 +48,7 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   gap: 0;
   overflow: hidden;
 }
-.screen-content { flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
-.screen-content--edge-bottom { padding-bottom: var(--screen-bottom-inset); }
+.screen-content { flex: 1; min-height: 0; padding-top: var(--content-inset); padding-bottom: var(--screen-bottom-inset); overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; view-transition-name: salah-screen-content; }
 .screen-bottom { padding-bottom: var(--screen-bottom-inset); }
 .screen-content.home-content {
   margin-left: calc(0px - var(--screen-inset-left));
