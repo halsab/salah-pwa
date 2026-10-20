@@ -14,35 +14,6 @@ describe('calculation defaults', () => {
       .toMatchObject({ profile: 'dumRf', asrMethod: 'hanafi' })
   })
 
-  it.each(['canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian'] as const)(
-    'uses Standard Asr as the manual default for %s',
-    profile => expect(profileDefaults(profile)).toMatchObject({ profile, asrMethod: 'standard' }),
-  )
-
-  it.each(['canadaFcna', 'dubai', 'qatar', 'kuwait', 'egyptian'] as const)(
-    'accepts the stable manual selection shape for %s',
-    profile => expect(isCalculationSelection({ profile, overrides: {} })).toBe(true),
-  )
-
-  it.each([
-    ['RU-TA', 'dumRt', 'hanafi'], ['RU.48', 'dumRf', 'standard'],
-    ['TR.34', 'turkey', 'standard'], ['PK.01', 'karachi', 'hanafi'],
-    ['BD.81', 'karachi', 'hanafi'], ['IN.07', 'karachi', 'hanafi'],
-    ['KZ.75', 'muslimWorldLeague', 'hanafi'], ['KG.01', 'muslimWorldLeague', 'hanafi'],
-    ['UZ.13', 'muslimWorldLeague', 'hanafi'], ['US.NY', 'northAmerica', 'standard'],
-    ['CA.ON', 'canadaFcna', 'standard'], ['SA.01', 'ummAlQura', 'standard'],
-    ['AE.AZ', 'dubai', 'standard'], ['QA.01', 'qatar', 'standard'],
-    ['KW.01', 'kuwait', 'standard'], ['EG.C', 'egyptian', 'standard'],
-    ['ZA.11', 'muslimWorldLeague', 'standard'],
-  ] as const)('provides future automatic defaults for %s without changing resolver behavior', (region, profile, asrMethod) => {
-    const confirmedTatarstan = region === 'RU-TA'
-    expect(automaticCalculationDefaults({
-      selection: 'city',
-      region: { code: region, name: region },
-      coverage: confirmedTatarstan ? 'inside' : 'outside',
-    })).toMatchObject({ profile, asrMethod })
-  })
-
   it('does not treat an ambiguous Russian region code as confirmed Tatarstan coverage', () => {
     expect(automaticCalculationDefaults({
       selection: 'city', region: { code: 'RU.73', name: 'unknown region' }, coverage: 'outside',

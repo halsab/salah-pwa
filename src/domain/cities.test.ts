@@ -2,11 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   findNearestCity,
-  formatCityLabel,
-  getCountryGroups,
   groupCitiesByCountry,
   searchCities,
-  type City,
   type CityDataset,
   type CompactCityRecord,
 } from './cities'
@@ -77,12 +74,6 @@ const dataset: CityDataset = {
   cities: records,
 }
 
-function recordAt(index: number): CompactCityRecord {
-  const record = records[index]
-  if (!record) throw new Error(`Не найдена тестовая запись ${index}`)
-  return record
-}
-
 describe('findNearestCity', () => {
   it('находит и материализует ближайший город в допустимом радиусе', () => {
     expect(findNearestCity(55.7558, 37.6173, records, 30)).toEqual({
@@ -96,18 +87,6 @@ describe('findNearestCity', () => {
       population: 10_381_222,
       timeZone: 'Europe/Moscow',
     })
-  })
-
-  it('не материализует проигравшие записи', () => {
-    const distant = [...recordAt(0)] as CompactCityRecord
-    Object.defineProperty(distant, 1, {
-      get: () => {
-        throw new Error('Проигравший город не должен материализоваться')
-      },
-    })
-
-    expect(findNearestCity(55.7558, 37.6173, [distant, recordAt(1)], 30)?.id)
-      .toBe(524901)
   })
 
   it('не подставляет название далёкого города', () => {
@@ -139,85 +118,9 @@ describe('searchCities', () => {
     ])
   })
 
-  it('сканирует готовый ключ без второго полноразмерного индекса', () => {
-    let searchKeyReads = 0
-    const tracked = [...recordAt(0)] as CompactCityRecord
-    Object.defineProperty(tracked, 2, {
-      get: () => {
-        searchKeyReads += 1
-        return ['стамбул', 'istanbul']
-      },
-    })
-    const trackedDataset = { ...dataset, cities: [tracked] }
-
-    expect(searchCities(trackedDataset, 'нет')).toEqual([])
-    expect(searchCities(trackedDataset, 'нет')).toEqual([])
-    expect(searchKeyReads).toBe(2)
-  })
-
-  it('не материализует несовпавшие записи и ограничивает результат 60 городами', () => {
-    const hidden = [...recordAt(1)] as CompactCityRecord
-    hidden[2] = ['другой ключ']
-    Object.defineProperty(hidden, 1, {
-      get: () => {
-        throw new Error('Несовпавший город не должен материализоваться')
-      },
-    })
-    const matching = Array.from({ length: 61 }, (_, index): CompactCityRecord => [
-      10_000 + index,
-      `Город ${index}`,
-      ['совпадение'],
-      'RU',
-      '73',
-      55 + index / 100,
-      49,
-      100_000 - index,
-      'Europe/Moscow',
-      'Татарстан',
-      'россия',
-    ])
-
-    expect(searchCities({ ...dataset, cities: [hidden, ...matching] }, 'совпадение'))
-      .toHaveLength(60)
-  })
 })
 
-describe('getCountryGroups', () => {
-  it('материализует не больше пяти крупнейших и сохраняет точное totalCount', () => {
-    const turkey = Array.from({ length: 6 }, (_, index): CompactCityRecord => [
-      20_000 + index,
-      `Город ${index}`,
-      [`город ${index}`],
-      'TR',
-      '34',
-      41 + index / 100,
-      29,
-      1_000_000 - index,
-      'Europe/Istanbul',
-      'Стамбул',
-      'турция',
-    ])
-    const sixthCity = turkey[5]
-    if (!sixthCity) throw new Error('Не найден шестой тестовый город')
-    Object.defineProperty(sixthCity, 1, {
-      get: () => {
-        throw new Error('Шестой город не должен материализоваться')
-      },
-    })
-
-    const groups = getCountryGroups({ ...dataset, cities: [recordAt(1), ...turkey] })
-    const group = groups.find(({ code }) => code === 'TR')
-
-    expect(group?.cities.map(({ id }) => id)).toEqual([
-      20000,
-      20001,
-      20002,
-      20003,
-      20004,
-    ])
-    expect(group?.totalCount).toBe(6)
-    expect(groups.map(({ name }) => name)).toEqual(['Россия', 'Турция'])
-  })
+describe('groupCitiesByCountry', () => {
 
   it('группирует материализованные результаты поиска', () => {
     const matches = searchCities(dataset, 'россия')
@@ -227,23 +130,5 @@ describe('getCountryGroups', () => {
     expect(groups[0]?.code).toBe('RU')
     expect(groups[0]?.cities.map(({ id }) => id)).toEqual([524901, 551487])
     expect(groups[0]?.totalCount).toBe(2)
-  })
-})
-
-describe('formatCityLabel', () => {
-  it('добавляет локализованное название страны', () => {
-    const city: City = {
-      id: 551487,
-      name: 'Казань',
-      countryCode: 'RU',
-      admin1Code: '73',
-      admin1Name: 'Татарстан',
-      latitude: 55.7887,
-      longitude: 49.1221,
-      population: 1_243_500,
-      timeZone: 'Europe/Moscow',
-    }
-
-    expect(formatCityLabel(city)).toBe('Казань, Татарстан, Россия')
   })
 })

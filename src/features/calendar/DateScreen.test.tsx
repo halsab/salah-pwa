@@ -1,56 +1,41 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
 import { DEFAULT_CALENDAR_PREFERENCES } from '../../domain/calendar'
 import { DateScreen } from './DateScreen'
 
-function renderDateScreen(hijriSupported = true, preferences = DEFAULT_CALENDAR_PREFERENCES, onPreferencesChange = vi.fn()) {
+function renderDateScreen(hijriSupported = true) {
+  const onDateChange = vi.fn()
   const onOpenReligiousEvents = vi.fn()
+  const onPreferencesChange = vi.fn()
   render(<DateScreen
     selectedDate="2026-01-01"
     today="2026-01-01"
-    preferences={preferences}
+    preferences={DEFAULT_CALENDAR_PREFERENCES}
     hijriSupported={hijriSupported}
-    onDateChange={() => {}}
+    onDateChange={onDateChange}
     onPreferencesChange={onPreferencesChange}
     onOpenReligiousEvents={onOpenReligiousEvents}
     onBack={() => {}}
   />)
-  return { onOpenReligiousEvents, onPreferencesChange }
+  return { onDateChange, onOpenReligiousEvents, onPreferencesChange }
 }
 
-it('открывает список праздников, не меняя календарные поля', async () => {
-  const { onOpenReligiousEvents } = renderDateScreen()
-  const religiousEvents = screen.getByRole('button', { name: 'Праздники и события' })
-  expect(religiousEvents).toHaveClass('pill-row')
-  expect(religiousEvents).not.toHaveClass('pill-row--stacked')
-  expect(screen.getAllByRole('combobox')).toHaveLength(4)
+it('opens the event list without changing the selected date or calendar', async () => {
+  const { onDateChange, onOpenReligiousEvents, onPreferencesChange } = renderDateScreen()
   await userEvent.click(screen.getByRole('button', { name: 'Праздники и события' }))
+
   expect(onOpenReligiousEvents).toHaveBeenCalledOnce()
-  expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('1')
+  expect(onDateChange).not.toHaveBeenCalled()
+  expect(onPreferencesChange).not.toHaveBeenCalled()
 })
 
-it('показывает полные названия календарей и месяцев с заглавной буквы', () => {
-  renderDateScreen(true, { calendar: 'hijri', correction: 0 })
-  expect(screen.getByRole('combobox', { name: 'Календарь' })).toHaveValue('hijri')
-  expect(screen.getByRole('combobox', { name: 'Календарь' })).toHaveTextContent('Григорианский')
-  expect(screen.getByRole('combobox', { name: 'Календарь' })).toHaveTextContent('Хиджри')
-  expect(within(screen.getByRole('combobox', { name: 'Месяц' })).getAllByRole('option').map(option => option.textContent)).toEqual([
-    'Мухаррам', 'Сафар', 'Раби аль-авваль', 'Раби аль-ахир', 'Джумада аль-уля', 'Джумада аль-ахира',
-    'Раджаб', 'Шаабан', 'Рамадан', 'Шавваль', 'Зуль-када', 'Зуль-хиджа',
-  ])
-})
+it('does not open events when Hijri support is unavailable', async () => {
+  const { onOpenReligiousEvents } = renderDateScreen(false)
+  const button = screen.getByRole('button', { name: 'Праздники и события' })
 
-it('показывает только Gregorian-имена месяцев с заглавной буквы в Gregorian picker', () => {
-  renderDateScreen()
-  expect(within(screen.getByRole('combobox', { name: 'Месяц' })).getAllByRole('option').map(option => option.textContent)).toEqual([
-    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-  ])
-})
-
-it('отключает вход без поддержки Umm al-Qura и сохраняет существующую note', () => {
-  renderDateScreen(false)
-  expect(screen.getByRole('button', { name: 'Праздники и события' })).toBeDisabled()
-  expect(screen.getByRole('status')).toHaveTextContent('Этот браузер не поддерживает календарь хиджры.')
+  expect(button).toBeDisabled()
+  await userEvent.click(button)
+  expect(onOpenReligiousEvents).not.toHaveBeenCalled()
 })

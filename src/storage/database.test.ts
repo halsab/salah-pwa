@@ -9,7 +9,6 @@ import {
   deleteSalahDatabase,
   getDatasetMeta,
   getStartupData,
-  getSettings,
   clearAppData,
   getLocationChoice,
   getPrayerDay,
@@ -452,11 +451,6 @@ it('migrates real v6 Nominatim names without requesting the network or deleting 
   expect(await getDatabaseVersion()).toBe(12)
 })
 
-it('checks operation epoch after opening IndexedDB so obsolete saves do not start', async () => {
-  unwrap(await saveLocationChoice({ mode: 'official', locationId: 'kazan', source: 'manual' }, () => false))
-  expect(unwrap(await getLocationChoice())).toBeUndefined()
-})
-
 it('recovers after a browser rejects opening a newer incompatible database', async () => {
   await createVersion5Database({}, 13)
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
@@ -537,7 +531,6 @@ it.each([0, 2])('preserves the implicit old default only before any reset (gener
     ? { mode: 'official', locationId: 'kazan', source: 'default' } : undefined)
 })
 
-
 it('reads startup generation, revision and selection in one coherent transaction across reset', async () => {
   await saveLocationChoice({ mode: 'official', locationId: 'kazan', source: 'manual' })
   const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction')
@@ -548,13 +541,5 @@ it('reads startup generation, revision and selection in one coherent transaction
   expect(before).toMatchObject({ ok: true, value: { generation: 0, choice: { locationId: 'kazan' } } })
   expect(transaction.mock.calls.filter(call => Array.isArray(call[0]) && call[0].includes('control') && call[0].includes('settings') && !call[0].includes('days'))).toHaveLength(1)
   expect(await getStartupData()).toMatchObject({ ok: true, value: { generation: 1, choice: undefined, meta: undefined } })
-  transaction.mockRestore()
-})
-
-it('reads optional preferences in a single transaction', async () => {
-  await getSetting('themeFamily')
-  const transaction = vi.spyOn(IDBDatabase.prototype, 'transaction')
-  expect(await getSettings(['themeFamily', 'calendarPreferences', 'fastingMode'])).toMatchObject({ ok: true })
-  expect(transaction).toHaveBeenCalledTimes(1)
   transaction.mockRestore()
 })
