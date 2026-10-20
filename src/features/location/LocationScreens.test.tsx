@@ -109,6 +109,21 @@ describe('экраны локации', () => {
     expect(onSelectRecent).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Выбрать' })).not.toBeInTheDocument()
   })
+  it('показывает GPS как сохранённую точку с координатами и выбирает одним нажатием', async () => {
+    const saved = createGpsPlace({ latitude: 40.7128, longitude: -74.006, accuracy: 35, timestamp: 123 }, 'Europe/Moscow', null, 'gps:history:ny')
+    const onSelectRecent = vi.fn()
+    render(<LocationScreen place={createOfficialPlace(location, 0)} recentPlaces={[saved]} onSelectRecent={onSelectRecent} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    const row = screen.getByRole('button', { name: 'Сохранённая точка, 40.7128, -74.0060' })
+    expect(row).toBeVisible()
+    await userEvent.click(row)
+    expect(onSelectRecent).toHaveBeenCalledWith(saved)
+  })
+  it('не показывает текущую GPS history row дважды и не ограничивает список тремя строками', () => {
+    const current = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 100 }, 'Europe/Moscow', null, 'gps:runtime')
+    const history = Array.from({ length: 10 }, (_, index) => createOfficialPlace({ ...location, id: `place-${index}`, name: `Место ${index}`, longitude: 49 + index }, index))
+    render(<LocationScreen place={current} recentPlaces={[current, ...history]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    expect(screen.getAllByRole('button', { name: /^Место / })).toHaveLength(10)
+  })
   it('выбирает результат поиска одним тапом', async () => {
     const onSelectCity = vi.fn()
     render(<SearchScreen {...searchProps} onSelectCity={onSelectCity} />)

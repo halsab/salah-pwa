@@ -39,9 +39,13 @@ function setup(overrides: Partial<AppServices & TestSettingsServices> = {}, init
   } as unknown as AppServices & TestSettingsServices
   const chosen = vi.fn()
   const writer = createSettingsPersistence(services.saveSettings)
-  const persist = (choice: Parameters<typeof writer.save>[0]['locationChoice']) => writer.save(choice ? { locationChoice: choice } : {})
+  const persistedChanges = new Set<string>()
+  const persist = vi.fn((choice: Parameters<typeof writer.save>[0]['locationChoice'], change?: 'automatic' | 'selection' | 'refinement') => {
+    if (change) persistedChanges.add(change)
+    return writer.save(choice ? { locationChoice: choice } : {})
+  })
   const hook = renderHook(() => usePlaceSelection(services, locations, chosen, persist, initial))
-  return { ...hook, services, coarse, precise, lookup, chosen }
+  return { ...hook, services, coarse, precise, lookup, chosen, persist, persistedChanges }
 }
 
 describe('one-shot GPS operations', () => {
@@ -77,8 +81,11 @@ describe('one-shot GPS operations', () => {
     await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
     expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
     expect(h.chosen).toHaveBeenCalledOnce()
+    expect(h.persist.mock.calls.filter(([, change]) => change === 'selection')).toHaveLength(1)
     await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
     expect(h.chosen).toHaveBeenCalledOnce()
+    expect(h.persist.mock.calls.filter(([, change]) => change === 'selection')).toHaveLength(1)
+    expect(h.persist.mock.calls.some(([, change]) => change === 'refinement')).toBe(true)
   })
   it('keeps a final low-accuracy point available for explicit acceptance', async () => {
     const h = setup()
@@ -180,6 +187,7 @@ describe('one-shot GPS operations', () => {
     await act(async () => { background.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
     expect(background.services.cities.findNearest).toHaveBeenCalledWith(goodCoarseFix.latitude, goodCoarseFix.longitude, 25, true)
     await act(async () => { background.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await backgroundPending })
+    expect(background.persist.mock.calls.some(([, change]) => change === 'selection')).toBe(false)
   })
   it.each([
     [success(null), 'not-found'],
@@ -376,6 +384,16 @@ it('restores a legacy GPS coordinate with current device timezone without reques
   act(() => h.result.current.restore({ mode: 'calculated', source: 'manual', coordinates: { ...coarseFix, source: 'gps', timeZone: 'Europe/Moscow', name: 'Сохранённое имя' } }, locations))
   expect(h.result.current.place).toMatchObject({ timeZone: 'America/Los_Angeles', name: 'Сохранённое имя', automaticTimeZone: { source: 'device' } })
   expect(h.services.getPosition).not.toHaveBeenCalled()
+})
+
+it('recalls a saved GPS snapshot offline without changing its capture timestamp or requesting fresh geolocation', () => {
+  const h = setup()
+  const saved = createGpsPlace({ latitude: 40.7128, longitude: -74.006, accuracy: 42, timestamp: 12345 }, 'Europe/Moscow', null, 'gps:history:saved')
+  act(() => h.result.current.selectRecent(saved))
+  expect(h.result.current.place).toMatchObject({ latitude: 40.7128, longitude: -74.006, accuracy: 42, timestamp: 12345, timeZone: 'America/Los_Angeles' })
+  expect(h.services.getPosition).not.toHaveBeenCalled()
+  expect(h.services.cities.findNearest).not.toHaveBeenCalled()
+  expect(h.chosen).toHaveBeenCalledOnce()
 })
   it('updates restored GPS timezone on resume without another location lookup', () => {
     const h = setup()

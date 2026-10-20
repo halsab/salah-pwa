@@ -649,12 +649,36 @@ describe('Salah', () => {
     await userEvent.type(screen.getByRole('searchbox'), 'Москва')
     await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
     expect(await screen.findByRole('region', { name: 'Главная' })).toBeVisible()
-    await waitFor(() => expect(services.saveSettings).toHaveBeenCalledWith(expect.objectContaining({ recentPlaces: [expect.objectContaining({ id: 'locality:kazan' })] }), expect.any(Function)))
+    await waitFor(() => expect(vi.mocked(services.saveSettings).mock.calls.some(([patch]) => patch.recentPlaces?.some(place => place.id === 'locality:kazan'))).toBe(true))
     await userEvent.click(screen.getByRole('button', { name: /Москва/ }))
-    const recent = screen.getByRole('region', { name: 'Недавние города' })
+    const recent = screen.getByRole('region', { name: 'Недавние места' })
     await userEvent.click(within(recent).getByRole('button', { name: 'Казань' }))
     expect(await screen.findByRole('button', { name: 'Казань' })).toBeVisible()
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
+  })
+
+  it('сливает загруженную позднее legacy history с выбором, сделанным во время startup', async () => {
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const services = createServices({
+      initializeStartup: vi.fn().mockResolvedValue(initialized()),
+      loadOptionalSettings: vi.fn(() => optional.promise),
+    })
+    render(<App services={services} />)
+    await screen.findByRole('timer')
+    await waitFor(() => expect(services.loadOptionalSettings).toHaveBeenCalledOnce())
+    await chooseCity('Москва', /Москва/)
+    await act(async () => {
+      optional.resolve(success({ recentPlaces: [createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1)],
+        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
+      await optional.promise
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Москва' }))
+    const recent = screen.getByRole('region', { name: 'Недавние места' })
+    expect(within(recent).getByRole('button', { name: 'Казань' })).toBeVisible()
+    expect(within(recent).getByRole('button', { name: /Набережные Челны/ })).toBeVisible()
+    expect(vi.mocked(services.saveSettings).mock.lastCall?.[0].recentPlaces?.map(place => place.id)).toEqual([
+      'geonames:524901', 'locality:kazan', 'locality:naberezhnye-chelny',
+    ])
   })
 
   it('переключает календарь без смены дня, применяет поправку и выбирает дату сразу', async () => {
@@ -1085,6 +1109,7 @@ describe('Salah', () => {
       ...position, timeZone: 'America/Los_Angeles',
     } })
     expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: { latitude: position.latitude, longitude: position.longitude } })
+    expect(savedSettings?.recentPlaces).toEqual([expect.objectContaining({ selection: 'gps', latitude: position.latitude, longitude: position.longitude, timestamp: position.timestamp })])
   })
 
   it.each(['rejection', 'result'] as const)('при ошибке записи %s не откатывает выбранный город', async kind => {

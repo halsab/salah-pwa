@@ -20,7 +20,7 @@ import { initialManualCalculation, resolvePrayerTimeSource } from './domain/pray
 import { automaticPreferences, type SourcePreferences } from './domain/sourcePreferences'
 import { effectiveCalculationSettings } from './domain/calculationSettings'
 import { useSettingsPersistence } from './features/settings/useSettingsPersistence'
-import { usePlaceSelection } from './features/location/usePlaceSelection'
+import { usePlaceSelection, type PlacePersistenceChange } from './features/location/usePlaceSelection'
 import { nameLookupMessage } from './features/location/locationState'
 import type { GeolocationFailure } from './domain/errors'
 import {
@@ -37,7 +37,7 @@ import { failure } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
-import { rememberPlace, restoreRecentPlaces } from './domain/recentPlaces'
+import { rememberPlace, restoreRecentPlaces, updateRecentPlace } from './domain/recentPlaces'
 import { homePlaceLabel, type Place } from './domain/place'
 import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
@@ -229,9 +229,13 @@ export function App({
   const editedCalendar = useRef(false)
   const editedFasting = useRef(false)
   const editedRecentPlaces = useRef(false)
+  const recentPlacesLoaded = useRef(false)
+  const [activeHistoryId, setActiveHistoryId] = useState<string | undefined>()
   const recentRef = useRef<Place[]>([])
   const previousPlace = useRef<Place | null>(null)
-  const persistPlace = useCallback((choice: LocationChoice) => {
+  const historyAnchorPlace = useRef<Place | null>(null)
+  const acceptedGpsHistory = useRef<{ runtimeId: string; historyId: string } | null>(null)
+  const persistPlace = useCallback((choice: LocationChoice, change: PlacePersistenceChange = 'automatic') => {
     selectionSyncToken.current += 1
     setRemoteSelectionPending(false)
     setSelectionSyncError(false)
@@ -240,12 +244,31 @@ export function App({
     invalidateFastCache()
     const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
     if (!next) return
-    const recent = rememberPlace(recentRef.current, previousPlace.current, next)
+    let patch: { locationChoice: LocationChoice; recentPlaces?: Place[] } = { locationChoice: choice }
+    if (change === 'selection') {
+      const existing = recentPlacesLoaded.current ? recentRef.current : restoreRecentPlaces(recentRef.current, historyAnchorPlace.current)
+      const recent = rememberPlace(existing, next)
+      recentRef.current = recent
+      editedRecentPlaces.current = true
+      setRecentPlaces(recent)
+      patch = { ...patch, recentPlaces: recent }
+      historyAnchorPlace.current = next
+      setActiveHistoryId(next.selection === 'gps' ? recent[0]?.id : undefined)
+      acceptedGpsHistory.current = next.selection === 'gps' && recent[0]
+        ? { runtimeId: next.id, historyId: recent[0].id }
+        : null
+    } else if (change === 'refinement') {
+      const historyId = acceptedGpsHistory.current?.runtimeId === next.id ? acceptedGpsHistory.current.historyId : undefined
+      const recent = updateRecentPlace(recentRef.current, next, historyId)
+      if (recent !== recentRef.current && JSON.stringify(recent) !== JSON.stringify(recentRef.current)) {
+        recentRef.current = recent
+        editedRecentPlaces.current = true
+        setRecentPlaces(recent)
+        patch = { ...patch, recentPlaces: recent }
+      }
+    }
     previousPlace.current = next
-    recentRef.current = recent
-    editedRecentPlaces.current = true
-    setRecentPlaces(recent)
-    saveSettings({ locationChoice: choice, recentPlaces: recent })
+    saveSettings(patch)
   }, [invalidateFastCache, saveSettings])
   const navigation = useAppNavigation()
   const { open: openImmediately, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
@@ -336,6 +359,8 @@ export function App({
       previousPlace.current = state.locationChoice
         ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
         : null
+      historyAnchorPlace.current = previousPlace.current
+      setActiveHistoryId(undefined)
       if (selectionMode === 'external') {
         editedPreferences.current = false
         editedRecentPlaces.current = false
@@ -345,9 +370,14 @@ export function App({
         editedFasting.current = false
       }
       if (!editedRecentPlaces.current && state.recentPlaces !== undefined) {
-        const recent = restoreRecentPlaces(state.recentPlaces, previousPlace.current?.id)
+        const recent = restoreRecentPlaces(state.recentPlaces, previousPlace.current)
+        recentPlacesLoaded.current = true
         recentRef.current = recent
         setRecentPlaces(recent)
+        if (JSON.stringify(recent) !== JSON.stringify(state.recentPlaces)) {
+          editedRecentPlaces.current = true
+          saveSettings({ ...(state.locationChoice ? { locationChoice: state.locationChoice } : {}), recentPlaces: recent })
+        }
       }
       if (!editedPreferences.current) setPreferences(state.preferences)
       if (state.languagePreference !== undefined) setLanguagePreference(state.languagePreference)
@@ -377,9 +407,17 @@ export function App({
         if (!active || token !== optionalSettingsToken.current) return
         if (!result.ok) { setOptionalSettingsError(true); return }
         const value: PrayerRepositoryOptionalSettings = result.value
-        if (!editedRecentPlaces.current) {
-          recentRef.current = value.recentPlaces
-          setRecentPlaces(value.recentPlaces)
+        if (!recentPlacesLoaded.current || !editedRecentPlaces.current) {
+          const recent = restoreRecentPlaces(editedRecentPlaces.current
+            ? [...recentRef.current, ...value.recentPlaces]
+            : value.recentPlaces, previousPlace.current)
+          recentPlacesLoaded.current = true
+          recentRef.current = recent
+          setRecentPlaces(recent)
+          if (JSON.stringify(recent) !== JSON.stringify(value.recentPlaces)) {
+            editedRecentPlaces.current = true
+            saveSettings({ recentPlaces: recent })
+          }
         }
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))
         if (!editedTheme.current && themeRevision === themePreferenceRevision.current) {
@@ -510,7 +548,7 @@ export function App({
       window.removeEventListener('storage', handleStorage)
       void services.invalidateAndDrain()
     }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme])
+  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -769,7 +807,7 @@ export function App({
       {navigation.screen === 'religious-events' ? <ReligiousEventsScreen today={today} correction={calendarPreferences.correction}
         hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} loadError={religiousEventLoadError} /> : null}
 
-      {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
+      {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} {...(activeHistoryId ? { activeHistoryId } : {})} onSelectRecent={selectRecent}
         onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
         onAcceptGps={acceptGps} gpsState={gpsState} nameLookupState={nameLookupState} currentTime={currentTime} notice={persistenceNotice} /> : null}
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}

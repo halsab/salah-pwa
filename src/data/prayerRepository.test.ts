@@ -1,7 +1,7 @@
 import { required } from '../test/required'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { completeDataset } from '../test/prayerDataset'
-import { createCityPlace, createOfficialPlace } from '../domain/place'
+import { createCityPlace, createGpsPlace, createOfficialPlace } from '../domain/place'
 import { getDatasetRevision } from '../domain/scheduleContext'
 import { getDeviceTimeZone } from '../domain/locationTime'
 import { success } from '../domain/result'
@@ -132,9 +132,10 @@ describe('local initialization and persistence', () => {
     await clearAppData()
     expect(await initializePrayerRepository()).toMatchObject({ value: { locationChoice: null, recentPlaces: [] } })
   })
-  it('rejects GPS history instead of persisting arbitrary coordinates as recent cities', async () => {
-    const place = { ...createOfficialPlace(required(dataset.locations[0]), 0), selection: 'gps' as const }
-    expect(await repo.saveSettings({ recentPlaces: [place] })).toMatchObject({ ok: false, error: { kind: 'data' } })
+  it('persists validated GPS history snapshots in the existing settings value', async () => {
+    const place = createGpsPlace({ latitude: 55.79, longitude: 49.12, accuracy: 20, timestamp: 100 }, 'Europe/Moscow', null, 'gps:history:test')
+    expect(await repo.saveSettings({ recentPlaces: [place] })).toMatchObject({ ok: true })
+    expect(await initializePrayerRepository()).toMatchObject({ value: { recentPlaces: [expect.objectContaining({ selection: 'gps', latitude: 55.79, timestamp: 100 })] } })
   })
   it('restores legacy coordinates with a missing timezone without loading meta', async () => {
     const coordinates = { latitude: 55.75, longitude: 37.62, accuracy: 18, timestamp: 100, name: 'Сохранённое место', source: 'gps' }

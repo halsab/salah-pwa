@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { failure, success } from '../../domain/result'
 import { automaticPreferences } from '../../domain/sourcePreferences'
+import { createGpsPlace } from '../../domain/place'
 import type { SettingsPatch } from '../../storage/database'
 import { createSettingsPersistence, type SaveSettings } from './settingsPersistence'
 
@@ -20,6 +21,21 @@ it.each(['result', 'rejection'])('handles %s failure, retrying latest complete s
   writer.retry()
   await writer.drain()
   expect(save.mock.lastCall?.[0]).toEqual(a)
+  expect(writer.getStatus()).toBe('saved')
+})
+it('retries the accepted location and its recent history as one settings snapshot', async () => {
+  const selected = {
+    locationChoice: { mode: 'calculated' as const, source: 'manual' as const, coordinates: { latitude: 40, longitude: -73, accuracy: 20, timestamp: 123, timeZone: 'America/New_York' } },
+    recentPlaces: [createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 123 }, 'America/New_York', null, 'gps:history:40.000000:-73.000000')],
+  }
+  const save = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(success(undefined))
+  const writer = createSettingsPersistence(save)
+  writer.save(selected)
+  await writer.drain()
+  expect(writer.getStatus()).toBe('failed')
+  writer.retry()
+  await writer.drain()
+  expect(save.mock.calls[1]?.[0]).toEqual(selected)
   expect(writer.getStatus()).toBe('saved')
 })
 it('serializes rapid changes and ignores stale failure without losing earlier unsaved fields', async () => {
