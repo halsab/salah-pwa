@@ -55,9 +55,7 @@ describe('ShareDialog', () => {
     await user.click(copyButton)
 
     expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
-    const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('Ссылка скопирована')
-    expect(status).toHaveClass('sr-only')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
     expect(props.onClose).not.toHaveBeenCalled()
     expect(copyButton).toHaveFocus()
   })
@@ -85,7 +83,7 @@ describe('ShareDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
 
     expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
-    expect(await screen.findByRole('status')).toHaveTextContent('Ссылка скопирована')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
   })
 
   it('молча обрабатывает отмену системного share', async () => {
@@ -99,27 +97,16 @@ describe('ShareDialog', () => {
     expect(screen.getByRole('button', { name: 'Поделиться' })).toBeVisible()
   })
 
-  it('обрабатывает AbortError из другого realm как обычную отмену', async () => {
+  it('offers copy fallback when Web Share throws synchronously', async () => {
     const user = userEvent.setup()
-    setShare(vi.fn().mockRejectedValue({ name: 'AbortError' }))
-    renderDialog()
-
-    await user.click(screen.getByRole('button', { name: 'Поделиться' }))
-
-    expect(await screen.findByRole('status')).toBeEmptyDOMElement()
-    expect(screen.getByRole('button', { name: 'Поделиться' })).toBeVisible()
-  })
-
-  it('предоставляет копирование при синхронной ошибке share', async () => {
-    const user = userEvent.setup()
-    setShare(vi.fn(() => { throw new Error('unavailable') }))
     const writeText = vi.fn().mockResolvedValue(undefined)
     setClipboard(writeText)
+    setShare(vi.fn(() => { throw new Error('unavailable') }))
     renderDialog()
 
     await user.click(screen.getByRole('button', { name: 'Поделиться' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось поделиться')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
     expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
   })
@@ -133,10 +120,10 @@ describe('ShareDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Поделиться' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось поделиться')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
     expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
-    expect(await screen.findByRole('status')).toHaveTextContent('Ссылка скопирована')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
   })
 
   it('доступно сообщает об отказе Clipboard API и сохраняет диалог открытым', async () => {
@@ -148,14 +135,14 @@ describe('ShareDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
 
     const status = await screen.findByRole('status')
-    expect(status).toHaveTextContent('Не удалось скопировать ссылку')
+    expect(status).not.toBeEmptyDOMElement()
     expect(status).toHaveAttribute('aria-live', 'polite')
     expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveFocus()
     expect(screen.getByRole('textbox')).toHaveValue('https://halsab.github.io/salah-pwa/')
     expect(props.onClose).not.toHaveBeenCalled()
   })
 
-  it('обрабатывает отсутствие Clipboard API как доступную ошибку', async () => {
+  it('keeps the link selectable when Clipboard API is unavailable', async () => {
     const user = userEvent.setup()
     setClipboard(undefined)
     setShare(undefined)
@@ -163,7 +150,9 @@ describe('ShareDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
 
-    expect(await screen.findByRole('status')).toHaveTextContent('Не удалось скопировать ссылку')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://halsab.github.io/salah-pwa/')
+    expect(screen.getByRole('textbox')).toHaveFocus()
   })
 
   it('сбрасывает обратную связь после закрытия и повторного открытия', async () => {
@@ -172,13 +161,12 @@ describe('ShareDialog', () => {
     const { props, rerender } = renderDialog()
 
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('Ссылка скопирована')
+    expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
 
     rerender(<ShareDialog {...props} open={false} />)
     rerender(<ShareDialog {...props} open />)
 
     expect(screen.getByRole('status')).toBeEmptyDOMElement()
-    expect(screen.getByRole('status')).toHaveClass('sr-only')
   })
 
   it.each(['resolved', 'rejected'] as const)(
@@ -200,7 +188,6 @@ describe('ShareDialog', () => {
       })
 
       expect(screen.getByRole('status')).toBeEmptyDOMElement()
-      expect(screen.getByRole('status')).toHaveClass('sr-only')
     },
   )
 

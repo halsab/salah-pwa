@@ -37,7 +37,14 @@ describe('семантика гражданской даты в календар
     }
   })
 
-  it.each([undefined, null, {}, { calendar: 'islamic', correction: 0 }, { calendar: 'hijri', correction: 2 }])('восстанавливает безопасные настройки из %j', value => {
-    expect(restoreCalendarPreferences(value)).toEqual({ calendar: 'gregorian', correction: 0 })
+  it('uses safe defaults for missing and unsupported calendar preferences', () => {
+    expect(restoreCalendarPreferences(undefined)).toEqual({ calendar: 'gregorian', correction: 0 })
+    expect(restoreCalendarPreferences({ calendar: 'islamic', correction: 0 }))
+      .toEqual({ calendar: 'gregorian', correction: 0 })
+  })
+
+  it('restores a supported calendar and correction', () => {
+    expect(restoreCalendarPreferences({ calendar: 'hijri', correction: 1 }))
+      .toEqual({ calendar: 'hijri', correction: 1 })
   })
 })

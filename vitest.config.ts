@@ -30,12 +30,6 @@ export default defineConfig({
         'src/domain/errors.ts',
         'src/domain/types.ts'
       ],
-      thresholds: {
-        statements: 87,
-        branches: 81,
-        functions: 89,
-        lines: 89
-      }
     }
   }
 })

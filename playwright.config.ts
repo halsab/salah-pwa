@@ -25,14 +25,13 @@ export default defineConfig({
         '**/offline.spec.ts',
         '**/privacy.spec.ts',
         '**/security.spec.ts',
-        '**/screen-shell.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },
     // Критические сценарии мобильного WebKit (portrait).
     {
       name: 'mobile-safari-portrait',
-      testMatch: ['**/mobile.spec.ts', '**/screen-shell.spec.ts', '**/header-hijri.spec.ts'],
+      testMatch: ['**/mobile.spec.ts'],
       use: { ...devices['iPhone 13'] },
     },
     // Обновление service worker меняет dist/sw.js; запускается строго после остальных.

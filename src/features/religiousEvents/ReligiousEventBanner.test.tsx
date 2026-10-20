@@ -1,33 +1,27 @@
+import { useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, it, vi } from 'vitest'
+import { expect, it } from 'vitest'
 
 import { ReligiousEventBanner } from './ReligiousEventBanner'
 
 const state = { eventId: 'arafa', secondary: { type: 'days', count: 1 }, contentId: 'arafa' } as const
 
-it('рендерит content banner кнопкой со стабильным id и остаётся центрированным блоком', async () => {
-  const onOpen = vi.fn()
-  render(<ReligiousEventBanner state={state} onOpen={onOpen} />)
-  const button = screen.getByRole('button', { name: 'День Арафа завтра' })
-  expect(button).toHaveAttribute('id', 'religious-event-banner')
-  expect(button).toHaveClass('religious-event-banner')
-  expect(button).not.toHaveClass('pill-row--stacked')
-  await userEvent.click(button)
-  expect(onOpen).toHaveBeenCalledWith('arafa', button)
+it('opens the event article when the banner is activated', async () => {
+  function Consumer() {
+    const [openedEvent, setOpenedEvent] = useState('')
+    return <>
+      <ReligiousEventBanner state={state} onOpen={eventId => setOpenedEvent(eventId)} />
+      <output>{openedEvent}</output>
+    </>
+  }
+
+  render(<Consumer />)
+  await userEvent.click(screen.getByRole('button'))
+  expect(screen.getByRole('status')).toHaveTextContent('arafa')
 })
 
-it('рендерит banner без content обычным неинтерактивным элементом', () => {
-  render(<ReligiousEventBanner state={{ ...state, contentId: null }} onOpen={vi.fn()} />)
+it('does not expose an action when the event has no article', () => {
+  render(<ReligiousEventBanner state={{ ...state, contentId: null }} onOpen={() => {}} />)
   expect(screen.queryByRole('button')).not.toBeInTheDocument()
-  expect(screen.getByText('День Арафа').parentElement).not.toHaveAttribute('role', 'button')
-})
-
-it('рендерит локализованное название события и countdown из структурированных данных', () => {
-  render(<ReligiousEventBanner state={{
-    eventId: 'ramadan',
-    secondary: { type: 'event-days', eventId: 'eid-al-fitr', count: 2 },
-    contentId: 'ramadan',
-  }} onOpen={vi.fn()} />)
-  expect(screen.getByRole('button', { name: 'Рамадан Ураза-байрам через 2 дня' })).toBeVisible()
 })

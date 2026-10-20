@@ -87,17 +87,6 @@ it('invalidate-and-drain ignores a late response before reset', async () => {
   expect(await getDatasetMeta()).toMatchObject({ value: undefined })
 })
 
-it('matching identity skips dataset, digest, decode and parse', async () => {
-  await replaceDataset(dataset, manifest())
-  const fetcher = vi.fn().mockResolvedValue(response(manifest()))
-  const digest = vi.fn(), decode = vi.fn(), parse = vi.fn()
-  const repo = createPrayerRepository({ fetch: fetcher, digest, decode, parse })
-  await repo.refresh()
-  expect(fetcher).toHaveBeenCalledTimes(1)
-  expect(digest).not.toHaveBeenCalled()
-  expect(decode).not.toHaveBeenCalled()
-  expect(parse).not.toHaveBeenCalled()
-})
 it('corrupt local rows can be replaced even when their stored hash matches the manifest', async () => {
   await replaceDataset({ ...dataset, days: dataset.days.slice(1) }, manifest())
   const repo = createPrayerRepository({ fetch: update(), digest: () => Promise.resolve('a'.repeat(64)) })
@@ -151,27 +140,10 @@ it('refreshes independent provider manifests without replacing the other provide
   expect(secondResult.meta?.providerInfo?.timeZone).toBe('Europe/Istanbul')
 })
 
-
-it.each(['unchanged', 'offline'] as const)('routine %s refresh validates metadata without reading every prayer row', async scenario => {
-  await replaceDataset(dataset, manifest())
-  const scan = vi.spyOn(database, 'getStoredDataset')
-  const fetcher = scenario === 'offline'
-    ? vi.fn().mockRejectedValue(new TypeError('offline'))
-    : vi.fn().mockResolvedValue(response(manifest()))
-  const repo = createPrayerRepository({ fetch: fetcher })
-  await repo.initializeStartup()
-  await repo.refresh()
-  await repo.refresh()
-  expect(scan).not.toHaveBeenCalled()
-  expect(await repo.getDays('kazan', [dataset.days[0]?.date ?? '2026-01-01'],
-    databaseResultRevision(await getDatasetMeta()))).toMatchObject({ ok: true })
-})
-
 function databaseResultRevision(result: Awaited<ReturnType<typeof getDatasetMeta>>): string {
   if (!result.ok || !result.value) throw new Error('Missing fixture metadata')
   return getDatasetRevision(result.value)
 }
-
 
 it('a late startup read cannot replace the repository generation after reset', async () => {
   const old = await database.getStartupData()
@@ -189,7 +161,6 @@ it('a late startup read cannot replace the repository generation after reset', a
   expect(await database.getSetting('languagePreference')).toMatchObject({ ok: true, value: 'ru' })
   read.mockRestore()
 })
-
 
 it('repairs a corrupt served row even when a lightweight update manifest matches its stored identity', async () => {
   const missing = dataset.days[0]

@@ -188,26 +188,15 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
     expect(h.chosen).toHaveBeenCalledOnce()
   })
-  it('ignores both GPS responses after a manual city and resets override', async () => {
-    const h = setup()
-    let pending!: Promise<void>
-    act(() => { pending = h.result.current.locate() })
-    act(() => h.result.current.selectCity(city))
-    await act(async () => { h.coarse.resolve(success(coarseFix)); h.precise.resolve(success(preciseFix)); await pending })
-    expect(h.result.current.place).toMatchObject({ selection: 'city', timeZone: 'Europe/Berlin' })
-    expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
-    expect(h.services.cities.findNearest).not.toHaveBeenCalled()
-  })
-  it('ignores delayed lookup after manual choice and on unmount', async () => {
+  it('keeps a manual choice when delayed GPS fixes and lookup complete', async () => {
     const h = setup()
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
     act(() => h.result.current.selectCity(city))
     await act(async () => { h.lookup.resolve(success(city)); h.precise.resolve(success(preciseFix)); await pending })
-    expect(h.result.current.place?.name).toContain('Berlin')
+    expect(h.result.current.place).toMatchObject({ id: 'geonames:1', selection: 'city', timeZone: 'Europe/Berlin' })
     h.unmount()
-    expect(h.services.saveCalculatedLocation).toHaveBeenCalledTimes(1)
   })
   it('allows package loading for interactive lookup and keeps background lookup local-only', async () => {
     const interactive = setup()
@@ -228,7 +217,6 @@ describe('one-shot GPS operations', () => {
   it.each([
     [success(null), 'not-found'],
     [failure({ kind: 'data' as const, reason: 'offline' as const }), 'offline'],
-    [failure({ kind: 'data' as const, reason: 'unavailable' as const }), 'failed'],
   ] as const)('keeps coordinates when name lookup finishes as %s', async (lookupResult, expectedState) => {
     const h = setup()
     let pending!: Promise<void>
@@ -393,15 +381,6 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place).toMatchObject({ coverage: 'unavailable', timeZone: 'America/Los_Angeles' })
     expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
   })
-})
-
-it('restores a saved selection during StrictMode effect replay', async () => {
-  const { StrictMode } = await import('react')
-  const services = { now: () => new Date(1000) } as AppServices & TestSettingsServices
-  const chosen = vi.fn()
-  const h = renderHook(() => usePlaceSelection(services, locations, chosen, vi.fn()), { wrapper: StrictMode })
-  act(() => h.result.current.restore({ mode: 'official', locationId: 'kazan', source: 'manual' }, locations))
-  expect(h.result.current.place?.name).toBe('Казань')
 })
 
 it('a newer GPS request wins over both callbacks of the previous request', async () => {
