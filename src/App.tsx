@@ -37,7 +37,7 @@ import { failure } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
-import { rememberPlace, restoreRecentPlaces, updateRecentPlace } from './domain/recentPlaces'
+import { migrateRecentPlaces, rememberPlace, restoreRecentPlaces, updateRecentPlace } from './domain/recentPlaces'
 import { homePlaceLabel, type Place } from './domain/place'
 import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
@@ -230,6 +230,7 @@ export function App({
   const editedFasting = useRef(false)
   const editedRecentPlaces = useRef(false)
   const recentPlacesLoaded = useRef(false)
+  const recentPlacesMigrationComplete = useRef(false)
   const [activeHistoryId, setActiveHistoryId] = useState<string | undefined>()
   const recentRef = useRef<Place[]>([])
   const previousPlace = useRef<Place | null>(null)
@@ -244,14 +245,17 @@ export function App({
     invalidateFastCache()
     const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
     if (!next) return
-    let patch: { locationChoice: LocationChoice; recentPlaces?: Place[] } = { locationChoice: choice }
+    let patch: { locationChoice: LocationChoice; recentPlaces?: Place[]; recentPlacesMigrated?: boolean } = { locationChoice: choice }
     if (change === 'selection') {
-      const existing = recentPlacesLoaded.current ? recentRef.current : restoreRecentPlaces(recentRef.current, historyAnchorPlace.current)
+      const existing = recentPlacesLoaded.current ? recentRef.current
+        : recentPlacesMigrationComplete.current ? restoreRecentPlaces(recentRef.current)
+          : migrateRecentPlaces(recentRef.current, historyAnchorPlace.current)
       const recent = rememberPlace(existing, next)
       recentRef.current = recent
       editedRecentPlaces.current = true
+      recentPlacesMigrationComplete.current = true
       setRecentPlaces(recent)
-      patch = { ...patch, recentPlaces: recent }
+      patch = { ...patch, recentPlaces: recent, recentPlacesMigrated: true }
       historyAnchorPlace.current = next
       setActiveHistoryId(next.selection === 'gps' ? recent[0]?.id : undefined)
       acceptedGpsHistory.current = next.selection === 'gps' && recent[0]
@@ -356,6 +360,7 @@ export function App({
       setRepositoryState(state)
       setFastCacheReady(!pendingFastIdentityWrite.current)
       restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, selectionMode)
+      recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
       previousPlace.current = state.locationChoice
         ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
         : null
@@ -364,19 +369,24 @@ export function App({
       if (selectionMode === 'external') {
         editedPreferences.current = false
         editedRecentPlaces.current = false
+        recentPlacesLoaded.current = false
+        acceptedGpsHistory.current = null
         editedCalendar.current = false
         editedTheme.current = false
         setThemeEditedLocally(false)
         editedFasting.current = false
       }
       if (!editedRecentPlaces.current && state.recentPlaces !== undefined) {
-        const recent = restoreRecentPlaces(state.recentPlaces, previousPlace.current)
+        const recent = state.recentPlacesMigrated
+          ? restoreRecentPlaces(state.recentPlaces)
+          : migrateRecentPlaces(state.recentPlaces, previousPlace.current)
         recentPlacesLoaded.current = true
+        recentPlacesMigrationComplete.current = true
         recentRef.current = recent
         setRecentPlaces(recent)
-        if (JSON.stringify(recent) !== JSON.stringify(state.recentPlaces)) {
+        if (state.recentPlacesMigrated !== true || JSON.stringify(recent) !== JSON.stringify(state.recentPlaces)) {
           editedRecentPlaces.current = true
-          saveSettings({ ...(state.locationChoice ? { locationChoice: state.locationChoice } : {}), recentPlaces: recent })
+          saveSettings({ ...(state.locationChoice ? { locationChoice: state.locationChoice } : {}), recentPlaces: recent, recentPlacesMigrated: true })
         }
       }
       if (!editedPreferences.current) setPreferences(state.preferences)
@@ -398,25 +408,29 @@ export function App({
       setStartupInitialized(true)
       setRemoteSelectionPending(false)
     }
-    const hydrateOptionalSettings = (locationId?: string) => {
+    const hydrateOptionalSettings = () => {
       if (!services.loadOptionalSettings) return
-      retryOptionalSettings.current = () => hydrateOptionalSettings(locationId)
+      retryOptionalSettings.current = () => hydrateOptionalSettings()
       const token = ++optionalSettingsToken.current
       const themeRevision = themePreferenceRevision.current
-      void services.loadOptionalSettings(locationId).then(result => {
+      void services.loadOptionalSettings().then(result => {
         if (!active || token !== optionalSettingsToken.current) return
         if (!result.ok) { setOptionalSettingsError(true); return }
         const value: PrayerRepositoryOptionalSettings = result.value
         if (!recentPlacesLoaded.current || !editedRecentPlaces.current) {
-          const recent = restoreRecentPlaces(editedRecentPlaces.current
+          const source = editedRecentPlaces.current
             ? [...recentRef.current, ...value.recentPlaces]
-            : value.recentPlaces, previousPlace.current)
+            : value.recentPlaces
+          const recent = value.recentPlacesMigrated
+            ? restoreRecentPlaces(source)
+            : migrateRecentPlaces(source, previousPlace.current)
           recentPlacesLoaded.current = true
+          recentPlacesMigrationComplete.current = true
           recentRef.current = recent
           setRecentPlaces(recent)
-          if (JSON.stringify(recent) !== JSON.stringify(value.recentPlaces)) {
+          if (!value.recentPlacesMigrated || JSON.stringify(recent) !== JSON.stringify(value.recentPlaces)) {
             editedRecentPlaces.current = true
-            saveSettings({ recentPlaces: recent })
+            saveSettings({ recentPlaces: recent, recentPlacesMigrated: true })
           }
         }
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))
@@ -457,7 +471,7 @@ export function App({
         return
       }
       acceptState(result.value)
-      hydrateOptionalSettings(result.value.locationChoice?.place?.id)
+      hydrateOptionalSettings()
     }).catch(() => {
       if (!active) return
       setStartupInitialized(true)
@@ -493,7 +507,7 @@ export function App({
         }
         acceptState(result.value, false, 'external')
         setSelectionSyncError(false)
-        hydrateOptionalSettings(result.value.locationChoice?.place?.id)
+        hydrateOptionalSettings()
       }).catch(() => {
         if (active && token === selectionSyncToken.current) {
           setSelectionSyncError(true)

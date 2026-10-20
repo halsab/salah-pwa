@@ -16,7 +16,7 @@ import {
   type CityDataset,
 } from './domain/cities'
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
-import { createOfficialPlace } from './domain/place'
+import { createGpsPlace, createOfficialPlace } from './domain/place'
 import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from './domain/scheduleContext'
 import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFastScheduleSnapshot,
   readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
@@ -415,7 +415,7 @@ describe('Salah', () => {
     const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
     act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
     await act(async () => {
-      optional.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'hijri', correction: 1 },
+      optional.resolve(success({ recentPlaces: [], recentPlacesMigrated: false, calendarPreferences: { calendar: 'hijri', correction: 1 },
         themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
       await optional.promise
     })
@@ -585,7 +585,7 @@ describe('Salah', () => {
     expect(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY)).toBeNull()
 
     await act(async () => {
-      optional.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'hijri', correction: 1 },
+      optional.resolve(success({ recentPlaces: [], recentPlacesMigrated: false, calendarPreferences: { calendar: 'hijri', correction: 1 },
         themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
       await optional.promise
     })
@@ -668,7 +668,7 @@ describe('Salah', () => {
     await waitFor(() => expect(services.loadOptionalSettings).toHaveBeenCalledOnce())
     await chooseCity('Москва', /Москва/)
     await act(async () => {
-      optional.resolve(success({ recentPlaces: [createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1)],
+      optional.resolve(success({ recentPlaces: [createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1)], recentPlacesMigrated: false,
         calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
       await optional.promise
     })
@@ -1060,6 +1060,86 @@ describe('Salah', () => {
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
   })
 
+  it('не записывает не принятую GPS-точку через optional hydration или будущий startup', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
+      loadOptionalSettings: vi.fn(() => optional.promise),
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
+    await act(async () => {
+      coarse.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 2400, timestamp: 100 }))
+      precise.resolve(failure({ kind: 'geolocation', reason: 'unavailable' }))
+      await Promise.resolve()
+    })
+    await screen.findByText('41.0100, 28.9500')
+    await act(async () => {
+      optional.resolve(success({ recentPlaces: [], recentPlacesMigrated: false,
+        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
+      await optional.promise
+    })
+    expect(saveSettings.mock.calls.flatMap(([patch]) => [patch.locationChoice?.place, ...(patch.recentPlaces ?? [])])
+      .filter(Boolean).some(place => place?.selection === 'gps')).toBe(false)
+    expect(saveSettings.mock.calls.some(([patch]) => patch.recentPlaces?.some(place => place.selection === 'gps'))).toBe(false)
+  })
+
+  it('ignores GPS callbacks that finish after another tab restores a newer place', async () => {
+    const localStore = memoryStorage()
+    vi.stubGlobal('localStorage', localStore)
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const remote = initialized({ locationChoice: { mode: 'official', locationId: 'naberezhnye-chelny', source: 'manual' },
+      recentPlacesMigrated: true, recentPlaces: [createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1)] })
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValueOnce(initialized()).mockResolvedValue(remote),
+      loadOptionalSettings: vi.fn().mockResolvedValue(success({ recentPlaces: remote.value.recentPlaces ?? [], recentPlacesMigrated: true,
+        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } })),
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
+    await act(async () => { coarse.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 6000, timestamp: 100 })); await Promise.resolve() })
+    await screen.findByText('41.0100, 28.9500')
+    invalidateFastScheduleSnapshot()
+    await act(async () => { window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.activeContext })); await Promise.resolve() })
+    expect(await screen.findByText('Набережные Челны')).toBeVisible()
+    const writesAfterRestore = saveSettings.mock.calls.length
+    await act(async () => { precise.resolve(success({ latitude: 41.011, longitude: 28.951, accuracy: 10, timestamp: 200 })); await Promise.resolve() })
+    expect(screen.getByText('Набережные Челны')).toBeVisible()
+    expect(saveSettings.mock.calls).toHaveLength(writesAfterRestore)
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
+  })
+
+  it('does not migrate a passive GPS refresh after the one-time history migration completed', async () => {
+    const selected = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 30, timestamp: 100 }, 'Europe/Moscow', null, 'gps:refresh:100')
+    const legacyHistory = [
+      createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 }, 1),
+      createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1),
+    ]
+    const state = initialized({ locationChoice: { mode: 'calculated', coordinates: selected, place: selected, source: 'automatic' },
+      recentPlaces: legacyHistory, recentPlacesMigrated: true })
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(state),
+      loadOptionalSettings: vi.fn().mockResolvedValue(success({ recentPlaces: legacyHistory, recentPlacesMigrated: true,
+        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } })),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await screen.findByRole('timer')
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
+    expect(saveSettings.mock.calls.some(([patch]) => patch.recentPlacesMigrated === true)).toBe(false)
+  })
+
   it('GPS внутри Татарстана использует ближайший опубликованный пункт', async () => {
     const services = createServices()
     render(<App services={services} />)
@@ -1309,7 +1389,7 @@ describe('Salah', () => {
     expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
 
     await act(async () => {
-      optionalSettings.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'gregorian', correction: 0 },
+      optionalSettings.resolve(success({ recentPlaces: [], recentPlacesMigrated: false, calendarPreferences: { calendar: 'gregorian', correction: 0 },
         themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
       await optionalSettings.promise
     })

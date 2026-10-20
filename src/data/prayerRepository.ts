@@ -29,6 +29,7 @@ export interface PrayerRepositorySnapshot {
 export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   calendarPreferences?: CalendarPreferences
   recentPlaces?: Place[]
+  recentPlacesMigrated?: boolean
   locationChoice: LocationChoice | null
   appearance?: Appearance
   themeFamily?: ThemeFamily
@@ -38,6 +39,7 @@ export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
 }
 export interface PrayerRepositoryOptionalSettings {
   recentPlaces: Place[]
+  recentPlacesMigrated: boolean
   calendarPreferences: CalendarPreferences
   themeFamily: ThemeFamily
   languagePreference: LanguagePreference
@@ -45,6 +47,7 @@ export interface PrayerRepositoryOptionalSettings {
 }
 interface StoredOptionalSettings {
   recentPlaces: unknown
+  recentPlacesMigrated: unknown
   calendarPreferences: unknown
   themeFamily: unknown
   languagePreference: unknown
@@ -141,13 +144,14 @@ function storedMetadataState(value: DatasetMeta | undefined, provider: PrayerPro
 async function readStartup(provider: PrayerProvider) {
   const stored = await getStartupData(provider.id)
   if (!stored.ok) return stored
-  const { meta, choice, preferences, legacy, generation } = stored.value
+  const { meta, choice, preferences, legacy, generation, recentPlacesMigrated } = stored.value
   const validMeta = meta && isStoredMeta(meta, provider) ? meta : null
   const state: PrayerRepositoryState = {
     meta: validMeta,
     dataState: meta ? validMeta ? 'ready' : 'invalid' : 'not-loaded',
     update: { status: 'idle' }, checkedAt: null,
     locationChoice: choice === undefined ? null : restoreLocationChoice(choice, validMeta ?? provider.bundled),
+    recentPlacesMigrated: recentPlacesMigrated === true,
     preferences: restoreSourcePreferences(preferences, legacy, choice),
   }
   return success({ state, generation })
@@ -158,9 +162,10 @@ export async function initializePrayerRepositoryStartup(provider: PrayerProvider
   return result.ok ? success(result.value.state) : result
 }
 
-function restoreOptionalSettings(values: StoredOptionalSettings, currentLocationId?: string): PrayerRepositoryOptionalSettings {
+function restoreOptionalSettings(values: StoredOptionalSettings): PrayerRepositoryOptionalSettings {
   return {
-    recentPlaces: restoreRecentPlaces(values.recentPlaces, currentLocationId),
+    recentPlaces: restoreRecentPlaces(values.recentPlaces),
+    recentPlacesMigrated: values.recentPlacesMigrated === true,
     calendarPreferences: restoreCalendarPreferences(values.calendarPreferences),
     themeFamily: restoreThemeFamily(values.themeFamily),
     languagePreference: restoreLanguagePreference(values.languagePreference),
@@ -168,9 +173,9 @@ function restoreOptionalSettings(values: StoredOptionalSettings, currentLocation
   }
 }
 
-export async function loadPrayerRepositoryOptionalSettings(currentLocationId?: string): Promise<Result<PrayerRepositoryOptionalSettings, StorageFailure>> {
-  const stored = await getSettings(['recentPlaces', 'calendarPreferences', 'themeFamily', 'languagePreference', 'fastingMode'])
-  return stored.ok ? success(restoreOptionalSettings(stored.value, currentLocationId)) : stored
+export async function loadPrayerRepositoryOptionalSettings(): Promise<Result<PrayerRepositoryOptionalSettings, StorageFailure>> {
+  const stored = await getSettings(['recentPlaces', 'recentPlacesMigrated', 'calendarPreferences', 'themeFamily', 'languagePreference', 'fastingMode'])
+  return stored.ok ? success(restoreOptionalSettings(stored.value)) : stored
 }
 function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): LocationChoice {
   const locations = meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS
@@ -185,9 +190,9 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
 export async function initializePrayerRepository(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, calendarPreferences, languagePreference, fastingMode] = await Promise.all([
+  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, recentPlacesMigrated, calendarPreferences, languagePreference, fastingMode] = await Promise.all([
     readLocalSnapshot(provider), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('themeFamily'),
-    getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('languagePreference'), getSetting('fastingMode'),
+    getSetting('recentPlaces'), getSetting('recentPlacesMigrated'), getSetting('calendarPreferences'), getSetting('languagePreference'), getSetting('fastingMode'),
   ])
   if (!snapshot.ok) return snapshot
   if (!choice.ok) return choice
@@ -196,14 +201,16 @@ export async function initializePrayerRepository(provider: PrayerProvider = dumR
   if (!appearance.ok) return appearance
   if (!themeFamily.ok) return themeFamily
   if (!recentPlaces.ok) return recentPlaces
+  if (!recentPlacesMigrated.ok) return recentPlacesMigrated
   if (!calendarPreferences.ok) return calendarPreferences
   if (!languagePreference.ok) return languagePreference
   if (!fastingMode.ok) return fastingMode
   const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta ?? provider.bundled)
   const optionalSettings = restoreOptionalSettings({
-    recentPlaces: recentPlaces.value, calendarPreferences: calendarPreferences.value,
+    recentPlaces: recentPlaces.value, recentPlacesMigrated: recentPlacesMigrated.value,
+    calendarPreferences: calendarPreferences.value,
     themeFamily: themeFamily.value, languagePreference: languagePreference.value, fastingMode: fastingMode.value,
-  }, locationChoice?.place?.id)
+  })
   return success({ ...snapshot.value, locationChoice,
     ...optionalSettings,
     appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',

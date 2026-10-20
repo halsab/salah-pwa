@@ -48,11 +48,11 @@ describe('local initialization and persistence', () => {
 
     const full = await initializePrayerRepository()
     if (!full.ok) throw new Error('Full repository initialization failed')
-    const optional = await loadPrayerRepositoryOptionalSettings(full.value.locationChoice?.place?.id)
+    const optional = await loadPrayerRepositoryOptionalSettings()
     if (!optional.ok) throw new Error('Optional settings hydration failed')
 
     expect(optional.value).toEqual({
-      recentPlaces: full.value.recentPlaces,
+      recentPlaces: full.value.recentPlaces, recentPlacesMigrated: false,
       calendarPreferences: full.value.calendarPreferences,
       themeFamily: full.value.themeFamily,
       languagePreference: full.value.languagePreference,
@@ -136,6 +136,13 @@ describe('local initialization and persistence', () => {
     const place = createGpsPlace({ latitude: 55.79, longitude: 49.12, accuracy: 20, timestamp: 100 }, 'Europe/Moscow', null, 'gps:history:test')
     expect(await repo.saveSettings({ recentPlaces: [place] })).toMatchObject({ ok: true })
     expect(await initializePrayerRepository()).toMatchObject({ value: { recentPlaces: [expect.objectContaining({ selection: 'gps', latitude: 55.79, timestamp: 100 })] } })
+  })
+  it('persists the one-time history migration marker with settings and clears it on reset', async () => {
+    const place = createOfficialPlace(required(dataset.locations[0]), 0)
+    expect(await repo.saveSettings({ recentPlaces: [place], recentPlacesMigrated: true })).toMatchObject({ ok: true })
+    expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [place], recentPlacesMigrated: true } })
+    await clearAppData()
+    expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [], recentPlacesMigrated: false } })
   })
   it('restores legacy coordinates with a missing timezone without loading meta', async () => {
     const coordinates = { latitude: 55.75, longitude: 37.62, accuracy: 18, timestamp: 100, name: 'Сохранённое место', source: 'gps' }

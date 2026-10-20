@@ -43,6 +43,10 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     current.current = next
     setPlace(next)
     setSource(selectionSource)
+    const pendingInteractiveGps = next.selection === 'gps'
+      && activeInteractive.current?.operation === operation
+      && !activeInteractive.current.navigated
+    if (pendingInteractiveGps && change === 'automatic') return
     saveChoice(next, selectionSource, change)
   }, [saveChoice])
 
@@ -52,6 +56,12 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       return
     }
     if (mode === 'startup' && restored.current) return
+    if (mode === 'external') {
+      epoch.current += 1
+      activeInteractive.current = null
+      setGpsState({ status: 'idle' })
+      setNameLookupState('idle')
+    }
     restored.current = true
     if (!choice) {
       if (mode === 'external') {
@@ -68,6 +78,7 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     current.current = saved
     setPlace(saved)
     setSource(choice.source)
+    if (mode === 'external') started.current = false
   }, [])
 
   const finishInteractive = useCallback((operation: number) => {
@@ -93,7 +104,6 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     } else {
       activeInteractive.current = null
     }
-    const previous = current.current?.selection === 'gps' ? current.current : null
     const geometry = services.loadGeography().catch(() => null)
     const operationResult: { best: Place | null } = { best: null }
     let preciseAccepted = false
@@ -140,7 +150,7 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
         const enriched = current.current?.selection === 'gps' && current.current.id === operationResult.best?.id
           ? current.current
           : null
-        const base = enriched ?? operationResult.best ?? previous
+        const base = enriched ?? operationResult.best
         const next = base
           ? refineGpsPlace(base, result.value, services.getDeviceTimeZone(), data)
           : createGpsPlace(result.value, services.getDeviceTimeZone(), data, `gps:${operation}:${result.value.timestamp}`)

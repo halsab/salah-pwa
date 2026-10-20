@@ -26,6 +26,13 @@ function historyIdentity(place: Place): string {
   return place.id.startsWith('gps:history:') ? place.id : gpsIdentity(place)
 }
 
+function uniqueIdentity(base: string, used: ReadonlySet<string>): string {
+  if (!used.has(base)) return base
+  let suffix = 1
+  while (used.has(`${base}:recovered:${suffix}`)) suffix += 1
+  return `${base}:recovered:${suffix}`
+}
+
 function canonicalPlace(place: Place): Place {
   const { timeZoneOverride: _legacyOverride, ...withoutLegacyOverride } = place as Place & { timeZoneOverride?: unknown }
   const restored = restorePlaceMetadata(withoutLegacyOverride)
@@ -64,26 +71,43 @@ function mergeInto(places: Place[], candidate: Place, promote: boolean): Place[]
     : places.map(place => place === matched ? normalized : place)
 }
 
-/** Нормализует сохранённую историю и один раз добавляет уже выбранное место при миграции. */
-export function restoreRecentPlaces(value: unknown, current?: Place | string | null): Place[] {
-  const currentPlace = current && typeof current !== 'string' && isPlace(current) ? canonicalPlace(current) : null
+/** Нормализует только сохранённую историю; миграция активного места вызывается отдельно. */
+export function restoreRecentPlaces(value: unknown): Place[] {
   const source = Array.isArray(value) ? value : []
   const valid = source.filter(isPlace).map(canonicalPlace)
   const normalized: Place[] = []
+  const identities = new Set<string>()
   for (const place of valid) {
+    const stableMatch = place.selection === 'gps'
+      ? normalized.find(item => item.selection === 'gps' && item.id === place.id)
+      : undefined
     const match = place.selection === 'gps'
-      ? findGpsMatch(normalized, place)
+      ? stableMatch ?? findGpsMatch(normalized, place)
       : normalized.find(item => item.selection === place.selection && item.id === place.id)
-    if (match) continue
-    normalized.push({ ...place, id: place.selection === 'gps' ? historyIdentity(place) : place.id })
-  }
-  if (currentPlace) {
-    const alreadyStored = currentPlace.selection === 'gps'
-      ? Boolean(findGpsMatch(normalized, currentPlace))
-      : normalized.some(item => item.selection === currentPlace.selection && item.id === currentPlace.id)
-    if (!alreadyStored) normalized.unshift({ ...currentPlace, id: currentPlace.selection === 'gps' ? historyIdentity(currentPlace) : currentPlace.id })
+    if (match && (place.selection !== 'gps' || distanceMeters(match, place) <= GPS_HISTORY_DEDUPE_METERS)) continue
+    const id = uniqueIdentity(place.selection === 'gps' ? historyIdentity(place) : place.id, identities)
+    identities.add(id)
+    normalized.push({ ...place, id })
   }
   return normalized.slice(0, MAX_RECENT_PLACES)
+}
+
+/** Добавляет активное место первым только при миграции сохранённой legacy-истории. */
+export function migrateRecentPlaces(value: unknown, current?: Place | null): Place[] {
+  const normalized = restoreRecentPlaces(value)
+  if (!current || !isPlace(current)) return normalized
+  const matching = current.selection === 'gps'
+    ? normalized.find(place => place.selection === 'gps' && place.id === current.id)
+      ?? findGpsMatch(normalized, current)
+    : normalized.find(place => place.selection === current.selection && place.id === current.id)
+  if (matching) {
+    if (current.selection === 'gps') return [matching, ...normalized.filter(place => place !== matching)].slice(0, MAX_RECENT_PLACES)
+    return rememberPlace(normalized, current)
+  }
+  const migrated = canonicalPlace(current)
+  const id = uniqueIdentity(migrated.selection === 'gps' ? historyIdentity(migrated) : migrated.id,
+    new Set(normalized.map(place => place.id)))
+  return [{ ...migrated, id }, ...normalized].slice(0, MAX_RECENT_PLACES)
 }
 
 /** Поднимает явно выбранный снимок, сохраняя найденную GPS identity. */

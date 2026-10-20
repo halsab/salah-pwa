@@ -27,6 +27,7 @@ it('retries the accepted location and its recent history as one settings snapsho
   const selected = {
     locationChoice: { mode: 'calculated' as const, source: 'manual' as const, coordinates: { latitude: 40, longitude: -73, accuracy: 20, timestamp: 123, timeZone: 'America/New_York' } },
     recentPlaces: [createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 123 }, 'America/New_York', null, 'gps:history:40.000000:-73.000000')],
+    recentPlacesMigrated: true,
   }
   const save = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(success(undefined))
   const writer = createSettingsPersistence(save)

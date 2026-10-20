@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { required } from '../test/required'
 import { createCityPlace, createOfficialPlace, createGpsPlace, withNearbyCity } from './place'
-import { rememberPlace, restoreRecentPlaces, updateRecentPlace } from './recentPlaces'
+import { migrateRecentPlaces, rememberPlace, restoreRecentPlaces, updateRecentPlace } from './recentPlaces'
 
 const official = (id: string, longitude = 49) => createOfficialPlace({ id, name: id, latitude: 55, longitude }, 10)
 const city = (id: number, longitude = 49) => createCityPlace({ id, name: 'Одинаковое имя', countryCode: 'RU', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55, longitude, population: 1, timeZone: 'Europe/Moscow' }, 10)
@@ -50,9 +50,9 @@ describe('recentPlaces', () => {
 
   it('restores current place first, drops invalid/duplicate rows and is idempotent', () => {
     const current = gps(55, 49, 100)
-    const recents = restoreRecentPlaces([null, {}, gps(55, 49.001, 90), official('a'), official('a')], current)
+    const recents = migrateRecentPlaces([null, {}, gps(55, 49.001, 90), official('a'), official('a')], current)
     expect(recents.map(place => place.selection === 'gps' ? 'gps' : place.id)).toEqual(['gps', 'locality:a'])
-    expect(restoreRecentPlaces(recents, current)).toEqual(recents)
+    expect(restoreRecentPlaces(recents)).toEqual(recents)
     expect(restoreRecentPlaces('corrupted')).toEqual([])
   })
 
@@ -60,15 +60,15 @@ describe('recentPlaces', () => {
     const old = [official('one'), city(2), official('three')]
     const activeGps = gps(55, 49.001, 500, 'passive newer name')
     const storedGps = gps(55, 49, 100, 'accepted snapshot')
-    const migrated = restoreRecentPlaces([storedGps, ...old], activeGps)
+    const migrated = migrateRecentPlaces([storedGps, ...old], activeGps)
     expect(migrated.map(place => place.id)).toEqual(['gps:history:55.000000:49.000000', 'locality:one', 'geonames:2', 'locality:three'])
     expect(migrated[0]).toMatchObject({ timestamp: 100, name: 'accepted snapshot' })
-    expect(restoreRecentPlaces(migrated, activeGps)).toEqual(migrated)
+    expect(restoreRecentPlaces(migrated)).toEqual(migrated)
   })
 
   it('adds a missing current place once and keeps it inside the ten-entry cap', () => {
     const current = official('current')
-    const migrated = restoreRecentPlaces(Array.from({ length: 10 }, (_, index) => official(String(index))), current)
+    const migrated = migrateRecentPlaces(Array.from({ length: 10 }, (_, index) => official(String(index))), current)
     expect(migrated).toHaveLength(10)
     expect(migrated[0]?.id).toBe('locality:current')
     expect(migrated.some(place => place.id === 'locality:9')).toBe(false)
@@ -76,10 +76,36 @@ describe('recentPlaces', () => {
 
   it('migrates a missing current GPS snapshot once without changing its capture timestamp', () => {
     const current = gps(41, 29, 9876, '', 120)
-    const migrated = restoreRecentPlaces([], current)
+    const migrated = migrateRecentPlaces([], current)
     expect(migrated).toHaveLength(1)
     expect(migrated[0]).toMatchObject({ id: 'gps:history:41.000000:29.000000', latitude: 41, longitude: 29, accuracy: 120, timestamp: 9876 })
-    expect(restoreRecentPlaces(migrated, current)).toEqual(migrated)
+    expect(restoreRecentPlaces(migrated)).toEqual(migrated)
+  })
+
+  it('promotes the active legacy entry once while retaining the other legacy entries in order', () => {
+    const history = [official('one'), official('active'), official('three')]
+    const migrated = migrateRecentPlaces(history, official('active'))
+    expect(migrated.map(place => place.id)).toEqual(['locality:active', 'locality:one', 'locality:three'])
+    expect(restoreRecentPlaces(migrated)).toEqual(migrated)
+  })
+
+  it('recovers conflicting stable GPS IDs deterministically and keeps all identities unique', () => {
+    const first = { ...gps(40, -73, 100), id: 'gps:history:legacy' }
+    const far = { ...gps(41, -74, 200), id: 'gps:history:legacy' }
+    const malformed = { ...gps(42, -75, 300), latitude: Number.NaN }
+    const normalized = restoreRecentPlaces([first, far, malformed, first])
+    expect(normalized).toHaveLength(2)
+    expect(normalized.map(place => place.id)).toEqual(['gps:history:legacy', 'gps:history:legacy:recovered:1'])
+    expect(new Set(normalized.map(place => place.id)).size).toBe(normalized.length)
+    expect(restoreRecentPlaces(normalized)).toEqual(normalized)
+  })
+
+  it('repairs cross-type ID collisions in corrupt persisted data', () => {
+    const gpsPlace = { ...gps(40, -73, 100), id: 'collision' }
+    const officialPlace = { ...official('official'), id: 'gps:history:40.000000:-73.000000' }
+    const normalized = restoreRecentPlaces([gpsPlace, officialPlace])
+    expect(normalized.map(place => place.id)).toEqual(['gps:history:40.000000:-73.000000', 'gps:history:40.000000:-73.000000:recovered:1'])
+    expect(new Set(normalized.map(place => place.id)).size).toBe(normalized.length)
   })
 
   it('normalizes saved GPS identity independently of transient IDs, timestamps, and names', () => {

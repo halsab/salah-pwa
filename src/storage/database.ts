@@ -47,6 +47,7 @@ export type Appearance = 'system' | 'light' | 'dark'
 interface SettingValueMap {
   calendarPreferences: CalendarPreferences
   recentPlaces: Place[]
+  recentPlacesMigrated: boolean
   appearance: Appearance
   themeFamily: ThemeFamily
   locationChoice: LocationChoice
@@ -416,14 +417,16 @@ export function getStartupData(provider = DEFAULT_PROVIDER_ID) {
     // Generation, выбранное место и revision принадлежат одному снимку транзакции.
     const transaction = database.transaction(['control', 'meta', 'settings'], 'readonly')
     const settings = transaction.objectStore('settings')
-    const [generation, meta, choice, preferences, legacy] = await Promise.all([
+    const [generation, meta, choice, preferences, legacy, recentPlacesMigrated] = await Promise.all([
       transaction.objectStore('control').get('generation'),
       transaction.objectStore('meta').get(provider),
       settings.get('locationChoice'), settings.get('sourcePreferences'), settings.get('calculationSettings'),
+      settings.get('recentPlacesMigrated'),
     ])
     await transaction.done
     return { generation: generation ?? 0, meta, choice: choice?.value as SettingValueMap['locationChoice'] | undefined,
-      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined, legacy: legacy?.value as SettingValueMap['calculationSettings'] | undefined }
+      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined, legacy: legacy?.value as SettingValueMap['calculationSettings'] | undefined,
+      recentPlacesMigrated: recentPlacesMigrated?.value as boolean | undefined }
   })
 }
 
@@ -492,7 +495,7 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'recentPlacesMigrated' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
@@ -506,6 +509,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (patch.themeFamily) await transaction.objectStore('settings').put({ key: 'themeFamily', value: patch.themeFamily })
       if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
       if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
+      if (patch.recentPlacesMigrated !== undefined) await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: patch.recentPlacesMigrated })
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
       if (patch.languagePreference) await transaction.objectStore('settings').put({ key: 'languagePreference', value: patch.languagePreference })

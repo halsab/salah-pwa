@@ -67,12 +67,13 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place).toMatchObject({ ...coarseFix, coverage: 'inside', timeZone: 'America/Los_Angeles' })
     expect(h.result.current.gpsState).toEqual({ status: 'refining' })
     expect(h.chosen).not.toHaveBeenCalled()
-    expect(h.services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'automatic', expect.objectContaining(coarseFix), expect.any(Function))
+    expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
     const id = h.result.current.place?.id
     await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
     expect(h.result.current.place).toMatchObject({ ...preciseFix, id })
     expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
     expect(h.chosen).toHaveBeenCalledOnce()
+    expect(h.services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'automatic', expect.objectContaining(preciseFix), expect.any(Function))
   })
   it('finishes once after a sufficiently accurate coarse point while precise continues', async () => {
     const h = setup()
@@ -95,8 +96,43 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place).toMatchObject(coarseFix)
     expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: true })
     expect(h.chosen).not.toHaveBeenCalled()
+    expect(h.persist).not.toHaveBeenCalled()
     act(() => h.result.current.acceptGps())
     expect(h.chosen).toHaveBeenCalledOnce()
+    expect(h.persist.mock.calls.filter(([, change]) => change === 'selection')).toHaveLength(1)
+  })
+
+  it('does not reuse the previous GPS runtime identity for a distant new capture', async () => {
+    const old = createGpsPlace({ latitude: 40, longitude: 29, accuracy: 20, timestamp: 50 }, 'UTC', null, 'gps:old-operation')
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) }, { place: old, source: 'manual' })
+    const farFix = { latitude: 41, longitude: 30, accuracy: 100, timestamp: 300 }
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => {
+      h.precise.resolve(success(farFix))
+      h.coarse.resolve(failure({ kind: 'geolocation', reason: 'timeout' }))
+      await pending
+    })
+    expect(h.result.current.place?.id).not.toBe(old.id)
+    expect(h.result.current.place).toMatchObject({ latitude: farFix.latitude, longitude: farFix.longitude })
+  })
+
+  it('invalidates GPS and name callbacks when an external selection is restored', async () => {
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    const beforeExternal = h.persist.mock.calls.length
+    act(() => h.result.current.restore({ mode: 'official', locationId: 'kazan', source: 'manual' }, locations, 'external'))
+    await act(async () => {
+      h.precise.resolve(success(preciseFix))
+      h.lookup.resolve(success(city))
+      await pending
+      await Promise.resolve()
+    })
+    expect(h.result.current.place).toMatchObject({ selection: 'official', id: 'locality:kazan' })
+    expect(h.persist.mock.calls).toHaveLength(beforeExternal)
+    expect(h.persist.mock.calls.slice(beforeExternal).some(([, change]) => change === 'selection' || change === 'refinement')).toBe(false)
   })
   it('accepts provisional coarse once and still applies a late useful precise point', async () => {
     const h = setup()
