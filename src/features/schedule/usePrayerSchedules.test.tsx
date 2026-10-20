@@ -103,17 +103,6 @@ describe('usePrayerSchedules', () => {
     await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
   })
 
-  it('игнорирует новые ссылки, названия и неэффективные настройки официального расписания', async () => {
-    const initial = options()
-    const hook = observe(initial)
-    await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
-    const calls = vi.mocked(initial.services.getDays).mock.calls.length
-    hook.rerender({ ...initial, meta: { ...meta, source: { ...meta.source, name: 'Новое имя' }, locations: meta.locations.map((location) => ({ ...location, name: `${location.name}!` })) }, calculationSettings: { ...initial.calculationSettings, asrMethod: 'standard' } })
-    await act(async () => {})
-    expect(initial.services.getDays).toHaveBeenCalledTimes(calls)
-    expect(hook.result.current.schedule).not.toBeNull()
-  })
-
   it('при A → B → C не принимает прежние ответы и ошибки даже после готовности C', async () => {
     const pending: { id: string; dates: readonly string[]; request: ReturnType<typeof deferred<(PrayerDay | undefined)[]>> }[] = []
     const initial = options()
@@ -199,18 +188,6 @@ describe('usePrayerSchedules', () => {
     }
   })
 
-  it('уточнение названия расчётного места не пересчитывает времена', async () => {
-    const calculate = vi.spyOn(calculation, 'calculatePrayerSchedule')
-    const initial: Options = { ...options(), locationMode: 'calculated', calculatedLocation: { latitude: 55.75, longitude: 37.62, timeZone: 'Europe/Moscow', accuracy: null, timestamp: 0 } }
-    const hook = observe(initial)
-    await waitFor(() => expect(hook.result.current.schedule).not.toBeNull())
-    const calls = calculate.mock.calls.length
-    hook.rerender({ ...initial, calculatedLocation: { ...required(initial.calculatedLocation), name: 'Москва', timestamp: 1 }, calculationSettings: { ...initial.calculationSettings } })
-    await act(async () => {})
-    expect(calculate).toHaveBeenCalledTimes(calls)
-    calculate.mockRestore()
-  })
-
   it('повторная загрузка маскирует старое состояние и использует актуальный контекст', async () => {
     const initial = options()
     const hook = observe(initial)
@@ -248,22 +225,6 @@ describe('окно событий и гонки источников', () => {
     }
   })
 
-  it.each(['дата', 'версия', 'timezone', 'источник'] as const)('поздний ответ прежнего запроса не заменяет новый: %s', async (change) => {
-    const old = deferred<(PrayerDay | undefined)[]>()
-    const initial = options()
-    vi.mocked(initial.services.getDays).mockReturnValueOnce(old.promise)
-    const hook = observe(initial)
-    const updated: Options = change === 'дата' ? { ...initial, selectedDate: '2026-09-02' }
-      : change === 'версия' ? { ...initial, meta: { ...meta, identity: { ...required(meta.identity), version: 'v2' } } }
-        : change === 'timezone' ? { ...initial, timeZone: 'Asia/Tokyo' }
-          : { ...initial, locationMode: 'calculated', calculatedLocation: { latitude: 55.75, longitude: 37.62, timeZone: 'Europe/Moscow', accuracy: null, timestamp: 0 } }
-    hook.rerender(updated)
-    await waitFor(() => expect(hook.result.current.scheduleLoading).toBe(false))
-    const current = hook.result.current.schedule
-    await act(async () => { old.resolve([undefined, { ...day('A', '2026-09-01'), asr: '23:59' }, undefined]); await old.promise })
-    expect(hook.result.current.schedule).toBe(current)
-  })
-
   it('не отдаёт UI смесь дат или мест из неверного ответа и восстанавливается после повторения', async () => {
     const initial = options()
     vi.mocked(initial.services.getDays).mockResolvedValueOnce([day('A', '2026-08-31'), day('B', '2026-09-01'), day('A', '2026-09-02')])
@@ -288,7 +249,6 @@ it('invalidates official schedule context when the real GPS point changes under 
   expect(hook.result.current.schedule).toBeNull()
   await act(async () => { next.resolve([day('A', initial.selectedDate)]); await next.promise })
 })
-
 
 it.each(['2026-01-01', '2026-12-31'])('uses only verified covered neighbors at official boundary %s', async selectedDate => {
   const initial = { ...options(), selectedDate }

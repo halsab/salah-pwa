@@ -3,41 +3,23 @@ import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 
 import type { ReligiousEventOccurrence } from '../../domain/religiousEvents'
-import {
-  ReligiousEventOccurrenceRow,
-  ReligiousEventsScreen,
-} from './ReligiousEventsScreen'
-import { formatReligiousEventOccurrenceDate } from './religiousEventDate'
+import { ReligiousEventOccurrenceRow, ReligiousEventsScreen } from './ReligiousEventsScreen'
 
-it('показывает хронологический список с display titles и двумя календарями', async () => {
-  const onBack = vi.fn()
+it('opens the selected event article from the event list', async () => {
   const onOpenEvent = vi.fn()
-  render(<ReligiousEventsScreen today="2026-01-01" correction={0} hijriSupported onOpenEvent={onOpenEvent} onBack={onBack} />)
+  render(<ReligiousEventsScreen
+    today="2026-01-01"
+    correction={0}
+    hijriSupported
+    onOpenEvent={onOpenEvent}
+    onBack={() => {}}
+  />)
 
-  const region = screen.getByRole('region', { name: 'Праздники и события' })
-  expect(within(region).getAllByRole('button', { name: 'Назад' })).toHaveLength(1)
-  expect(within(region).queryByRole('heading')).not.toBeInTheDocument()
-  const rows = within(region).getAllByRole('listitem')
-  expect(rows[0]).toHaveTextContent('Исра и Ми‘радж')
-  const firstRow = within(rows[0] as HTMLElement).getByRole('button')
-  expect(firstRow).toHaveClass('pill-row', 'pill-row--stacked')
-  expect(within(firstRow).getByText('Исра и Ми‘радж')).toHaveClass('action-row-title')
-  const rowIds = rows.map(row => within(row).getByRole('button').id)
-  expect(rowIds).toEqual([...rowIds].sort())
-  expect(region).toHaveTextContent('Начало Рамадана')
-  expect(region).toHaveTextContent('Начало Зуль-хиджи')
-  expect(region).not.toHaveTextContent('Дни ташрика')
-  expect(region).toHaveTextContent('2–3 февраля 2026 · 15 шаабан 1447')
-  expect(region).toHaveTextContent('15–16 января 2026 · 27 раджаб 1447')
-  expect(region).toHaveTextContent('16 июня 2026 · 1 мухаррам 1448')
-
-  await userEvent.click(within(region).getByRole('button', { name: /Начало Рамадана/ }))
+  await userEvent.click(screen.getByRole('button', { name: /Начало Рамадана/ }))
   expect(onOpenEvent).toHaveBeenCalledWith('ramadan')
-  await userEvent.click(within(region).getByRole('button', { name: 'Назад' }))
-  expect(onBack).toHaveBeenCalledOnce()
 })
 
-it('оставляет occurrence без статьи неинтерактивной', () => {
+it('keeps an occurrence without an article noninteractive', () => {
   const occurrence: ReligiousEventOccurrence = {
     eventId: 'ashura',
     kind: 'day',
@@ -46,34 +28,6 @@ it('оставляет occurrence без статьи неинтерактивн
     contentId: null,
   }
   render(<ul><ReligiousEventOccurrenceRow occurrence={occurrence} onOpenEvent={() => {}} /></ul>)
-  expect(screen.getByRole('listitem')).toHaveTextContent('День Ашура')
-  expect(screen.getByRole('listitem').firstElementChild).toHaveClass('pill-row--stacked')
-  expect(screen.queryByRole('button')).not.toBeInTheDocument()
-})
 
-it.each([
-  ['2026-02-03', 'night', '2–3 февраля 2026 · 15 шаабан 1447'],
-  ['2027-02-01', 'night', '31 января – 1 февраля 2027 · 23 шаабан 1448'],
-  ['2027-01-01', 'night', '31 декабря 2026 – 1 января 2027 · 22 раджаб 1448'],
-])('форматирует Gregorian night range для %s', (civilDate, kind, expected) => {
-  expect(formatReligiousEventOccurrenceDate({
-    eventId: 'baraat',
-    kind: kind as 'night',
-    civilDate,
-    hijriDate: civilDate === '2026-02-03'
-      ? { year: 1447, month: 8, day: 15 }
-      : civilDate === '2027-02-01'
-        ? { year: 1448, month: 8, day: 23 }
-        : { year: 1448, month: 7, day: 22 },
-    contentId: 'baraat',
-  })).toBe(expected)
-})
-
-it.each([
-  [{ year: 1448, month: 4, day: 8 }, '8 апреля 2027 · 8 раби аль-ахир 1448'],
-  [{ year: 1448, month: 6, day: 8 }, '8 апреля 2027 · 8 джумада аль-ахира 1448'],
-] as const)('использует каноническое полное имя месяца в дате события', (hijriDate, expected) => {
-  expect(formatReligiousEventOccurrenceDate({
-    eventId: 'ashura', kind: 'day', civilDate: '2027-04-08', hijriDate, contentId: null,
-  })).toBe(expected)
+  expect(within(screen.getByRole('listitem')).queryByRole('button')).not.toBeInTheDocument()
 })

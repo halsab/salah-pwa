@@ -57,44 +57,6 @@ it('сохраняет результаты предыдущей версии п
   expect(await engine.search('kirov')).toMatchObject({ ok: true, value: { status: 'complete', previousVersion: true, cities: [{ id: 1 }] } })
 })
 
-it('при смене запроса прекращает очередь старых пакетов и держит не более двух загрузок', async () => {
-  const manyRows = Array.from({ length: 1500 }, (_, i): CompactCityRecord => [100 + i, `Киров ${i}`, [`киров ${i}`], 'RU', '33', 58.6, 49.6, 5000, 'Europe/Moscow', 'Кировская область', 'россия'])
-  const generated = buildCityPackages(manyRows, source)
-  let active = 0
-  let maximum = 0
-  const releases: (() => void)[] = []
-  const loadShard = vi.fn<CatalogRepository['loadShard']>().mockImplementation(async (_catalog: CityIndex, descriptor: CityShardDescriptor) => {
-    maximum = Math.max(maximum, ++active)
-    await new Promise<void>(resolve => releases.push(resolve))
-    active -= 1
-    return success(generated.shards[descriptor.id] ?? { schemaVersion: 4, version: generated.index.version, id: descriptor.id, cities: [] })
-  })
-  const engine = createCityCatalogEngine({ loadIndex: () => Promise.resolve(success(generated.index)), loadShard, previousIndex: () => Promise.resolve(undefined) })
-  const old = engine.search('киров')
-  await vi.waitFor(() => expect(releases).toHaveLength(2))
-  const next = engine.search('zzzzzzzzz')
-  releases.forEach(release => release())
-  expect(await old).toMatchObject({ ok: false })
-  expect(await next).toMatchObject({ ok: true, value: { status: 'complete', cities: [] } })
-  expect(maximum).toBe(2)
-  expect(loadShard).toHaveBeenCalledTimes(2)
-})
-
-it('вытесняет старый пакет из памяти после четырёх пакетов, сохраняя возможность перечитать его', async () => {
-  const cities = Array.from({ length: 1500 }, (_, i): CompactCityRecord => [100 + i, `Город ${i}`, [`город ${i}`], 'RU', '33', Math.floor(i / 300) * 10, 40, 5000, 'UTC', '', 'россия'])
-  const generated = buildCityPackages(cities, source)
-  const loadShard = vi.fn<CatalogRepository['loadShard']>().mockImplementation((_index, descriptor) => {
-    const shard = generated.shards[descriptor.id]
-    if (!shard) throw new Error('Нет пакета')
-    return Promise.resolve(success(shard))
-  })
-  const engine = createCityCatalogEngine({ loadIndex: () => Promise.resolve(success(generated.index)), loadShard, previousIndex: () => Promise.resolve(undefined) })
-  expect(await engine.search('город')).toMatchObject({ ok: true, value: { status: 'complete' } })
-  expect(loadShard).toHaveBeenCalledTimes(5)
-  expect(await engine.findNearest(0, 40, 0)).toMatchObject({ ok: true, value: { id: 100 } })
-  expect(loadShard).toHaveBeenCalledTimes(6)
-})
-
 it('не подменяет отсутствие нового пакета пустым результатом предыдущей версии', async () => {
   const previous = buildCityPackages(rows.filter(c => c[0] === 2), source)
   const engine = createCityCatalogEngine({

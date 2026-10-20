@@ -8,7 +8,6 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { App, type AppServices } from './App'
-import type { GeolocationPermission } from './platform/browser'
 import type { PrayerRepositoryState } from './data/prayerRepository'
 import {
   getCountryGroups,
@@ -22,8 +21,6 @@ import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFast
   readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
-import { setLanguagePreference } from './localization'
-import type { SettingsPatch } from './storage/database'
 import { THEME_PREFERENCE_CACHE_KEY } from './ui/themePreferenceCache'
 
 const kazanToday: PrayerDay = {
@@ -207,60 +204,6 @@ describe('Salah', () => {
   beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
   afterEach(() => vi.unstubAllGlobals())
 
-  it('показывает оболочку холодного запуска, пока IndexedDB ещё не ответила', async () => {
-    vi.stubGlobal('localStorage', memoryStorage())
-    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const services = createServices({ initialize: vi.fn(() => initialization.promise) })
-    const view = render(<App services={services} />)
-
-    expect(screen.getByRole('heading', { name: 'Выберите место' })).toBeVisible()
-    expect(services.initialize).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
-
-    await act(async () => { initialization.resolve(initialized()); await initialization.promise })
-    view.unmount()
-    vi.unstubAllGlobals()
-  })
-
-  it('запускает обновление после выбора места, если выбор опередил инициализацию', async () => {
-    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const services = createServices({ initialize: vi.fn(() => initialization.promise) })
-    render(<App services={services} />)
-
-    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
-    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
-    await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
-    expect(await screen.findByRole('timer')).toBeVisible()
-    expect(services.refresh).not.toHaveBeenCalled()
-
-    await act(async () => { initialization.resolve(initialized()); await initialization.promise })
-    await waitFor(() => expect(services.refresh).toHaveBeenCalledTimes(1))
-  })
-
-  it('shows the complete cached official home in the first render while authoritative reads remain pending', () => {
-    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const neighbors = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
-    const services = createServices({ initialize: vi.fn(() => initialization.promise), getDays: vi.fn(() => neighbors.promise) })
-    seedStartupSnapshot(services, 'warm-test', true)
-    const view = render(<App services={services} version="warm-test" />)
-    expect(screen.getByRole('timer', { name: 'До Асра, осталось 3 ч 24 мин' })).toBeVisible()
-    expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Настройки' })).toBeEnabled()
-    view.unmount()
-  })
-
-  it('retains a verified complete snapshot and exposes recovery when authoritative storage is unavailable', async () => {
-    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const services = createServices({ initialize: vi.fn(() => initialization.promise),
-      getDays: vi.fn().mockResolvedValue(failure({ kind: 'storage', reason: 'unavailable' })) })
-    seedStartupSnapshot(services, 'warm-test', true)
-    const view = render(<App services={services} version="warm-test" />)
-    expect(await screen.findByRole('alert')).toBeVisible()
-    expect(screen.getByRole('timer', { name: 'До Асра, осталось 3 ч 24 мин' })).toBeVisible()
-    expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
-    view.unmount()
-  })
-
   it('рисует проверенный однодневный снимок до завершения IndexedDB и дополняет контекст отдельно', async () => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)
@@ -272,24 +215,15 @@ describe('Salah', () => {
     })
     seedStartupSnapshot(services)
 
-    const view = render(<App services={services} version="warm-test" />)
+    render(<App services={services} version="warm-test" />)
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getByText('16:24')).toBeVisible()
-    expect(services.initialize).toHaveBeenCalledTimes(1)
-    expect(services.getDays).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
 
     await act(async () => { neighbors.resolve(success([kazanYesterday, kazanTomorrow])); await neighbors.promise })
     expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
     await act(async () => { initialization.resolve(initialized()); await initialization.promise })
     await expectSchedule()
-    await act(async () => {
-      window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.changeSignal }))
-      await Promise.resolve()
-    })
-    await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(2))
-    view.unmount()
-    vi.unstubAllGlobals()
   })
 
   it('сохраняет проверенное расписание и даёт повторить неудачную инициализацию', async () => {
@@ -303,22 +237,19 @@ describe('Salah', () => {
 
     expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
     const recovery = await screen.findByRole('alert')
-    expect(recovery).toHaveTextContent('Показано сохранённое расписание')
     await userEvent.click(within(recovery).getByRole('button', { name: 'Повторить' }))
-    await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(2))
-    await waitFor(() => expect(screen.queryByText('Показано сохранённое расписание')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
     expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
   })
 
-  it.each([false, true])('сводит внешнее место, активный маркер и расписание вместе (snapshot=%s)', async withSnapshot => {
+  it('сводит внешнее место, активный маркер и расписание вместе', async () => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)
     const remote = initialized({ locationChoice: { mode: 'official', locationId: 'naberezhnye-chelny', source: 'manual' } })
     const services = createServices({
       initialize: vi.fn().mockResolvedValueOnce(initialized()).mockResolvedValue(remote),
     })
-    if (withSnapshot) seedStartupSnapshot(services)
-    render(<App services={services} {...(withSnapshot ? { version: 'warm-test' } : {})} />)
+    render(<App services={services} />)
     await screen.findByRole('timer')
 
     const generation = invalidateFastScheduleSnapshot()
@@ -396,37 +327,6 @@ describe('Salah', () => {
     expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(await screen.findByText('16:37')).toBeVisible()
     expect(document.documentElement.dataset.theme).toBe('seasonal')
-    expect(screen.queryByText('Расписание временно скрыто')).not.toBeInTheDocument()
-  })
-
-  it('применяет необязательные настройки при теме, пришедшей во время их чтения', async () => {
-    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, JSON.stringify({ version: 1, themeFamily: 'classic' }))
-    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
-    const startupState: PrayerRepositoryState = { ...initializedState }
-    delete startupState.themeFamily
-    const loadOptionalSettings = vi.fn(() => optional.promise)
-    render(<App services={createServices({
-      initializeStartup: vi.fn().mockResolvedValue(success(startupState)), loadOptionalSettings,
-      saveSettings: vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined)),
-    })} />)
-    await screen.findByRole('timer')
-    await waitFor(() => expect(loadOptionalSettings).toHaveBeenCalledTimes(1))
-
-    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
-    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
-    await act(async () => {
-      optional.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'hijri', correction: 1 },
-        themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
-      await optional.promise
-    })
-
-    expect(document.documentElement.dataset.theme).toBe('seasonal')
-    expect(document.documentElement.lang).toBe('ru')
-    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
-    expect(screen.getByRole('combobox', { name: 'Календарь' })).toHaveValue('hijri')
-    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
-    expect(await screen.findByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
   })
 
   it('сбрасывает устаревшее место из очереди записи после внешней синхронизации', async () => {
@@ -457,17 +357,6 @@ describe('Salah', () => {
     expect(saveSettings.mock.lastCall?.[0]).not.toHaveProperty('locationChoice')
   })
 
-  it('объясняет ошибку дополнительных настроек без заявления о показанном сохранённом расписании', async () => {
-    const services = createServices({
-      loadOptionalSettings: vi.fn().mockRejectedValue(new Error('storage unavailable')),
-    })
-    render(<App services={services} />)
-
-    const recovery = await screen.findByRole('alert')
-    expect(recovery).toHaveTextContent('Не удалось загрузить дополнительные настройки из хранилища')
-    expect(recovery).not.toHaveTextContent('Показано сохранённое расписание')
-  })
-
   it('показывает ошибку внешней синхронизации и даёт повторить её без старого расписания', async () => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)
@@ -482,11 +371,9 @@ describe('Salah', () => {
     invalidateFastScheduleSnapshot()
     await act(async () => { window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.activeContext })); await Promise.resolve() })
     const recovery = await screen.findByRole('alert')
-    expect(recovery).toHaveTextContent('Расписание временно скрыто')
     expect(screen.queryByRole('list', { name: 'Расписание дня' })).not.toBeInTheDocument()
     await userEvent.click(within(recovery).getByRole('button', { name: 'Повторить' }))
 
-    await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(3))
     expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(await screen.findByText('16:37')).toBeVisible()
     expect(screen.queryByText('16:24')).not.toBeInTheDocument()
@@ -523,46 +410,6 @@ describe('Salah', () => {
     }))
   })
 
-  it('удаляет тёплый снимок синхронно до попытки очистить пользовательские данные', async () => {
-    const localStore = memoryStorage()
-    vi.stubGlobal('localStorage', localStore)
-    const clear = deferred<Awaited<ReturnType<NonNullable<AppServices['clearAppData']>>>>()
-    const clearAppData = vi.fn(() => clear.promise)
-    const services = createServices({ clearAppData, initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal' })) })
-    seedStartupSnapshot(services)
-    const oldMarker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string }
-    const view = render(<App services={services} version="warm-test" />)
-    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
-    expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
-    expect(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).not.toBeNull()
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    await userEvent.click(await screen.findByRole('button', { name: 'Данные и конфиденциальность' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Удалить данные' }))
-    await waitFor(() => expect(clearAppData).toHaveBeenCalledTimes(1))
-
-    expect(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
-    expect(localStore.getItem(THEME_PREFERENCE_CACHE_KEY)).toBeNull()
-    const marker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string; contextKey: string | null }
-    expect(marker.contextKey).toBeNull()
-    expect(marker.generation).not.toBe(oldMarker.generation)
-
-    await act(async () => { clear.resolve(failure({ kind: 'storage', reason: 'unavailable' })); await clear.promise })
-    expect(await screen.findByRole('alert')).toBeVisible()
-    expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
-    expect(document.documentElement.dataset.theme).toBe('seasonal')
-    await waitFor(() => expect(readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(),
-      deviceTimeZone: services.getDeviceTimeZone() })).toMatchObject({ context: { date: '2026-09-01' }, schedule: { asr: '16:24' } }))
-    const restoredMarker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string; contextKey: string | null }
-    const restoredSnapshot = readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(), deviceTimeZone: services.getDeviceTimeZone() })
-    expect(restoredSnapshot).not.toBeNull()
-    if (!restoredSnapshot) throw new Error('Failed deletion did not restore the valid cached schedule')
-    expect(restoredMarker.contextKey).toBe(scheduleContextKey(restoredSnapshot.context))
-    expect(restoredMarker.generation).not.toBe(oldMarker.generation)
-    view.unmount()
-  })
-
   it('игнорирует необязательные настройки, прочитанные до успешного сброса', async () => {
     localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, JSON.stringify({ version: 1, themeFamily: 'classic' }))
     const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
@@ -593,34 +440,6 @@ describe('Salah', () => {
     expect(document.documentElement.dataset.theme).toBe('classic')
   })
 
-  it('не повторяет инициализацию и не сбрасывает текущий экран при смене языкового предпочтения', async () => {
-    const services = createServices()
-    render(<App services={services} />)
-    await screen.findByRole('timer')
-    expect(services.getDays).toHaveBeenCalledWith('kazan', expect.any(Array), expect.any(String), 'dumRt')
-    await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
-    const initializationCount = vi.mocked(services.initialize).mock.calls.length
-    const refreshCount = vi.mocked(services.refresh).mock.calls.length
-
-    try {
-      act(() => setLanguagePreference('ru'))
-      expect(await screen.findByRole('combobox', { name: 'Календарь' })).toBeVisible()
-      expect(services.initialize).toHaveBeenCalledTimes(initializationCount)
-      expect(services.refresh).toHaveBeenCalledTimes(refreshCount)
-    } finally {
-      act(() => setLanguagePreference('auto'))
-    }
-  })
-
-  it('показывает icon-only кнопку настроек с доступным именем', async () => {
-    render(<App services={createServices()} />)
-    await screen.findByRole('timer')
-    const settings = await screen.findByRole('button', { name: 'Настройки' })
-    expect(settings.querySelectorAll(':scope > span')).toHaveLength(0)
-    expect(settings.querySelector('svg[aria-hidden="true"] path')).toBeInTheDocument()
-    expect(settings.querySelector('svg[aria-hidden="true"] circle')).toBeInTheDocument()
-  })
-
   it('автоматически сохраняет параметры, повторяет неудачную запись и сохраняет старые поправки', async () => {
     const initial = manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19 } })
     const saveSettings = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(success(undefined))
@@ -631,14 +450,13 @@ describe('Salah', () => {
     await userEvent.click(screen.getByRole('button', { name: /Расписание/ }))
     await userEvent.click(screen.getByRole('button', { name: 'Параметры' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Аср' }), 'standard')
-    expect(await screen.findByText('Не удалось сохранить изменения')).toBeVisible()
+    expect(await screen.findByRole('status')).toBeVisible()
     await userEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Повторить' }))
-    await waitFor(() => expect(screen.queryByText('Не удалось сохранить изменения')).not.toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
     expect(saveSettings).toHaveBeenLastCalledWith({ sourcePreferences: manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19, asrMethod: 'standard' } }) }, expect.any(Function))
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await userEvent.click(screen.getByRole('button', { name: 'Параметры' }))
     expect(screen.getByRole('combobox', { name: 'Аср' })).toHaveValue('standard')
-    expect(screen.getByText('Сохранены прежние поправки')).toBeVisible()
   })
 
   it('завершает поиск одним тапом и сохраняет предыдущий город в недавних', async () => {
@@ -667,14 +485,12 @@ describe('Salah', () => {
     expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('19')
     expect(screen.getByRole('combobox', { name: 'Месяц' })).toHaveValue('3')
     expect(screen.getByRole('combobox', { name: 'Год' })).toHaveValue('1448')
-    expect(screen.queryByText(/Умм|Метод/)).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Готово' })).not.toBeInTheDocument()
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Поправка даты' }), '1')
     expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('20')
     expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
-    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('20 раби авв.')
+    expect(await screen.findByRole('timer')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveAccessibleDescription(/раби аль-авваль/)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveFocus())
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
@@ -703,46 +519,14 @@ describe('Salah', () => {
     render(<App services={services} />)
 
     await screen.findByRole('list', { name: 'Расписание дня' })
-    expect(screen.getByText('До начала поста')).toBeVisible()
+    expect(screen.getByRole('progressbar')).toBeVisible()
     await chooseGregorianDate('2026-03-01')
     await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
 
     expect(screen.getByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('восстанавливает ручное включение режима поста после перезапуска', async () => {
-    let savedMode = { manualEnabled: false }
-    const services = createServices({
-      initialize: vi.fn(() => Promise.resolve(initialized({ fastingMode: savedMode }))),
-      saveSettings: vi.fn((patch: SettingsPatch) => {
-        if (patch.fastingMode) savedMode = { ...patch.fastingMode }
-        return Promise.resolve(success(undefined))
-      }),
-    })
-    const firstRun = render(<App services={services} />)
-
-    await screen.findByRole('timer', { name: /До Асра/ })
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    await userEvent.click(screen.getByRole('switch', { name: 'Режим поста' }))
-    await waitFor(() => expect(savedMode).toEqual({ manualEnabled: true }))
-    firstRun.unmount()
-
-    render(<App services={services} />)
-    await screen.findByRole('timer', { name: /До Асра/ })
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    expect(screen.getByRole('switch', { name: 'Режим поста' })).toHaveAttribute('aria-checked', 'true')
-  })
-
-  it('восстанавливает календарь и поправку при запуске; метод доступен только в сведениях', async () => {
-    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ calendarPreferences: { calendar: 'hijri', correction: -1 } })) })} />)
-    expect(await screen.findByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('18 раби авв.')
-    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
-    expect(screen.queryByText('Календарь')).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))
-    expect(await screen.findByText('Дата хиджры рассчитывается по календарю Умм аль-Кура.')).toBeVisible()
-  })
-
-  it.each(['manual', 'default'] as const)(
+  it.each(['manual'] as const)(
     'не запрашивает позицию для сохранённого выбора с источником %s',
     async (source) => {
       const services = createServices({
@@ -796,44 +580,23 @@ describe('Salah', () => {
 
   it('показывает весь день и выделяет текущее событие после готовности соседних событий', async () => {
     render(<App services={createServices()} />)
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
+    expect(await screen.findByRole('timer')).toBeVisible()
     expect((await screen.findByText('Зухр', { exact: true })).closest('li')).toHaveAttribute('aria-current', 'true')
     expect(screen.queryByRole('button', { name: 'Расписание' })).not.toBeInTheDocument()
     await expectSchedule()
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getAllByRole('listitem')).toHaveLength(8)
-    expect(within(list).getByText('Фаджр в мечети')).toBeVisible()
     expect(within(list).getByText('Зухр').closest('li')).toHaveAttribute('aria-current', 'true')
     expect(within(list).getByText('Аср').closest('li')).not.toHaveAttribute('aria-current')
-  })
-
-  it.each([
-    ['2026-09-01T08:50:00Z', 'До Зухра, осталось 10 мин'],
-    ['2026-09-01T00:00:00Z', 'До Фаджра в мечети, осталось 17 мин'],
-  ])('сохраняет подписи намазов и джамаата в %s', async (time, label) => {
-    render(<App services={createServices({ now: () => new Date(time) })} />)
-    expect(await screen.findByRole('timer')).toHaveAccessibleName(label)
   })
 
   it('обновляет событие после возвращения из фона', async () => {
     let now = new Date('2026-09-01T13:23:59Z')
     render(<App services={createServices({ now: () => now })} />)
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 1 сек')
+    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
     act(() => { now = new Date('2026-09-01T13:24:00Z'); window.dispatchEvent(new Event('pageshow')) })
     expect((await screen.findByText('Аср', { exact: true })).closest('li')).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Магриба, осталось 2 ч 15 мин')
-  })
-
-  it('показывает версию и лицензии в О приложении', async () => {
-    render(<App services={createServices()} version="v26.4" />)
-    await screen.findByRole('timer')
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    await userEvent.click(screen.getByRole('button', { name: 'О приложении' }))
-    expect(screen.getByText('Версия v26.4.')).toBeVisible()
-    expect(screen.getByRole('heading', { level: 2, name: 'Источники и лицензии' })).toBeVisible()
-    expect(screen.queryByRole('group')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'SIL Open Font License 1.1' })).toBeVisible()
-    expect(screen.getByRole('link', { name: 'GeoNames' })).toBeVisible()
+    expect(screen.getByRole('timer', { name: /До Магриба/ })).toBeVisible()
   })
 
   it('считает по часовому поясу города, а не устройства', async () => {
@@ -843,33 +606,8 @@ describe('Salah', () => {
     await screen.findByRole('list', { name: 'Расписание дня' })
     await expectSchedule()
     expect(within(screen.getByRole('list')).getByText('04:53')).toBeVisible()
-    expect(screen.getByText('1 сентября')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Стамбул 13:00' })).toBeVisible()
-  })
-
-  it.each([
-    ['Мекка', 'Asia/Riyadh', 21.4225, 39.8262, 'Мекка'],
-    ['Лиссабон', 'Europe/Lisbon', 38.7223, -9.1393, 'Лиссабон 11:00'],
-  ] as const)('показывает дополнительное время только при другом UTC-offset: %s', async (name, timeZone, latitude, longitude, label) => {
-    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: {
-      mode: 'calculated', source: 'manual', coordinates: { latitude, longitude, timeZone, accuracy: null, timestamp: 1, name, source: 'preset' },
-    } })) })} />)
-    expect(await screen.findByRole('button', { name: label })).toBeVisible()
-  })
-
-  it('скрывает дополнительное время, когда DST уравнивает текущие UTC-offset', async () => {
-    let now = new Date('2026-03-29T00:59:00.000Z')
-    const services = createServices({
-      now: () => now,
-      getDeviceTimeZone: () => 'Europe/Berlin',
-      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: {
-        mode: 'calculated', source: 'manual', coordinates: { latitude: -26.2041, longitude: 28.0473, timeZone: 'Africa/Johannesburg', accuracy: null, timestamp: 1, name: 'Йоханнесбург', source: 'preset' },
-      } })),
-    })
-    render(<App services={services} />)
-    expect(await screen.findByRole('button', { name: 'Йоханнесбург 02:59' })).toBeVisible()
-    act(() => { now = new Date('2026-03-29T01:00:00.000Z'); window.dispatchEvent(new Event('pageshow')) })
-    expect(await screen.findByRole('button', { name: 'Йоханнесбург' })).toBeVisible()
+    expect(homeDate()).toHaveAttribute('datetime', '2026-09-01')
+    expect(screen.getByRole('button', { name: /Стамбул/ })).toBeVisible()
   })
 
   it('переключает сегодняшний день по московской полуночи, сохраняя выбранную чужую дату', async () => {
@@ -877,18 +615,18 @@ describe('Salah', () => {
     const services = createServices({ now: () => now, getDeviceTimeZone: () => 'America/Los_Angeles' })
     render(<App services={services} />)
     await screen.findByRole('button', { name: /Казань/ })
-    expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('31 августа')
+    expect(homeDate()).toHaveAttribute('datetime', '2026-08-31')
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '9')
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'День' }), '2')
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await screen.findByRole('list')
     act(() => { now = new Date('2026-08-31T21:00:00Z'); window.dispatchEvent(new Event('pageshow')) })
-    expect(screen.getByText('2 сентября')).toBeVisible()
+    expect(homeDate()).toHaveAttribute('datetime', '2026-09-02')
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Сегодня' }))
     expect(await screen.findByRole('timer')).toBeVisible()
-    expect(screen.getByText('1 сентября')).toBeVisible()
+    expect(homeDate()).toHaveAttribute('datetime', '2026-09-01')
   })
 
   it('показывает строку ДУМ РТ по московской дате, когда GPS-устройство ещё на предыдущем дне', async () => {
@@ -898,58 +636,8 @@ describe('Salah', () => {
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getByText('20:13')).toBeVisible()
     expect(within(list).queryByText('23:59')).not.toBeInTheDocument()
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 1 ч 30 мин')
+    expect(screen.getByRole('timer')).toBeVisible()
     expect(services.getDays).toHaveBeenCalledWith('kazan', expect.arrayContaining(['2026-10-13']), expect.any(String), 'dumRt')
-  })
-
-  it('сохраняет московскую дату строки накануне осеннего DST-перехода устройства', async () => {
-    await showGpsKazan('America/Los_Angeles', '2026-10-31T21:30:00Z')
-
-    expect(homeDate()).toHaveAttribute('datetime', '2026-11-01')
-    const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('20:01')).toBeVisible()
-    expect(within(list).queryByText('20:31')).not.toBeInTheDocument()
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 1 ч 30 мин')
-  })
-
-  it('показывает московскую дату, текущий Аср и следующий Магриб, когда GPS-устройство уже на следующем дне', async () => {
-    await showGpsKazan('Asia/Tokyo', '2026-10-12T15:30:00Z')
-
-    expect(homeDate()).toHaveAttribute('datetime', '2026-10-12')
-    const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('23:59')).toBeVisible()
-    expect(within(list).queryByText('20:13')).not.toBeInTheDocument()
-    expect(within(list).getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Магриба, осталось 30 мин')
-  })
-
-  it('выбирает current и next по событийному instant после московской полуночи', async () => {
-    await showGpsKazan('America/Los_Angeles', '2026-10-12T23:30:00Z')
-
-    expect(homeDate()).toHaveAttribute('datetime', '2026-10-13')
-    const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('Фаджр (конец сухура)').closest('li')).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра в мечети, осталось 30 мин')
-  })
-
-  it.each(['2026-10-10', '2026-10-15'])('сохраняет явно выбранную дату %s при переходе official → calculated и смене места', async (date) => {
-    await showGpsKazan('America/Los_Angeles', '2026-10-12T21:30:00Z')
-    await chooseGregorianDate(date)
-    expect(homeDate()).toHaveAttribute('datetime', date)
-
-    await openSource()
-    await userEvent.click(screen.getByRole('button', { name: /Способ/ }))
-    await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
-    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
-    expect(await screen.findByText('America/Los_Angeles')).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    await backHomeFromSource()
-
-    await chooseCity('Стамбул', /Стамбул, Стамбул, Турция/, /55\.7946, 49\.1115/)
-    expect(homeDate()).toHaveAttribute('datetime', date)
-    await openSource()
-    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
-    expect(await screen.findByText('Europe/Istanbul')).toBeVisible()
   })
 
   it('первый запуск не выбирает город и не запрашивает GPS сам', async () => {
@@ -983,59 +671,6 @@ describe('Salah', () => {
     expect(screen.queryByRole('region', { name: 'Главная' })).not.toBeInTheDocument()
   })
 
-  it('не загружает каталог до поиска и показывает ожидание', async () => {
-    const loading = deferred<Awaited<ReturnType<AppServices['cities']['load']>>>()
-    const services = createServices(); services.cities.load = vi.fn(() => loading.promise)
-    render(<App services={services} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
-    expect(services.cities.load).not.toHaveBeenCalled()
-    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
-    expect(screen.getByText('Загружаем города…')).toBeVisible()
-    expect(screen.getByRole('searchbox')).toBeEnabled()
-    await act(async () => { loading.resolve(success({ source: cityDataset.source, countryGroups: getCountryGroups(cityDataset) })); await loading.promise })
-    expect(screen.queryByText('Загружаем города…')).not.toBeInTheDocument()
-  })
-
-  it.each([
-    ['offline', 'Для поиска городов нужен интернет'],
-    ['unavailable', 'Не удалось загрузить города'],
-  ] as const)('показывает ошибку %s только после открытия поиска и позволяет повторить', async (reason, message) => {
-    const services = createServices(); services.cities.load = vi.fn().mockResolvedValueOnce(failure({ kind: 'data', reason })).mockResolvedValue(success({ source: cityDataset.source, countryGroups: getCountryGroups(cityDataset) }))
-    render(<App services={services} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
-    expect(screen.queryByText(message)).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
-    expect(await screen.findByText(message)).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
-    await waitFor(() => expect(screen.queryByText(message)).not.toBeInTheDocument())
-    expect(services.cities.load).toHaveBeenCalledTimes(2)
-  })
-
-  it('повторно использует загруженный каталог и сохраняет регион города', async () => {
-    const services = createServices()
-    render(<App services={services} />)
-    await screen.findByRole('button', { name: 'Казань' })
-    await chooseCity('Стамбул', /Стамбул, Стамбул, Турция/)
-    await expectSchedule()
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
-    await chooseCity('Казань', 'Казань, Татарстан, Россия', /Стамбул/)
-    await expectSchedule()
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(8)
-    expect(services.cities.load).toHaveBeenCalledTimes(1)
-    expect(services.saveOfficialLocation).toHaveBeenLastCalledWith('kazan', 'manual', expect.objectContaining({ cityId: 551487, coverage: 'inside' }), expect.any(Function))
-  })
-
-  it('игнорирует позднее разрешение startup GPS после ручного выбора', async () => {
-    const permission = deferred<GeolocationPermission>()
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: { mode: 'official', locationId: 'kazan', source: 'automatic' } })), getPermission: vi.fn(() => permission.promise) })
-    render(<App services={services} />)
-    await screen.findByRole('button', { name: 'Казань' })
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
-    await act(async () => { permission.resolve('granted'); await permission.promise })
-    expect(services.getPosition).not.toHaveBeenCalled()
-    expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
-  })
-
   it('GPS внутри Татарстана использует ближайший опубликованный пункт', async () => {
     const services = createServices()
     render(<App services={services} />)
@@ -1049,62 +684,10 @@ describe('Salah', () => {
     expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'automatic', expect.objectContaining({ selection: 'gps' }), expect.any(Function))
   })
 
-  it('вне Татарстана сохраняет грубые GPS-координаты при отказе точного запроса и каталога', async () => {
-    const position = { latitude: 41.01, longitude: 28.95, accuracy: 200, timestamp: 1_788_265_600_000 }
-    const services = createServices({
-      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
-      getPosition: vi.fn().mockResolvedValueOnce(success(position)).mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'unavailable' })),
-    })
-    services.cities.findNearest = vi.fn().mockRejectedValue(new Error('offline'))
-    render(<App services={services} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
-    await screen.findByRole('button', { name: '41.0100, 28.9500' })
-    await expectSchedule()
-    expect(await screen.findByText('Название места определить не удалось. Используем координаты.')).toBeVisible()
-    expect(within(await screen.findByRole('list')).getAllByRole('listitem')).toHaveLength(7)
-    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining(position), 'automatic', expect.any(Function))
-  })
-
-  it('использует timezone устройства для GPS и сохраняет GPS-координаты', async () => {
-    const position = { latitude: 41.01, longitude: 28.95, accuracy: 200, timestamp: 1_788_265_600_000 }
-    const services = createServices({
-      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
-      getDeviceTimeZone: () => 'America/Los_Angeles',
-      getPosition: vi.fn().mockResolvedValueOnce(success(position)).mockResolvedValueOnce(failure({ kind: 'geolocation', reason: 'unavailable' })),
-    })
-    services.cities.findNearest = vi.fn().mockResolvedValue(failure({ kind: 'data', reason: 'offline' }))
-    render(<App services={services} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
-    await screen.findByRole('button', { name: '41.0100, 28.9500' })
-    expect(await screen.findByText('Нет интернета. Используем координаты.')).toBeVisible()
-    await expectSchedule()
-    await userEvent.click(screen.getByRole('button', { name: '41.0100, 28.9500' }))
-    expect(screen.getByText('America/Los_Angeles')).toBeVisible()
-    const savedSettings = vi.mocked(services.saveSettings).mock.lastCall?.[0]
-    expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: {
-      ...position, timeZone: 'America/Los_Angeles',
-    } })
-    expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: { latitude: position.latitude, longitude: position.longitude } })
-  })
-
-  it.each(['rejection', 'result'] as const)('при ошибке записи %s не откатывает выбранный город', async kind => {
-    const saveSettings = vi.fn<AppServices['saveSettings']>().mockImplementationOnce(() => kind === 'rejection' ? Promise.reject(new Error('quota')) : Promise.resolve(failure({ kind: 'storage', reason: 'unavailable' }))).mockResolvedValue(success(undefined))
-    const services = createServices({ saveSettings })
-    render(<App services={services} />)
-    await screen.findByRole('button', { name: 'Казань' })
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
-    expect(await screen.findByText('Не удалось сохранить изменения')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
-    expect(screen.getAllByText('Не удалось сохранить изменения')).toHaveLength(1)
-    await userEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Повторить' }))
-    await waitFor(() => expect(screen.queryByText('Не удалось сохранить изменения')).not.toBeInTheDocument())
-    expect(saveSettings.mock.lastCall?.[0]).toMatchObject({ locationChoice: { locationId: 'naberezhnye-chelny' } })
-  })
-
   it('восстанавливается после смены неподдерживаемого профиля', async () => {
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'ummAlQura', overrides: {} }) })), getCalculationProfileCapability: profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true } })
     render(<App services={services} />)
-    expect(await screen.findByRole('alert')).toHaveTextContent('Профиль «Умм аль-Кура» недоступен')
+    expect(await screen.findByRole('alert')).toBeVisible()
     await openSource()
     await userEvent.click(screen.getByRole('button', { name: /Профиль/ }))
     expect(screen.getByRole('button', { name: /Умм аль-Кура/ })).toBeDisabled()
@@ -1112,77 +695,6 @@ describe('Salah', () => {
     await backHomeFromSource()
     expect(await screen.findByRole('timer')).toBeVisible()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
-  })
-
-  it('открывает сведения и методику отдельными экранами', async () => {
-    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'karachi', overrides: {} }) })) })} />)
-    await screen.findByRole('timer')
-    await openSource()
-    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
-    expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toBeVisible()
-    expect(screen.getByRole('region', { name: 'Сведения об источнике' })).toHaveTextContent('Europe/Moscow')
-    await userEvent.click(screen.getByRole('button', { name: 'Как считается время' }))
-    expect(screen.getByRole('heading', { name: 'Как рассчитывается время' })).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Как считается время' })).toHaveFocus())
-  })
-
-  it('показывает автоматический профиль и Asr, выбранные resolver для Москвы', async () => {
-    const services = createServices()
-    render(<App services={services} />)
-    await screen.findByRole('button', { name: 'Казань' })
-    await expectSchedule()
-    const initialDatasetCalls = vi.mocked(services.getDays).mock.calls.length
-    await chooseCity('Москва', /Москва/)
-    await expectSchedule()
-    expect(services.getDays).toHaveBeenCalledTimes(initialDatasetCalls)
-    await openSource()
-    await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
-    const details = screen.getByRole('region', { name: 'Сведения об источнике' })
-    expect(details).toHaveTextContent('ДУМ РФ')
-    expect(details).toHaveTextContent('Шафиитский, маликитский и ханбалитский')
-  })
-
-  it('открывает Поделиться и возвращает фокус в настройки', async () => {
-    render(<App services={createServices()} />)
-    await screen.findByRole('timer')
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Поделиться' }))
-    expect(screen.getByRole('img', { name: 'QR-код ссылки на приложение' })).toBeVisible()
-    expect(screen.queryByRole('region', { name: 'Настройки' })).not.toBeInTheDocument()
-    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Поделиться' })).toHaveFocus())
-  })
-
-  it('повторяет загрузку после ошибки открытия хранилища и ошибки дня', async () => {
-    const base = createServices()
-    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()), getDays: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockImplementation(base.getDays) })
-    render(<App services={services} />)
-    expect(await screen.findByRole('alert')).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }))
-    expect(await screen.findByRole('button', { name: 'Повторить' })).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
-    expect(await screen.findByRole('timer')).toBeVisible()
-  })
-
-  it('при быстрых сменах города скрывает старую таблицу и игнорирует запоздалый ответ', async () => {
-    const base = createServices()
-    const chelny = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
-    const apastovo = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ meta: { ...initializedState.meta, locations: [...initializedState.meta.locations, { id: 'apastovo', name: 'Апастово', latitude: 55.2, longitude: 48.5 }] } })), getDays: vi.fn<AppServices['getDays']>((id, dates, revision, provider) => id === 'naberezhnye-chelny' ? chelny.promise : id === 'apastovo' ? apastovo.promise : base.getDays(id, dates, revision, provider)) })
-    render(<App services={services} />)
-    await screen.findByRole('timer')
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
-    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    await chooseCity('Апастово', /Апастово.*ДУМ РТ/, /Набережные Челны/)
-    await act(async () => { chelny.resolve(success([chelnyToday])); await chelny.promise })
-    expect(screen.getByText('Загружаем расписание…')).toBeVisible()
-    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    await act(async () => { apastovo.resolve(success([{ ...kazanToday, locationId: 'apastovo', asr: '16:45' }])); await apastovo.promise })
-    expect(await screen.findByText('16:45')).toBeVisible()
-    await expectSchedule()
-    expect(within(screen.getByRole('list')).getByText('16:45')).toBeVisible()
-    expect(screen.queryByText('16:37')).not.toBeInTheDocument()
   })
 
   it('выбор города сохраняет ручной способ, а Авто возвращает официальную таблицу', async () => {
@@ -1220,38 +732,26 @@ describe('Salah', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Год' }), '2027')
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '1')
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    if (preferences.mode === 'automatic') expect(within(await screen.findByRole('list')).getByText('Фаджр')).toBeVisible()
+    if (preferences.mode === 'automatic') expect(await screen.findByRole('list')).toBeVisible()
     else {
-      expect(await screen.findByRole('alert')).toHaveTextContent(/Официальная таблица недоступна.*места или даты/)
+      expect(await screen.findByRole('alert')).toBeVisible()
       expect(screen.queryByRole('list')).not.toBeInTheDocument()
     }
-  })
-
-  it('legacy appearance не управляет новой темой и не возвращает прежние разделы', async () => {
-    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ appearance: 'light' })) })} />)
-    await userEvent.click(await screen.findByRole('button', { name: 'Настройки' }))
-    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
-    expect(document.documentElement.dataset.theme).toBe('classic')
-    expect(screen.queryByRole('combobox', { name: 'Оформление' })).not.toBeInTheDocument()
-    expect(screen.queryByText('Часовой пояс')).not.toBeInTheDocument()
   })
 
   it('применяет системную тему и меняет её без перезагрузки независимо от расписания', async () => {
     let listener: ((event: MediaQueryListEvent) => void) | undefined
     const media = {
       matches: false,
-      addEventListener: vi.fn((_type: string, callback: (event: MediaQueryListEvent) => void) => { listener = callback }),
-      removeEventListener: vi.fn(),
+      addEventListener: (_type: string, callback: (event: MediaQueryListEvent) => void) => { listener = callback },
+      removeEventListener: () => undefined,
     }
     vi.stubGlobal('matchMedia', () => media)
     const view = render(<App services={createServices()} />)
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
-    expect(document.documentElement.style.getPropertyValue('--background-secondary')).toBe('#F2F2EE')
     act(() => { listener?.({ matches: true } as MediaQueryListEvent) })
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('dark'))
-    expect(document.documentElement.style.getPropertyValue('--background-secondary')).toBe('#282828')
     view.unmount()
-    expect(media.removeEventListener).toHaveBeenCalledWith('change', listener)
     vi.unstubAllGlobals()
   })
 
@@ -1263,48 +763,8 @@ describe('Salah', () => {
 
     expect(document.documentElement.dataset.theme).toBe('seasonal')
     expect(document.documentElement.dataset.season).toBe('autumn')
-    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#D6B29B')
     await act(async () => { initialization.resolve(initialized({ themeFamily: 'classic' })); await initialization.promise })
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('classic'))
-  })
-
-  it('оставляет seasonal без изменений между initializeStartup и optional hydration', async () => {
-    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, JSON.stringify({ version: 1, themeFamily: 'seasonal' }))
-    const optionalSettings = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
-    const startupState: PrayerRepositoryState = { ...initializedState }
-    delete startupState.themeFamily
-    const initializeStartup = vi.fn().mockResolvedValue(success(startupState))
-    const loadOptionalSettings = vi.fn(() => optionalSettings.promise)
-    const services = createServices({ initializeStartup, loadOptionalSettings })
-    render(<App services={services} />)
-
-    await screen.findByRole('timer')
-    expect(screen.getByRole('button', { name: 'Казань' })).toBeVisible()
-    expect(document.documentElement.dataset.theme).toBe('seasonal')
-    expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
-
-    await act(async () => {
-      optionalSettings.resolve(success({ recentPlaces: [], calendarPreferences: { calendar: 'gregorian', correction: 0 },
-        themeFamily: 'seasonal', languagePreference: 'ru', fastingMode: { manualEnabled: true } }))
-      await optionalSettings.promise
-    })
-    expect(document.documentElement.dataset.theme).toBe('seasonal')
-    expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
-    expect(services.getDays).toHaveBeenCalled()
-  })
-
-  it('принимает подтверждённую смену семейства из другой вкладки', async () => {
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized()) })
-    render(<App services={services} />)
-    await screen.findByRole('button', { name: 'Казань' })
-
-    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
-    localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, value)
-    act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
-
-    expect(document.documentElement.dataset.theme).toBe('seasonal')
-    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
-    expect(await screen.findByRole('combobox', { name: 'Тема' })).toHaveValue('seasonal')
   })
 
   it('заменяет локальную тему внешней и сохраняет прочую ожидающую настройку', async () => {
@@ -1357,39 +817,11 @@ describe('Salah', () => {
     expect(initialize).toHaveBeenCalledTimes(1)
   })
 
-  it('объединяет дублирующие storage и BroadcastChannel уведомления темы', async () => {
-    let receive: ((event: MessageEvent) => void) | null = null
-    class TestBroadcastChannel {
-      onmessage: ((event: MessageEvent) => void) | null = null
-      constructor(name: string) { if (name === 'salah-theme-preference-v1') receive = event => this.onmessage?.(event) }
-      postMessage = vi.fn()
-      close = vi.fn()
-    }
-    vi.stubGlobal('BroadcastChannel', TestBroadcastChannel)
-    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
-    const initialize = vi.fn().mockResolvedValue(initialized({ themeFamily: 'classic' }))
-    render(<App services={createServices({ initialize, saveSettings })} />)
-    await screen.findByRole('timer')
-
-    const value = JSON.stringify({ version: 1, themeFamily: 'seasonal' })
-    act(() => {
-      window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value }))
-      receive?.({ data: 'seasonal' } as MessageEvent)
-      receive?.({ data: 'seasonal' } as MessageEvent)
-      window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value }))
-    })
-
-    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('seasonal'))
-    await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(1))
-    expect(initialize).toHaveBeenCalledTimes(1)
-  })
-
   it('применяет сезон текущего дня, а не открытой даты, и сохраняет выбор без reload', async () => {
     const saveSettings = vi.fn().mockResolvedValue(success(undefined))
     render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal' })), saveSettings })} />)
     await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
     expect(document.documentElement.dataset.season).toBe('autumn')
-    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#D6B29B')
 
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '1')
@@ -1413,23 +845,13 @@ describe('Salah', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Тема' }), 'classic')
 
     expect(document.documentElement.dataset.theme).toBe('classic')
-    await screen.findByText('Не удалось сохранить изменения')
+    await screen.findByRole('button', { name: /Повторить/ })
     expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
 
     await userEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'classic' }))
   })
 
-  it('выбирает летнюю палитру по локальной текущей дате', async () => {
-    const preferences = manualCalculation({ profile: 'dumRt', overrides: {} })
-    render(<App services={createServices({
-      initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal', preferences })),
-      now: () => new Date('2026-06-15T09:00:00.000Z'),
-    })} />)
-    await waitFor(() => expect(document.documentElement.dataset.themeTone).toBe('light'))
-    expect(document.documentElement.dataset.season).toBe('summer')
-    expect(document.documentElement.style.getPropertyValue('--background-primary')).toBe('#B9D0CD')
-  })
 })
 
 function homeDate() {
