@@ -61,10 +61,15 @@ function findGpsMatch(places: readonly Place[], candidate: Place): Place | undef
 }
 
 function mergeInto(places: Place[], candidate: Place, promote: boolean): Place[] {
+  const stableGpsId = candidate.selection === 'gps' && candidate.id.startsWith('gps:history:')
   const matched = candidate.selection === 'gps'
-    ? places.find(place => place.selection === 'gps' && place.id === candidate.id) ?? findGpsMatch(places, candidate)
+    ? (stableGpsId ? places.find(place => place.selection === 'gps' && place.id === candidate.id) : undefined)
+      ?? findGpsMatch(places, candidate)
     : places.find(place => place.selection === candidate.selection && place.id === candidate.id)
-  const normalized = canonicalPlace({ ...candidate, id: matched?.id ?? (candidate.selection === 'gps' ? gpsIdentity(candidate) : candidate.id) })
+  const generatedId = candidate.selection === 'gps'
+    ? uniqueIdentity(historyIdentity(candidate), new Set(places.map(place => place.id)))
+    : candidate.id
+  const normalized = canonicalPlace({ ...candidate, id: matched?.id ?? generatedId })
   if (!matched) return [normalized, ...places]
   return promote
     ? [normalized, ...places.filter(place => place !== matched)]
@@ -121,7 +126,11 @@ export function updateRecentPlace(recent: Place[], selected: Place, historyId?: 
   const matched = historyId ? recent.find(place => place.id === historyId) : findGpsMatch(recent, selected)
   if (!matched) return recent
   const normalized = canonicalPlace({ ...selected, id: matched.id })
-  return recent.map(place => place === matched ? normalized : place).slice(0, MAX_RECENT_PLACES)
+  return recent.flatMap(place => {
+    if (place === matched) return [normalized]
+    if (place.selection === 'gps' && (place.id === normalized.id || distanceMeters(place, normalized) <= GPS_HISTORY_DEDUPE_METERS)) return []
+    return [place]
+  }).slice(0, MAX_RECENT_PLACES)
 }
 
 export function isSameRecentPlace(a: Place, b: Place): boolean {

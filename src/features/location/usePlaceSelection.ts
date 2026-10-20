@@ -24,6 +24,9 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
   const [nameLookupState, setNameLookupState] = useState<NameLookupState>('idle')
   const current = useRef<Place | null>(initial?.place ?? null)
   const initialPlace = useRef<Place | null>(initial?.place ?? null)
+  const confirmed = useRef<Place | null>(initial?.place ?? null)
+  const confirmedSource = useRef<LocationSelectionSource>(initial?.source ?? 'default')
+  const currentSource = useRef<LocationSelectionSource>(initial?.source ?? 'default')
   const epoch = useRef(0)
   const activeInteractive = useRef<{ operation: number; navigated: boolean; recorded: boolean } | null>(null)
   const started = useRef(false)
@@ -40,12 +43,17 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
   const apply = useCallback((next: Place, selectionSource: LocationSelectionSource, operation: number,
     change: 'automatic' | 'selection' | 'refinement' = 'automatic') => {
     if (operation !== epoch.current) return
-    current.current = next
-    setPlace(next)
-    setSource(selectionSource)
     const pendingInteractiveGps = next.selection === 'gps'
       && activeInteractive.current?.operation === operation
       && !activeInteractive.current.navigated
+    current.current = next
+    currentSource.current = selectionSource
+    setPlace(next)
+    setSource(selectionSource)
+    if (!pendingInteractiveGps || change === 'selection' || change === 'refinement') {
+      confirmed.current = next
+      confirmedSource.current = selectionSource
+    }
     if (pendingInteractiveGps && change === 'automatic') return
     saveChoice(next, selectionSource, change)
   }, [saveChoice])
@@ -66,6 +74,9 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     if (!choice) {
       if (mode === 'external') {
         current.current = null
+        currentSource.current = 'default'
+        confirmed.current = null
+        confirmedSource.current = 'default'
         setPlace(null)
         setSource('default')
       }
@@ -76,6 +87,9 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       ? { mode: 'calculated', coordinates: choice.place, source: choice.source, place: choice.place }
       : choice, availableLocations)
     current.current = saved
+    currentSource.current = choice.source
+    confirmed.current = saved
+    confirmedSource.current = choice.source
     setPlace(saved)
     setSource(choice.source)
     if (mode === 'external') started.current = false
@@ -86,6 +100,8 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     if (!active || active.operation !== operation) return
     if (!active.recorded && current.current?.selection === 'gps') {
       active.recorded = true
+      confirmed.current = current.current
+      confirmedSource.current = currentSource.current
       saveChoice(current.current, 'automatic', 'selection')
     }
     if (active.navigated) return
@@ -259,6 +275,20 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setGpsState({ status: 'ready', lowAccuracy: isLowAccuracy(selected.accuracy) })
     finishInteractive(active.operation)
   }, [finishInteractive])
+  const cancelInteractive = useCallback(() => {
+    const active = activeInteractive.current
+    if (!active || active.operation !== epoch.current || active.navigated) return
+    epoch.current += 1
+    activeInteractive.current = null
+    started.current = true
+    current.current = confirmed.current
+    currentSource.current = confirmedSource.current
+    setPlace(confirmed.current)
+    setSource(confirmedSource.current)
+    setNotice(null)
+    setGpsState({ status: 'idle' })
+    setNameLookupState('idle')
+  }, [])
   const invalidate = useCallback(() => {
     epoch.current += 1
     started.current = true
@@ -266,5 +296,5 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
   }, [])
-  return { place, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, selectOfficial, selectCity, selectRecent, invalidate }
+  return { place, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, cancelInteractive, selectOfficial, selectCity, selectRecent, invalidate }
 }

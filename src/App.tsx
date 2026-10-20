@@ -235,6 +235,7 @@ export function App({
   const recentRef = useRef<Place[]>([])
   const previousPlace = useRef<Place | null>(null)
   const historyAnchorPlace = useRef<Place | null>(null)
+  const legacyHistoryAnchorCaptured = useRef(false)
   const acceptedGpsHistory = useRef<{ runtimeId: string; historyId: string } | null>(null)
   const persistPlace = useCallback((choice: LocationChoice, change: PlacePersistenceChange = 'automatic') => {
     selectionSyncToken.current += 1
@@ -302,19 +303,27 @@ export function App({
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
   const LoadedReligiousEventScreen = religiousEventScreen
 
-  const closeLocationDialog = useCallback(() => {
-    backScreen()
-  }, [backScreen])
   const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
   const { place, source: placeSelectionSource, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
+    cancelInteractive: cancelInteractiveGps,
     selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(
     services, locations, onPlaceChosen, persistPlace,
     startupSnapshot ? { place: startupSnapshot.place, source: startupSnapshot.selectionSource } : undefined,
   )
+  const closeLocationDialog = useCallback(() => {
+    cancelInteractiveGps()
+    backScreen()
+  }, [backScreen, cancelInteractiveGps])
   const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
+  const previousNavigationScreen = useRef(navigation.screen)
+  useEffect(() => {
+    const previous = previousNavigationScreen.current
+    previousNavigationScreen.current = navigation.screen
+    if (previous === 'location' && navigation.screen !== 'location' && navigation.screen !== 'search') cancelInteractiveGps()
+  }, [cancelInteractiveGps, navigation.screen])
   const resetWithFastCache = useCallback(async () => {
     pendingFastIdentityWrite.current = true
     optionalSettingsToken.current += 1
@@ -364,7 +373,13 @@ export function App({
       previousPlace.current = state.locationChoice
         ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
         : null
-      historyAnchorPlace.current = previousPlace.current
+      if (state.recentPlacesMigrated === true) {
+        historyAnchorPlace.current = previousPlace.current
+        legacyHistoryAnchorCaptured.current = true
+      } else if (!legacyHistoryAnchorCaptured.current) {
+        historyAnchorPlace.current = previousPlace.current
+        legacyHistoryAnchorCaptured.current = true
+      }
       setActiveHistoryId(undefined)
       if (selectionMode === 'external') {
         editedPreferences.current = false
@@ -379,7 +394,7 @@ export function App({
       if (!editedRecentPlaces.current && state.recentPlaces !== undefined) {
         const recent = state.recentPlacesMigrated
           ? restoreRecentPlaces(state.recentPlaces)
-          : migrateRecentPlaces(state.recentPlaces, previousPlace.current)
+          : migrateRecentPlaces(state.recentPlaces, historyAnchorPlace.current)
         recentPlacesLoaded.current = true
         recentPlacesMigrationComplete.current = true
         recentRef.current = recent
@@ -423,7 +438,7 @@ export function App({
             : value.recentPlaces
           const recent = value.recentPlacesMigrated
             ? restoreRecentPlaces(source)
-            : migrateRecentPlaces(source, previousPlace.current)
+            : migrateRecentPlaces(source, historyAnchorPlace.current)
           recentPlacesLoaded.current = true
           recentPlacesMigrationComplete.current = true
           recentRef.current = recent

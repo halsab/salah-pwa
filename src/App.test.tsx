@@ -1089,6 +1089,70 @@ describe('Salah', () => {
     expect(saveSettings.mock.calls.some(([patch]) => patch.recentPlaces?.some(place => place.selection === 'gps'))).toBe(false)
   })
 
+  it('отменяет непринятую низкоточную GPS-точку при возврате и восстанавливает прежнее расписание', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+    await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+    await act(async () => { coarse.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 2400, timestamp: 100 })); await Promise.resolve() })
+    await screen.findByText('41.0100, 28.9500')
+    expect(screen.queryByRole('region', { name: 'Главная' })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
+    expect(await screen.findByRole('region', { name: 'Главная' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Казань' })).toBeVisible()
+    expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
+    const writesAfterCancel = saveSettings.mock.calls.length
+    await act(async () => { precise.resolve(success({ latitude: 41.011, longitude: 28.951, accuracy: 10, timestamp: 200 })); await Promise.resolve() })
+    expect(screen.getByRole('button', { name: 'Казань' })).toBeVisible()
+    expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
+    expect(saveSettings.mock.calls).toHaveLength(writesAfterCancel)
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
+  })
+
+  it('migrates the original persisted GPS snapshot after a passive refresh races optional hydration', async () => {
+    const original = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 80, timestamp: 100 }, 'Europe/Moscow', null, 'gps:legacy-current')
+    const oldManual = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 50)
+    const startupState: PrayerRepositoryState = {
+      ...initializedState,
+      locationChoice: { mode: 'calculated', coordinates: original, place: original, source: 'automatic' },
+    }
+    delete startupState.recentPlaces
+    delete startupState.recentPlacesMigrated
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initializeStartup: vi.fn().mockResolvedValue(success(startupState)),
+      loadOptionalSettings: vi.fn(() => optional.promise),
+      getPermission: vi.fn().mockResolvedValue('granted'),
+      getPosition: vi.fn((accuracy: string) => Promise.resolve(accuracy === 'coarse'
+        ? success({ latitude: 41.5, longitude: 30, accuracy: 100, timestamp: 300 })
+        : failure({ kind: 'geolocation' as const, reason: 'unavailable' as const }))),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await screen.findByRole('timer')
+    await waitFor(() => expect(services.getPosition).toHaveBeenCalledTimes(2))
+    await screen.findByText('41.5000, 30.0000')
+    await act(async () => {
+      optional.resolve(success({ recentPlaces: [oldManual], recentPlacesMigrated: false,
+        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
+      await optional.promise
+    })
+
+    const migrated = saveSettings.mock.calls.map(([patch]) => patch.recentPlaces)
+      .find(places => Array.isArray(places) && places.some(place => place.id.startsWith('gps:history:')))
+    expect(migrated?.map(place => place.id)).toEqual(['gps:history:41.010000:28.950000', 'locality:naberezhnye-chelny'])
+    expect(migrated?.[0]).toMatchObject({ latitude: original.latitude, longitude: original.longitude, timestamp: original.timestamp, accuracy: original.accuracy })
+    expect(migrated?.some(place => place.latitude === 41.5 && place.longitude === 30)).toBe(false)
+  })
+
   it('ignores GPS callbacks that finish after another tab restores a newer place', async () => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)

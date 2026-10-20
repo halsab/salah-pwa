@@ -102,6 +102,30 @@ describe('one-shot GPS operations', () => {
     expect(h.persist.mock.calls.filter(([, change]) => change === 'selection')).toHaveLength(1)
   })
 
+  it('cancels an unaccepted GPS preview and ignores its delayed position and name callbacks', async () => {
+    const confirmed = createGpsPlace({ latitude: 40, longitude: 29, accuracy: 20, timestamp: 1000 }, 'America/Los_Angeles', null, 'gps:confirmed')
+    const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) }, { place: confirmed, source: 'manual' })
+    let pending!: Promise<void>
+    act(() => { pending = h.result.current.locate() })
+    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    expect(h.result.current.place).toMatchObject(coarseFix)
+
+    act(() => h.result.current.cancelInteractive())
+    expect(h.result.current.place).toEqual(confirmed)
+    expect(h.result.current.source).toBe('manual')
+    const writesAtCancel = h.persist.mock.calls.length
+
+    await act(async () => {
+      h.precise.resolve(success(preciseFix))
+      h.lookup.resolve(success(city))
+      await pending
+      await Promise.resolve()
+    })
+    expect(h.result.current.place).toEqual(confirmed)
+    expect(h.persist).toHaveBeenCalledTimes(writesAtCancel)
+    expect(h.chosen).not.toHaveBeenCalled()
+  })
+
   it('does not reuse the previous GPS runtime identity for a distant new capture', async () => {
     const old = createGpsPlace({ latitude: 40, longitude: 29, accuracy: 20, timestamp: 50 }, 'UTC', null, 'gps:old-operation')
     const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) }, { place: old, source: 'manual' })

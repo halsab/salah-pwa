@@ -28,6 +28,30 @@ describe('recentPlaces', () => {
     expect(rememberPlace(updated, distant)).toHaveLength(2)
   })
 
+  it('does not reuse a moved snapshot ID when a later capture returns to its original coordinates', () => {
+    const first = gps(41, 29, 1)
+    const saved = required(restoreRecentPlaces([first])[0])
+    const refined = { ...gps(41.01, 29.01, 2), id: saved.id }
+    const moved = updateRecentPlace([saved], refined, saved.id)
+    const returned = rememberPlace(moved, gps(41, 29, 3))
+
+    expect(returned).toHaveLength(2)
+    expect(new Set(returned.map(place => place.id)).size).toBe(2)
+    expect(returned.map(place => place.timestamp)).toEqual([3, 2])
+  })
+
+  it('coalesces GPS entries that become one spatial group after refinement', () => {
+    const history = restoreRecentPlaces([gps(41, 29, 1), gps(41, 29.01, 2)])
+    expect(history).toHaveLength(2)
+    const target = required(history[0])
+    const refined = { ...gps(41, 29.005, 3), id: target.id }
+    const updated = updateRecentPlace(history, refined, target.id)
+
+    expect(updated).toHaveLength(1)
+    expect(updated[0]).toMatchObject({ id: target.id, longitude: 29.005, timestamp: 3 })
+    expect(new Set(updated.map(place => place.id)).size).toBe(updated.length)
+  })
+
   it('uses recency to break equal-distance ties and never widens 500m for poor accuracy', () => {
     const older = gps(55, 49, 1)
     const newer = gps(55, 49.012, 2)
