@@ -674,6 +674,77 @@ describe('transactional accepted GPS refinements', () => {
     ])
   })
 
+  it('uses the acquired baseline as the ordering boundary when its first read follows another tab commit', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const baselineStarted = deferred()
+    const acquireBaseline = deferred()
+    let baseline!: number | undefined
+    const writer = createSettingsPersistence(tabA.saveSettings, tabA.reservePlaceSelectionOrder, async () => {
+      baselineStarted.resolve()
+      await acquireBaseline.promise
+      baseline = await tabA.getCommittedPlaceSelectionOrder()
+      return baseline
+    })
+
+    const delayedIntent = choice(coarse)
+    writer.save({ placeEvents: [{ change: 'selection', choice: delayedIntent }] })
+    await baselineStarted.promise
+
+    const earlierStoredSelection = choice(other)
+    const earlierStoredOrder = await tabB.reservePlaceSelectionOrder()
+    await tabB.saveSettings({ locationChoice: earlierStoredSelection, placeEvents: [{ change: 'selection', choice: earlierStoredSelection,
+      selectionOrder: earlierStoredOrder }] })
+
+    acquireBaseline.resolve()
+    await writer.drain()
+
+    // До чтения baseline вкладка A ещё не получила место в общем порядке транзакций.
+    expect(baseline).toBe(earlierStoredOrder)
+    expect(writer.getStatus()).toBe('saved')
+    expect(await getLocationChoice()).toMatchObject({ value: delayedIntent })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: earlierStoredOrder + 1 })
+  })
+
+  it('discards an initial baseline completion after reset while startup hydration is pending', async () => {
+    const repo = createPrayerRepository()
+    const baselineStarted = deferred()
+    const completeBaseline = deferred()
+    const startupStarted = deferred()
+    const completeStartup = deferred()
+    const initializeStartup = repo.initializeStartup
+    repo.initializeStartup = async () => {
+      startupStarted.resolve()
+      await completeStartup.promise
+      return initializeStartup()
+    }
+    const writer = createSettingsPersistence(repo.saveSettings, repo.reservePlaceSelectionOrder, async () => {
+      const original = await repo.getCommittedPlaceSelectionOrder()
+      baselineStarted.resolve()
+      await completeBaseline.promise
+      return original
+    })
+
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse) }] })
+    await baselineStarted.promise
+    const invalidated = writer.invalidateAndDrain()
+    await clearAppData()
+    const startup = repo.initializeStartup()
+    await startupStarted.promise
+
+    completeBaseline.resolve()
+    await invalidated
+    expect(await getLocationChoice()).toMatchObject({ value: undefined })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: undefined })
+
+    completeStartup.resolve()
+    await startup
+    await writer.drain()
+    expect(writer.getStatus()).toBe('idle')
+    expect(await getLocationChoice()).toMatchObject({ value: undefined })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: undefined })
+  })
+
   it('keeps a selection failed when its intent baseline cannot be read, then accepts a fresh intent after recovery', async () => {
     const repo = createPrayerRepository()
     let failBaseline = true
