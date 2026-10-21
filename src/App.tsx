@@ -237,6 +237,7 @@ export function App({
   const historyAnchorPlace = useRef<Place | null>(null)
   const legacyHistoryAnchorCaptured = useRef(false)
   const acceptedGpsHistory = useRef<{ runtimeId: string; historyId: string } | null>(null)
+  const pendingPlaceChoice = useRef<LocationChoice | null>(null)
   const persistPlace = useCallback((choice: LocationChoice, change: PlacePersistenceChange = 'automatic') => {
     selectionSyncToken.current += 1
     setRemoteSelectionPending(false)
@@ -246,6 +247,9 @@ export function App({
     invalidateFastCache()
     const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
     if (!next) return
+    // Не затираем legacy history явным выбором, пока её ещё не прочитали.
+    const deferSelectionSnapshot = Boolean(services.loadOptionalSettings && !recentPlacesLoaded.current
+      && (change === 'selection' || pendingPlaceChoice.current))
     let patch: { locationChoice: LocationChoice; recentPlaces?: Place[]; recentPlacesMigrated?: boolean } = { locationChoice: choice }
     if (change === 'selection') {
       const existing = recentPlacesLoaded.current ? recentRef.current
@@ -257,7 +261,6 @@ export function App({
       recentPlacesMigrationComplete.current = true
       setRecentPlaces(recent)
       patch = { ...patch, recentPlaces: recent, recentPlacesMigrated: true }
-      historyAnchorPlace.current = next
       setActiveHistoryId(next.selection === 'gps' ? recent[0]?.id : undefined)
       acceptedGpsHistory.current = next.selection === 'gps' && recent[0]
         ? { runtimeId: next.id, historyId: recent[0].id }
@@ -273,8 +276,9 @@ export function App({
       }
     }
     previousPlace.current = next
-    saveSettings(patch)
-  }, [invalidateFastCache, saveSettings])
+    if (deferSelectionSnapshot) pendingPlaceChoice.current = choice
+    else saveSettings(patch)
+  }, [invalidateFastCache, saveSettings, services.loadOptionalSettings])
   const navigation = useAppNavigation()
   const { open: openImmediately, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
   const [secondaryScreens, setSecondaryScreens] = useState<typeof import('./features/SecondaryScreens') | null>(null)
@@ -326,6 +330,7 @@ export function App({
     if (wasVisible && !locationSelectionVisible && navigation.screen !== 'search') cancelInteractiveGps()
   }, [cancelInteractiveGps, locationSelectionVisible, navigation.screen])
   const resetWithFastCache = useCallback(async () => {
+    pendingPlaceChoice.current = null
     pendingFastIdentityWrite.current = true
     optionalSettingsToken.current += 1
     themePreferenceRevision.current += 1
@@ -370,7 +375,7 @@ export function App({
       setRepositoryState(state)
       setFastCacheReady(!pendingFastIdentityWrite.current)
       restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, selectionMode)
-      recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
+      if (selectionMode === 'external' || !editedRecentPlaces.current) recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
       previousPlace.current = state.locationChoice
         ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
         : null
@@ -386,6 +391,7 @@ export function App({
         editedPreferences.current = false
         editedRecentPlaces.current = false
         recentPlacesLoaded.current = false
+        pendingPlaceChoice.current = null
         acceptedGpsHistory.current = null
         editedCalendar.current = false
         editedTheme.current = false
@@ -434,19 +440,22 @@ export function App({
         if (!result.ok) { setOptionalSettingsError(true); return }
         const value: PrayerRepositoryOptionalSettings = result.value
         if (!recentPlacesLoaded.current || !editedRecentPlaces.current) {
-          const source = editedRecentPlaces.current
-            ? [...recentRef.current, ...value.recentPlaces]
-            : value.recentPlaces
-          const recent = value.recentPlacesMigrated
-            ? restoreRecentPlaces(source)
-            : migrateRecentPlaces(source, historyAnchorPlace.current)
+          // Сначала мигрируем прежнее место, затем сохраняем явные выборы этой вкладки по recency.
+          const migrated = value.recentPlacesMigrated
+            ? restoreRecentPlaces(value.recentPlaces)
+            : migrateRecentPlaces(value.recentPlaces, historyAnchorPlace.current)
+          const recent = editedRecentPlaces.current
+            ? restoreRecentPlaces([...recentRef.current, ...migrated])
+            : migrated
           recentPlacesLoaded.current = true
           recentPlacesMigrationComplete.current = true
           recentRef.current = recent
           setRecentPlaces(recent)
-          if (!value.recentPlacesMigrated || JSON.stringify(recent) !== JSON.stringify(value.recentPlaces)) {
+          const pendingChoice = pendingPlaceChoice.current
+          if (pendingChoice || !value.recentPlacesMigrated || JSON.stringify(recent) !== JSON.stringify(value.recentPlaces)) {
             editedRecentPlaces.current = true
-            saveSettings({ recentPlaces: recent, recentPlacesMigrated: true })
+            pendingPlaceChoice.current = null
+            saveSettings({ ...(pendingChoice ? { locationChoice: pendingChoice } : {}), recentPlaces: recent, recentPlacesMigrated: true })
           }
         }
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))

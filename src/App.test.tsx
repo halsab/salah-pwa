@@ -681,6 +681,74 @@ describe('Salah', () => {
     ])
   })
 
+  it('keeps the pre-startup selection newest while migrating a full legacy history', async () => {
+    const storage = memoryStorage()
+    storage.setItem = () => { throw new Error('fast cache unavailable') }
+    vi.stubGlobal('localStorage', storage)
+    const initialization = deferred<Awaited<ReturnType<NonNullable<AppServices['initializeStartup']>>>>()
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const previousCurrent = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 10)
+    const legacyHistory = Array.from({ length: 10 }, (_, index) => index === 2
+      ? previousCurrent
+      : createOfficialPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 35 + index, longitude: 20 + index }, index))
+    const startupState: PrayerRepositoryState = {
+      ...initializedState,
+      locationChoice: { mode: 'official', locationId: 'naberezhnye-chelny', source: 'manual' },
+    }
+    delete startupState.recentPlaces
+    delete startupState.recentPlacesMigrated
+    const persistedSettings = { locationChoice: { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const },
+      recentPlaces: legacyHistory, recentPlacesMigrated: false }
+    const saveSettings = vi.fn<AppServices['saveSettings']>(patch => {
+      Object.assign(persistedSettings, patch)
+      return Promise.resolve(success(undefined))
+    })
+    const services = createServices({
+      initializeStartup: vi.fn(() => initialization.promise),
+      loadOptionalSettings: vi.fn().mockRejectedValueOnce(new Error('storage unavailable')).mockImplementationOnce(() => optional.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
+    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
+    await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
+    expect(await screen.findByRole('button', { name: 'Москва' })).toBeVisible()
+    expect(saveSettings).not.toHaveBeenCalled()
+
+    await act(async () => { initialization.resolve(success(startupState)); await initialization.promise })
+    await waitFor(() => expect(services.loadOptionalSettings).toHaveBeenCalledOnce())
+    expect(await screen.findByRole('alert')).toHaveTextContent('Не удалось загрузить дополнительные настройки')
+    expect(saveSettings).not.toHaveBeenCalled()
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+    await waitFor(() => expect(services.loadOptionalSettings).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      optional.resolve(success({ recentPlaces: persistedSettings.recentPlaces, recentPlacesMigrated: persistedSettings.recentPlacesMigrated,
+        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
+      await optional.promise
+    })
+
+    const expectedIds = [
+      'geonames:524901', 'locality:naberezhnye-chelny',
+      'locality:legacy-0', 'locality:legacy-1', 'locality:legacy-3', 'locality:legacy-4',
+      'locality:legacy-5', 'locality:legacy-6', 'locality:legacy-7', 'locality:legacy-8',
+    ]
+    const persisted = saveSettings.mock.calls.map(([patch]) => patch.recentPlaces).find(places => places?.length === 10)
+    expect(persisted?.map(place => place.id)).toEqual(expectedIds)
+    expect(persistedSettings.locationChoice).toMatchObject({ source: 'manual', place: { id: 'geonames:524901' } })
+    expect(persistedSettings.recentPlaces.map(place => place.id)).toEqual(expectedIds)
+    expect(persisted?.filter(place => place.id === 'locality:naberezhnye-chelny')).toHaveLength(1)
+    expect(persisted?.some(place => place.id === 'locality:legacy-9')).toBe(false)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Москва' }))
+    const recent = screen.getByRole('region', { name: 'Недавние места' })
+    expect(within(recent).getAllByRole('button').map(button => button.textContent.trim())).toEqual([
+      'Набережные Челны', 'Legacy 0', 'Legacy 1', 'Legacy 3', 'Legacy 4',
+      'Legacy 5', 'Legacy 6', 'Legacy 7', 'Legacy 8',
+    ])
+    expect(within(recent).queryByRole('button', { name: 'Москва' })).not.toBeInTheDocument()
+  })
+
   it('переключает календарь без смены дня, применяет поправку и выбирает дату сразу', async () => {
     const services = createServices()
     render(<App services={services} />)
