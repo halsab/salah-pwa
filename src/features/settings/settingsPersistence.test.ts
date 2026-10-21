@@ -39,6 +39,33 @@ it('retries the accepted location and its recent history as one settings snapsho
   expect(save.mock.calls[1]?.[0]).toEqual(selected)
   expect(writer.getStatus()).toBe('saved')
 })
+it('keeps later same-tab reservations behind an earlier reservation failure and retries in intent order', async () => {
+  const save = vi.fn<SaveSettings>().mockResolvedValue(success(undefined))
+  let nextOrder = 0
+  let failFirst = true
+  const reserved: number[] = []
+  const writer = createSettingsPersistence(save, () => {
+    if (failFirst) { failFirst = false; return Promise.reject(new Error('temporary reservation failure')) }
+    const order = ++nextOrder
+    reserved.push(order)
+    return Promise.resolve(order)
+  })
+  const firstPlace = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 5, timestamp: 1 }, 'UTC', null, 'gps:one')
+  const secondPlace = createGpsPlace({ latitude: 41, longitude: -74, accuracy: 5, timestamp: 2 }, 'UTC', null, 'gps:two')
+  const first = { mode: 'calculated' as const, source: 'manual' as const, coordinates: firstPlace, place: firstPlace }
+  const second = { mode: 'calculated' as const, source: 'manual' as const, coordinates: secondPlace, place: secondPlace }
+  writer.save({ locationChoice: first, placeEvents: [{ change: 'selection', choice: first }] })
+  writer.save({ locationChoice: second, placeEvents: [{ change: 'selection', choice: second }] })
+  await writer.drain()
+  expect(writer.getStatus()).toBe('failed')
+  expect(reserved).toEqual([])
+  expect(save).not.toHaveBeenCalled()
+
+  writer.retry()
+  await writer.drain()
+  expect(reserved).toEqual([1, 2])
+  expect(save.mock.lastCall?.[0].placeEvents?.map(event => event.selectionOrder)).toEqual([1, 2])
+})
 it.each(['committed', 'failed'] as const)('keeps only uncommitted selections when an in-flight write is %s', async result => {
   const first = deferred<ReturnType<typeof success<void>> | ReturnType<typeof failure<unknown>>>()
   const second = deferred<ReturnType<typeof success<void>>>()

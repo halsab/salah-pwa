@@ -214,6 +214,7 @@ describe('transactional accepted GPS refinements', () => {
     await setSetting('locationChoice', choice(precise))
     await setSetting('recentPlacesMigrated', true)
     await setSetting('placeSelectionOrder', 200)
+    await setSetting('committedPlaceSelectionOrder', 200)
     const refinedHistory = [{ ...precise, id: 'gps:history:41.010000:28.950000' }]
     await setSetting('recentPlaces', refinedHistory)
     await repo.saveSettings({ locationChoice: choice(coarse), placeEvents: [{ change: 'selection', choice: choice(coarse),
@@ -234,6 +235,7 @@ describe('transactional accepted GPS refinements', () => {
     await setSetting('locationChoice', committed)
     await setSetting('recentPlacesMigrated', true)
     await setSetting('placeSelectionOrder', 200)
+    await setSetting('committedPlaceSelectionOrder', 200)
     const older = createOfficialPlace({ id: 'older-history', name: 'Older', latitude: 30, longitude: 10 }, 2)
     const committedHistory = [{ ...other, id: 'gps:history:committed' }, older]
     await setSetting('recentPlaces', committedHistory)
@@ -247,9 +249,89 @@ describe('transactional accepted GPS refinements', () => {
       expectedPlaceId: other.id, selectionOrder: 150 }] })
 
     expect(await getLocationChoice()).toMatchObject({ value: committed })
-    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 200 })
-    expect(afterIdempotentReplay).toEqual(committedHistory)
-    expect(await history()).toEqual(committedHistory)
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 200 })
+    expect(afterIdempotentReplay.map(place => place.id)).toEqual(committedHistory.map(place => place.id))
+    expect(afterIdempotentReplay[0]).toMatchObject({ id: 'gps:history:committed', latitude: other.latitude,
+      longitude: other.longitude, accuracy: other.accuracy, timestamp: other.timestamp, timeZone: getDeviceTimeZone(),
+      automaticTimeZone: { id: getDeviceTimeZone(), source: 'device' } })
+    expect(afterIdempotentReplay[1]).toEqual(older)
+    expect(await history()).toEqual(afterIdempotentReplay)
+  })
+
+  it('does not let an uncommitted later reservation invalidate an earlier valid selection', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    await setSetting('placeSelectionOrder', 100)
+    const earlierOrder = await tabA.reservePlaceSelectionOrder()
+    expect(earlierOrder).toBe(101)
+    const later = choice(other)
+    const failedWriter = createSettingsPersistence(() => Promise.resolve(failure({ kind: 'storage', reason: 'unavailable' })),
+      tabB.reservePlaceSelectionOrder)
+    failedWriter.save({ locationChoice: later, placeEvents: [{ change: 'selection', choice: later }] })
+    await failedWriter.drain()
+    expect(failedWriter.getStatus()).toBe('failed')
+    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 102 })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: undefined })
+
+    const earlier = choice(coarse)
+    await tabA.saveSettings({ locationChoice: earlier, placeEvents: [{ change: 'selection', choice: earlier,
+      selectionOrder: earlierOrder }] })
+
+    expect(await getLocationChoice()).toMatchObject({ value: earlier })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:41.010000:28.950000'])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 101 })
+    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 102 })
+  })
+
+  it('rejects an older selection after a higher reservation commits, without reducing the commit marker', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    await setSetting('placeSelectionOrder', 100)
+    const olderOrder = await tabA.reservePlaceSelectionOrder()
+    const newerOrder = await tabB.reservePlaceSelectionOrder()
+    const newer = choice(other)
+    await tabB.saveSettings({ locationChoice: newer, placeEvents: [{ change: 'selection', choice: newer,
+      selectionOrder: newerOrder }] })
+    const older = choice(coarse)
+    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    await tabA.saveSettings({ locationChoice: older, placeEvents: [{ change: 'selection', choice: older,
+      selectionOrder: olderOrder }] }, undefined, value => { outcome = value })
+
+    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: newer })
+    expect(await getLocationChoice()).toMatchObject({ value: newer })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: newerOrder })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000'])
+  })
+
+  it('does not let a retried failed reservation overwrite a newer cross-tab selection', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const original = createOfficialPlace({ id: 'reservation-base', name: 'Base', latitude: 55, longitude: 49 }, 1)
+    const originalChoice: LocationChoice = { mode: 'official', locationId: original.id, source: 'manual', place: original }
+    await setSetting('locationChoice', originalChoice)
+    let failReservation = true
+    const reserveA = async () => {
+      if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
+      return tabA.reservePlaceSelectionOrder()
+    }
+    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    const writer = createSettingsPersistence((patch, isGenerationCurrent) => tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserveA)
+    const stale = choice(coarse)
+    writer.save({ locationChoice: stale, placeEvents: [{ change: 'selection', choice: stale, expectedPlaceId: original.id }] })
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+
+    const winner = choice(other)
+    const winnerOrder = await tabB.reservePlaceSelectionOrder()
+    await tabB.saveSettings({ locationChoice: winner, placeEvents: [{ change: 'selection', choice: winner,
+      expectedPlaceId: original.id, selectionOrder: winnerOrder }] })
+    writer.retry()
+    await writer.drain()
+
+    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(await getLocationChoice()).toMatchObject({ value: winner })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000', original.id])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
   })
 
   it('allocates wall-clock-independent selection orders across tabs and preserves rapid ordered selections', async () => {
@@ -371,7 +453,7 @@ describe('transactional accepted GPS refinements', () => {
     expect(migrated).toHaveLength(10)
     expect(migrated.filter(place => place.id === original.id)).toHaveLength(1)
     expect(await getSetting('recentPlacesMigrated')).toMatchObject({ value: true })
-    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 200 })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 200 })
 
     const restarted = createPrayerRepository()
     expect(await restarted.initialize()).toMatchObject({ ok: true, value: { locationChoice: winnerChoice } })

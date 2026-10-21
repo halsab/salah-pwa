@@ -16,24 +16,37 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
   let epoch = 0
   let queue = Promise.resolve()
   let reservationQueue = Promise.resolve()
+  let reservationFailed = false
   let fallbackSelectionOrder = 0
-  const reservingEvents = new Set<PlacePersistenceEvent>()
+  const scheduledEvents = new Set<PlacePersistenceEvent>()
   let status: PersistenceStatus = 'idle'
   const listeners = new Set<() => void>()
   const notify = (next: PersistenceStatus) => { status = next; for (const listener of listeners) listener() }
   const discardPending = () => { epoch += 1; revision += 1; latest = {} }
   const reservePendingEvents = () => {
+    if (reservationFailed) {
+      reservationQueue = Promise.resolve()
+      reservationFailed = false
+    }
     for (const event of latest.placeEvents ?? []) {
-      if (event.change !== 'selection' || event.selectionOrder !== undefined || reservingEvents.has(event)) continue
-      reservingEvents.add(event)
-      reservationQueue = reservationQueue.catch(() => undefined).then(async () => {
+      if (event.change !== 'selection' || event.selectionOrder !== undefined || scheduledEvents.has(event)) continue
+      scheduledEvents.add(event)
+      reservationQueue = reservationQueue.then(async () => {
         try {
           if (!latest.placeEvents?.includes(event)) return
           const order = reserveSelectionOrder ? await reserveSelectionOrder() : ++fallbackSelectionOrder
           const ordered = { ...event, selectionOrder: order }
           latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === event ? ordered : current) }
+        } catch (error) {
+          reservationFailed = true
+          scheduledEvents.clear()
+          if (latest.placeEvents?.includes(event)) {
+            const retried = { ...event, selectionReservationRetried: true }
+            latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === event ? retried : current) }
+          }
+          throw error
         } finally {
-          reservingEvents.delete(event)
+          scheduledEvents.delete(event)
         }
       })
     }

@@ -47,7 +47,7 @@ export interface PrayerRepositoryOptionalSettings {
   fastingMode: FastingModePreferences
 }
 
-function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: unknown; recentPlacesMigrated: unknown; placeSelectionOrder?: unknown },
+function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: unknown; recentPlacesMigrated: unknown; committedPlaceSelectionOrder?: unknown },
   patch: SettingsPatch) {
   const activeChoice = stored.locationChoice && typeof stored.locationChoice === 'object'
     ? stored.locationChoice as LocationChoice
@@ -59,11 +59,8 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
   let recentPlaces = migrated
   let locationChoice = patch.placeEvents?.length ? undefined : patch.locationChoice
   let selectionAccepted = true
-  let placeSelectionOrder = typeof stored.placeSelectionOrder === 'number' && Number.isFinite(stored.placeSelectionOrder)
-    ? stored.placeSelectionOrder : undefined
-  const latestEventOrder = Math.max(-Infinity, ...(patch.placeEvents ?? [])
-    .filter(event => event.change === 'selection' && event.selectionOrder !== undefined)
-    .map(event => event.selectionOrder as number))
+  let committedPlaceSelectionOrder = typeof stored.committedPlaceSelectionOrder === 'number' && Number.isSafeInteger(stored.committedPlaceSelectionOrder)
+    ? stored.committedPlaceSelectionOrder : undefined
   let active = originalActive
   let authoritativeChoice = activeChoice
   if (patch.placeEvents?.length) {
@@ -72,28 +69,26 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
       if (!next) continue
       if (event.change === 'selection') {
         selectionAccepted = false
-        // Транзакция может начаться после более нового выбора другой вкладки.
-        // Когда предшественник известен, он должен совпасть с активным местом в транзакции.
+        // Повтор уже зафиксированного выбора не должен менять recency или GPS snapshot.
         const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
-        if (alreadyApplied && event.selectionOrder !== undefined && placeSelectionOrder !== undefined
-          && event.selectionOrder <= placeSelectionOrder) {
+        if (alreadyApplied && event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
+          && event.selectionOrder <= committedPlaceSelectionOrder) {
           selectionAccepted = true
           continue
         }
-        // Порядок выделяется транзакционно до очереди записи; принимаем пакет только
-        // если его последнее намерение не было вытеснено другой вкладкой.
-        const hasNewerSelection = event.selectionOrder !== undefined && placeSelectionOrder !== undefined
-          && placeSelectionOrder > latestEventOrder
-        const isNewerExplicitIntent = event.selectionOrder !== undefined
-          && (placeSelectionOrder === undefined || event.selectionOrder >= placeSelectionOrder
-            || latestEventOrder === placeSelectionOrder)
-        if (hasNewerSelection || event.expectedPlaceId !== undefined
-          && (active?.id ?? null) !== event.expectedPlaceId && !alreadyApplied && !isNewerExplicitIntent) {
+        if (event.selectionReservationRetried && event.expectedPlaceId !== undefined
+          && (active?.id ?? null) !== event.expectedPlaceId) {
+          selectionAccepted = false
+          continue
+        }
+        // Резервирование задаёт порядок намерений, но защищает от старых записей только committed-маркер.
+        if (event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
+          && event.selectionOrder <= committedPlaceSelectionOrder) {
           selectionAccepted = false
           continue
         }
         recentPlaces = rememberPlace(recentPlaces, next)
-        if (event.selectionOrder !== undefined) placeSelectionOrder = Math.max(placeSelectionOrder ?? 0, event.selectionOrder)
+        if (event.selectionOrder !== undefined) committedPlaceSelectionOrder = Math.max(committedPlaceSelectionOrder ?? 0, event.selectionOrder)
         selectionAccepted = true
       } else {
         if ((active?.id ?? null) !== event.expectedPlaceId) continue
@@ -113,7 +108,7 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
     recentPlaces = stored.recentPlacesMigrated === true ? incoming : restoreRecentPlaces([...incoming, ...migrated])
   }
   return { recentPlaces, recentPlacesMigrated: true as const, locationChoice, selectionAccepted,
-    placeSelectionOrder: patch.placeEvents?.some(event => event.change === 'selection') ? placeSelectionOrder : undefined,
+    committedPlaceSelectionOrder: patch.placeEvents?.some(event => event.change === 'selection') ? committedPlaceSelectionOrder : undefined,
     activeLocationChoice: patch.placeEvents?.length ? authoritativeChoice : null }
 }
 
@@ -425,6 +420,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
         return !event.change || !['selection', 'refinement', 'automatic'].includes(event.change)
           || !event.choice || !placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
           || event.selectionOrder !== undefined && !Number.isFinite(event.selectionOrder)
+          || event.selectionReservationRetried !== undefined && typeof event.selectionReservationRetried !== 'boolean'
           || event.change === 'selection' && event.selectionOrder === undefined
           || event.change !== 'selection' && !(typeof event.expectedPlaceId === 'string' || event.expectedPlaceId === null)
       }))) {

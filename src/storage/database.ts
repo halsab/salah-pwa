@@ -49,6 +49,7 @@ interface SettingValueMap {
   recentPlaces: Place[]
   recentPlacesMigrated: boolean
   placeSelectionOrder: number
+  committedPlaceSelectionOrder: number
   appearance: Appearance
   themeFamily: ThemeFamily
   locationChoice: LocationChoice
@@ -499,10 +500,12 @@ export async function deleteSalahDatabase(): Promise<void> {
 export interface PlacePersistenceEvent {
   change: 'selection' | 'refinement' | 'automatic'
   choice: LocationChoice
-  // Проверяется по актуальному locationChoice внутри той же транзакции.
+  // Проверяется у refinements и повторов неудачного резервирования.
   expectedPlaceId?: string | null
-  // Локальный порядок явного выбора фиксируется до постановки записи в очередь.
+  // Межвкладочный порядок явного выбора резервируется в IndexedDB до записи.
   selectionOrder?: number
+  // Retry после сбоя бронирования сохраняет исходную позицию среди намерений вкладки.
+  selectionReservationRetried?: boolean
 }
 
 export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'recentPlacesMigrated' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
@@ -513,7 +516,7 @@ export interface StoredPlaceHistorySnapshot {
   locationChoice: unknown
   recentPlaces: unknown
   recentPlacesMigrated: unknown
-  placeSelectionOrder?: unknown
+  committedPlaceSelectionOrder?: unknown
 }
 
 export interface PlaceEventsOutcome {
@@ -526,7 +529,7 @@ export type ReconcilePlaceHistory = (stored: StoredPlaceHistorySnapshot, patch: 
   recentPlacesMigrated: true
   locationChoice: LocationChoice | undefined
   selectionAccepted: boolean
-  placeSelectionOrder: number | undefined
+  committedPlaceSelectionOrder: number | undefined
   activeLocationChoice: LocationChoice | null
 }
 
@@ -543,15 +546,15 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       let reconciledHistory: ReturnType<ReconcilePlaceHistory> | undefined
       if (reconcilePlaceHistory && (patch.locationChoice || patch.placeEvents?.length || patch.normalizeRecentPlaces)) {
         const settings = transaction.objectStore('settings')
-        const [locationChoice, recentPlaces, recentPlacesMigrated, placeSelectionOrder] = await Promise.all([
-          settings.get('locationChoice'), settings.get('recentPlaces'), settings.get('recentPlacesMigrated'), settings.get('placeSelectionOrder'),
+        const [locationChoice, recentPlaces, recentPlacesMigrated, committedPlaceSelectionOrder] = await Promise.all([
+          settings.get('locationChoice'), settings.get('recentPlaces'), settings.get('recentPlacesMigrated'), settings.get('committedPlaceSelectionOrder'),
         ])
         if (!isCurrent()) throw new Error('Запись отменена')
         reconciledHistory = reconcilePlaceHistory({
           locationChoice: locationChoice?.value,
           recentPlaces: recentPlaces?.value,
           recentPlacesMigrated: recentPlacesMigrated?.value,
-          placeSelectionOrder: placeSelectionOrder?.value,
+          committedPlaceSelectionOrder: committedPlaceSelectionOrder?.value,
         }, patch)
       }
       if (!isCurrent()) throw new Error('Запись отменена')
@@ -562,8 +565,8 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (reconciledHistory) {
         await transaction.objectStore('settings').put({ key: 'recentPlaces', value: reconciledHistory.recentPlaces })
         await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: true })
-        if (reconciledHistory.placeSelectionOrder !== undefined) {
-          await transaction.objectStore('settings').put({ key: 'placeSelectionOrder', value: reconciledHistory.placeSelectionOrder })
+        if (reconciledHistory.committedPlaceSelectionOrder !== undefined) {
+          await transaction.objectStore('settings').put({ key: 'committedPlaceSelectionOrder', value: reconciledHistory.committedPlaceSelectionOrder })
         }
       } else {
         if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
@@ -625,9 +628,11 @@ export async function reservePlaceSelectionOrder(generation?: number): Promise<n
     }
     const settings = transaction.objectStore('settings')
     const stored = await settings.get('placeSelectionOrder')
-    // Сохраняем высокий маркер предыдущей версии, где порядок был основан на часах.
-    const current = typeof stored?.value === 'number' && Number.isFinite(stored.value)
-      && stored.value >= 0 && stored.value < Number.MAX_SAFE_INTEGER ? Math.floor(stored.value) : 0
+    const committed = await settings.get('committedPlaceSelectionOrder')
+    const current = Math.max(
+      typeof stored?.value === 'number' && Number.isSafeInteger(Math.floor(stored.value)) && stored.value >= 0 ? Math.floor(stored.value) : 0,
+      typeof committed?.value === 'number' && Number.isSafeInteger(Math.floor(committed.value)) && committed.value >= 0 ? Math.floor(committed.value) : 0,
+    )
     if (current >= Number.MAX_SAFE_INTEGER) throw new Error('Исчерпан порядок выбора места')
     const next = current + 1
     await settings.put({ key: 'placeSelectionOrder', value: next })
