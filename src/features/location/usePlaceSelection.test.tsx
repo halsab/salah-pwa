@@ -104,6 +104,56 @@ describe('one-shot GPS operations', () => {
     expect(h.persist.mock.calls.filter(([, change]) => change === 'selection')).toHaveLength(1)
   })
 
+  it('clears a low-accuracy preview and its transient identity before a retry', async () => {
+    const firstCoarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const firstPrecise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const finalCoarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const finalPrecise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const services = {
+      loadGeography: vi.fn().mockResolvedValue(null),
+      getPosition: vi.fn()
+        .mockReturnValueOnce(firstCoarse.promise).mockReturnValueOnce(firstPrecise.promise)
+        .mockRejectedValueOnce(new Error('permission request rejected')).mockRejectedValueOnce(new Error('position request rejected'))
+        .mockReturnValueOnce(finalCoarse.promise).mockReturnValueOnce(finalPrecise.promise),
+    }
+    const h = setup(services)
+    let first!: Promise<void>
+    act(() => { first = h.result.current.locate() })
+    await act(async () => {
+      firstCoarse.resolve(success(coarseFix))
+      firstPrecise.resolve(failure({ kind: 'geolocation', reason: 'unavailable' }))
+      await first
+    })
+    const abandonedIdentity = h.result.current.gpsPreview?.id
+    expect(abandonedIdentity).toBeTruthy()
+    expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: true })
+    expect(h.persist).not.toHaveBeenCalled()
+
+    let retry!: Promise<void>
+    act(() => { retry = h.result.current.locate() })
+    expect(h.result.current.gpsPreview).toBeNull()
+    expect(h.result.current.gpsState).toEqual({ status: 'locating' })
+    expect(h.result.current.place).toBeNull()
+
+    await act(async () => { await retry })
+    expect(h.result.current.gpsState).toEqual({ status: 'error', reason: 'unavailable' })
+    expect(h.result.current.gpsPreview).toBeNull()
+    expect(h.result.current.place).toBeNull()
+    expect(h.persist).not.toHaveBeenCalled()
+    expect(h.chosen).not.toHaveBeenCalled()
+
+    let final!: Promise<void>
+    act(() => { final = h.result.current.locate() })
+    await act(async () => {
+      finalCoarse.resolve(success(goodCoarseFix))
+      finalPrecise.resolve(failure({ kind: 'geolocation', reason: 'timeout' }))
+      await final
+    })
+    expect(h.result.current.place?.id).not.toBe(abandonedIdentity)
+    expect(h.result.current.place).toMatchObject(goodCoarseFix)
+    expect(h.persist.mock.calls.filter(([, change]) => change === 'selection')).toHaveLength(1)
+  })
+
   it('cancels an unaccepted GPS preview and ignores its delayed position and name callbacks', async () => {
     const confirmed = createGpsPlace({ latitude: 40, longitude: 29, accuracy: 20, timestamp: 1000 }, 'America/Los_Angeles', null, 'gps:confirmed')
     const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) }, { place: confirmed, source: 'manual' })

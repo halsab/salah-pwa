@@ -88,3 +88,42 @@ test('denied GPS leaves initial location selection available', async ({ page }) 
   await expect(page.getByRole('timer')).toHaveCount(0)
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toBeUndefined()
 })
+
+test('opening Settings from initial place selection cancels delayed GPS callbacks', async ({ page }) => {
+  await page.addInitScript(() => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks = []
+    Object.defineProperty(navigator, 'permissions', { configurable: true, value: {
+      query: () => Promise.resolve({ state: 'granted', onchange: null }),
+    } })
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+      getCurrentPosition: (success: (position: GeolocationPosition) => void) => target.__gpsCallbacks.push(success),
+    } })
+  })
+  await page.goto('./')
+  await page.getByRole('button', { name: 'По геопозиции' }).click()
+  await expect.poll(() => page.evaluate(() => (window as Window & { __gpsCallbacks: unknown[] }).__gpsCallbacks.length)).toBe(2)
+  await page.evaluate(() => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks[0]({
+      coords: { latitude: 41.01, longitude: 28.95, accuracy: 2400, altitude: null, altitudeAccuracy: null, heading: null, speed: null },
+      timestamp: Date.now(),
+    })
+  })
+  await expect(page.getByText('41.0100, 28.9500')).toBeVisible()
+  await page.getByRole('button', { name: 'Настройки' }).click()
+  await expect(page.getByRole('region', { name: 'Настройки' })).toBeVisible()
+  const savedChoice = await readSavedSetting(page, 'locationChoice')
+  const savedHistory = await readSavedSetting(page, 'recentPlaces')
+  await page.evaluate(() => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks[1]({
+      coords: { latitude: 41.011, longitude: 28.951, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null },
+      timestamp: Date.now(),
+    })
+  })
+  await expect(page.getByRole('region', { name: 'Настройки' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Главная', exact: true })).toHaveCount(0)
+  await expect.poll(() => readSavedSetting(page, 'locationChoice')).toEqual(savedChoice)
+  await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(savedHistory)
+})

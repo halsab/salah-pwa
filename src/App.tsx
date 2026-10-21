@@ -318,12 +318,13 @@ export function App({
   const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
-  const previousNavigationScreen = useRef(navigation.screen)
+  const locationSelectionVisible = navigation.screen === 'location' || (navigation.screen === 'home' && !place)
+  const previousLocationSelectionVisible = useRef(locationSelectionVisible)
   useEffect(() => {
-    const previous = previousNavigationScreen.current
-    previousNavigationScreen.current = navigation.screen
-    if (previous === 'location' && navigation.screen !== 'location' && navigation.screen !== 'search') cancelInteractiveGps()
-  }, [cancelInteractiveGps, navigation.screen])
+    const wasVisible = previousLocationSelectionVisible.current
+    previousLocationSelectionVisible.current = locationSelectionVisible
+    if (wasVisible && !locationSelectionVisible && navigation.screen !== 'search') cancelInteractiveGps()
+  }, [cancelInteractiveGps, locationSelectionVisible, navigation.screen])
   const resetWithFastCache = useCallback(async () => {
     pendingFastIdentityWrite.current = true
     optionalSettingsToken.current += 1

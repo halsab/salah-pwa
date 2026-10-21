@@ -1140,6 +1140,32 @@ describe('Salah', () => {
     expect(saveSettings.mock.calls.some(([patch]) => patch.locationChoice?.place?.selection === 'gps')).toBe(true)
   })
 
+  it('cancels pending GPS from the initial selection when opening Settings', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
+    await act(async () => { coarse.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 2400, timestamp: 100 })); await Promise.resolve() })
+    expect(await screen.findByText('41.0100, 28.9500')).toBeVisible()
+    expect(screen.getByRole('heading', { name: 'Выберите место' })).toBeVisible()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    expect(await screen.findByRole('region', { name: 'Настройки' })).toBeVisible()
+    const writesAfterNavigation = saveSettings.mock.calls.length
+    await act(async () => { precise.resolve(success({ latitude: 41.011, longitude: 28.951, accuracy: 10, timestamp: 200 })); await Promise.resolve() })
+
+    expect(screen.getByRole('region', { name: 'Настройки' })).toBeVisible()
+    expect(screen.queryByRole('region', { name: 'Главная' })).not.toBeInTheDocument()
+    expect(saveSettings.mock.calls).toHaveLength(writesAfterNavigation)
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
+  })
+
   it('cancels a pending GPS preview from Location before opening city search', async () => {
     const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
     const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()

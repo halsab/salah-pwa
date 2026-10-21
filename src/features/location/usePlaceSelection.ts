@@ -121,6 +121,8 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setNameLookupState('idle')
     if (interactive) {
       activeInteractive.current = { operation, navigated: false, recorded: false }
+      gpsPreviewRef.current = null
+      setGpsPreview(null)
       setGpsState({ status: 'locating' })
     } else {
       activeInteractive.current = null
