@@ -1520,21 +1520,37 @@ describe('Salah', () => {
 
   it('discards a queued explicit selection when another tab wins before its atomic write', async () => {
     vi.stubGlobal('localStorage', memoryStorage())
-    const delayedWrite = deferred<Awaited<ReturnType<AppServices['saveSettings']>>>()
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    await setSetting('locationChoice', initializedState.locationChoice)
+    await setSetting('recentPlacesMigrated', true)
+    const writeStarted = deferred<undefined>()
+    const allowWrite = deferred<undefined>()
     const remotePlace = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 10)
-    const remote = initialized({ locationChoice: { mode: 'official', locationId: 'naberezhnye-chelny', source: 'manual' },
-      recentPlaces: [remotePlace], recentPlacesMigrated: true })
-    const saveSettings = vi.fn<AppServices['saveSettings']>(() => delayedWrite.promise)
+    const loadCurrentState = async () => {
+      const currentChoice = await getLocationChoice()
+      const optional = await loadPrayerRepositoryOptionalSettings()
+      return initialized({ locationChoice: currentChoice.ok ? currentChoice.value ?? null : null,
+        recentPlaces: optional.ok ? optional.value.recentPlaces : [], recentPlacesMigrated: true })
+    }
+    const saveSettings = vi.fn<AppServices['saveSettings']>(async (patch, isCurrent) => {
+      writeStarted.resolve(undefined)
+      await allowWrite.promise
+      return tabA.saveSettings(patch, isCurrent)
+    })
     const services = createServices({
-      initialize: vi.fn().mockResolvedValueOnce(initialized()).mockResolvedValue(remote),
-      loadOptionalSettings: vi.fn().mockResolvedValue(success({ recentPlaces: [remotePlace], recentPlacesMigrated: true,
-        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } })),
+      initialize: vi.fn(loadCurrentState),
+      loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
       saveSettings,
     })
     render(<App services={services} />)
     await screen.findByRole('timer')
     await chooseCity('Москва', /Москва/)
-    await waitFor(() => expect(saveSettings).toHaveBeenCalledOnce())
+    await writeStarted.promise
+
+    const remoteChoice = { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const, place: remotePlace }
+    await tabB.saveSettings({ locationChoice: remoteChoice, placeEvents: [{ change: 'selection', choice: remoteChoice,
+      expectedPlaceId: 'locality:kazan' }] })
 
     invalidateFastScheduleSnapshot()
     await act(async () => {
@@ -1542,10 +1558,50 @@ describe('Salah', () => {
       await Promise.resolve()
     })
     expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()
-    await act(async () => { delayedWrite.resolve(success(undefined)); await delayedWrite.promise })
+    await act(async () => { allowWrite.resolve(undefined); await Promise.resolve() })
+    await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: remoteChoice }))
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(saveSettings).toHaveBeenCalledOnce()
     expect(saveSettings.mock.calls[0]?.[1]?.()).toBe(false)
+    const stored = await loadPrayerRepositoryOptionalSettings()
+    expect(stored.ok && stored.value.recentPlaces).toEqual([remotePlace])
+  })
+
+  it('acknowledges a committed place write after a theme save supersedes its response', async () => {
+    const repo = createPrayerRepository()
+    await setSetting('locationChoice', initializedState.locationChoice)
+    const committed = deferred<undefined>()
+    const returnResponse = deferred<Awaited<ReturnType<AppServices['saveSettings']>>>()
+    let delayed = false
+    const saveSettings = vi.fn<AppServices['saveSettings']>(async (patch, isCurrent) => {
+      const result = await repo.saveSettings(patch, isCurrent)
+      if (patch.placeEvents?.length && !delayed) {
+        delayed = true
+        committed.resolve(undefined)
+        await returnResponse.promise
+      }
+      return result
+    })
+    const loadOptionalSettings = vi.fn(loadPrayerRepositoryOptionalSettings)
+    const services = createServices({ saveSettings, loadOptionalSettings })
+    render(<App services={services} version="ack-test" />)
+    await screen.findByRole('timer')
+    const priorChangeSignal = localStorage.getItem(FAST_SCHEDULE_STORAGE_KEYS.changeSignal)
+    await chooseCity('Москва', /Москва/)
+    await committed.promise
+    await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: { place: { id: 'geonames:524901' } } }))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
+    await screen.findByRole('region', { name: 'Настройки' })
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Тема' }), 'seasonal')
+    returnResponse.resolve(success(undefined))
+
+    await waitFor(() => expect(loadOptionalSettings.mock.calls.length).toBeGreaterThanOrEqual(2))
+    await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: { place: { id: 'geonames:524901' } } }))
+    expect(saveSettings.mock.calls.some(([patch]) => patch.themeFamily === 'seasonal')).toBe(true)
+    await waitFor(() => expect(localStorage.getItem(FAST_SCHEDULE_STORAGE_KEYS.changeSignal)).not.toBe(priorChangeSignal))
+    await waitFor(() => expect(readFastScheduleSnapshot({ appVersion: 'ack-test', now: services.now(),
+      deviceTimeZone: services.getDeviceTimeZone() })).not.toBeNull())
   })
 
   it('rejects a precise callback before a delayed cross-tab notification is delivered', async () => {
@@ -1904,8 +1960,6 @@ describe('Salah', () => {
     localStorage.setItem(THEME_PREFERENCE_CACHE_KEY, value)
     act(() => { window.dispatchEvent(new StorageEvent('storage', { key: THEME_PREFERENCE_CACHE_KEY, newValue: value })) })
     expect(document.documentElement.dataset.theme).toBe('seasonal')
-    expect(saveSettings.mock.calls[0]?.[1]?.()).toBe(false)
-
     staleWrite.resolve(success(undefined))
     await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2))
     expect(saveSettings.mock.calls[1]?.[0]).toMatchObject({ themeFamily: 'seasonal', fastingMode: { manualEnabled: true } })

@@ -9,8 +9,8 @@ const coarse = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 500
 const precise = { ...coarse, latitude: 41.03, accuracy: 10, timestamp: 200 }
 const other = createGpsPlace({ latitude: 48, longitude: 20, accuracy: 20, timestamp: 300 }, 'Europe/Moscow', null, 'gps:operation:b')
 const choice = (place: Place): LocationChoice => ({ mode: 'calculated', source: 'automatic', coordinates: place, place })
-const event = (change: 'selection' | 'refinement', place: Place): SettingsPatch => ({
-  locationChoice: choice(place), placeEvents: [{ change, choice: choice(place), expectedPlaceId: change === 'selection' ? null : place.id }],
+const event = (change: 'selection' | 'refinement', place: Place, previousId: string | null = null): SettingsPatch => ({
+  locationChoice: choice(place), placeEvents: [{ change, choice: choice(place), expectedPlaceId: change === 'selection' ? previousId : place.id }],
 })
 function deferred() {
   let resolve!: () => void
@@ -77,7 +77,7 @@ describe('transactional accepted GPS refinements', () => {
     })
     writer.save(event('selection', coarse))
     await committed.promise
-    await tabB.saveSettings(event('selection', other))
+    await tabB.saveSettings(event('selection', other, coarse.id))
     const before = await history()
     writer.save(event('refinement', precise))
     returnWrite.resolve()
@@ -105,22 +105,125 @@ describe('transactional accepted GPS refinements', () => {
     expect((await history())[0]).toMatchObject({ latitude: precise.latitude, timestamp: 200 })
   })
 
+  it('retains a durable acknowledgement when a theme save supersedes the selection response', async () => {
+    const repo = createPrayerRepository()
+    const committed = deferred()
+    const returnResponse = deferred()
+    let generationCurrent: (() => boolean) | undefined
+    let latest: (() => boolean) | undefined
+    let locationCurrent: (() => boolean) | undefined
+    let calls = 0
+    const writer = createSettingsPersistence(async (patch, isGenerationCurrent, isLatest, isLocationCurrent) => {
+      const result = await repo.saveSettings(patch, isGenerationCurrent)
+      if (++calls === 1) {
+        generationCurrent = isGenerationCurrent
+        latest = isLatest
+        locationCurrent = isLocationCurrent
+        committed.resolve()
+        await returnResponse.promise
+      }
+      return result
+    })
+
+    writer.save(event('selection', coarse))
+    await committed.promise
+    writer.save({ themeFamily: 'classic' })
+    returnResponse.resolve()
+    await writer.drain()
+
+    expect(generationCurrent?.()).toBe(true)
+    expect(latest?.()).toBe(false)
+    expect(locationCurrent?.()).toBe(true)
+    expect(await getLocationChoice()).toMatchObject({ value: { place: coarse } })
+    expect(await history()).toEqual([expect.objectContaining({ id: 'gps:history:41.010000:28.950000' })])
+    expect(writer.getStatus()).toBe('saved')
+  })
+
+  it('does not acknowledge or replay a committed selection after a newer same-tab selection is queued', async () => {
+    const repo = createPrayerRepository()
+    const committed = deferred()
+    const returnResponse = deferred()
+    let firstLocationCurrent: (() => boolean) | undefined
+    let calls = 0
+    const writer = createSettingsPersistence(async (patch, isGenerationCurrent, _isLatest, isLocationCurrent) => {
+      const result = await repo.saveSettings(patch, isGenerationCurrent)
+      if (++calls === 1) {
+        firstLocationCurrent = isLocationCurrent
+        committed.resolve()
+        await returnResponse.promise
+      }
+      return result
+    })
+
+    writer.save(event('selection', coarse))
+    await committed.promise
+    writer.save(event('selection', other, coarse.id))
+    expect(firstLocationCurrent?.()).toBe(false)
+    returnResponse.resolve()
+    await writer.drain()
+
+    expect(await getLocationChoice()).toMatchObject({ value: { place: other } })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000', 'gps:history:41.010000:28.950000'])
+    expect(writer.getStatus()).toBe('saved')
+  })
+
   it('ignores obsolete refinements with delayed tab notifications and after reselecting the same coordinates', async () => {
     const tabA = createPrayerRepository()
     const tabB = createPrayerRepository()
     await tabA.saveSettings(event('selection', coarse))
-    await tabB.saveSettings(event('selection', { ...coarse, id: other.id }))
+    await tabB.saveSettings(event('selection', { ...coarse, id: other.id }, coarse.id))
     const before = await history()
     await tabA.saveSettings(event('refinement', precise))
     expect(await history()).toEqual(before)
     expect(await getLocationChoice()).toMatchObject({ value: { place: { id: other.id, latitude: coarse.latitude } } })
   })
 
+  it('does not commit a delayed standalone selection after another tab has selected a newer place', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const original = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 1)
+    const originalChoice: LocationChoice = { mode: 'official', locationId: 'kazan', source: 'manual', place: original }
+    await setSetting('locationChoice', originalChoice)
+    const started = deferred()
+    const allowWrite = deferred()
+    const obsolete = choice(coarse)
+    const delayed = createSettingsPersistence(async (patch, isCurrent) => {
+      started.resolve()
+      await allowWrite.promise
+      return tabA.saveSettings(patch, isCurrent)
+    })
+
+    delayed.save({ locationChoice: obsolete, placeEvents: [{ change: 'selection', choice: obsolete, expectedPlaceId: original.id }] })
+    await started.promise
+    const current = choice(other)
+    await tabB.saveSettings({ locationChoice: current, placeEvents: [{ change: 'selection', choice: current, expectedPlaceId: original.id }] })
+    const currentHistory = await history()
+    allowWrite.resolve()
+    await delayed.drain()
+
+    expect(await getLocationChoice()).toMatchObject({ value: current })
+    expect(await history()).toEqual(currentHistory)
+    expect((await history()).map(place => place.id)).not.toContain(coarse.id)
+  })
+
+  it('does not replay a coarse selection over a newer refinement with the same runtime identity', async () => {
+    const repo = createPrayerRepository()
+    await setSetting('locationChoice', choice(precise))
+    await setSetting('recentPlacesMigrated', true)
+    const refinedHistory = [{ ...precise, id: 'gps:history:41.010000:28.950000' }]
+    await setSetting('recentPlaces', refinedHistory)
+    await repo.saveSettings({ locationChoice: choice(coarse), placeEvents: [{ change: 'selection', choice: choice(coarse),
+      expectedPlaceId: other.id }] })
+
+    expect(await getLocationChoice()).toMatchObject({ value: choice(precise) })
+    expect(await history()).toEqual(refinedHistory)
+  })
+
   it('does not replay an uncommitted coarse selection over a newer tab selection while saving its refinement', async () => {
     const repo = createPrayerRepository()
     const original = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 1)
     await setSetting('locationChoice', { mode: 'official', locationId: 'kazan', source: 'manual', place: original })
-    await repo.saveSettings(event('selection', other))
+    await repo.saveSettings(event('selection', other, original.id))
     const before = await history()
     const selected = choice(coarse)
     await repo.saveSettings({ locationChoice: choice(precise), placeEvents: [
@@ -135,7 +238,7 @@ describe('transactional accepted GPS refinements', () => {
     const repo = createPrayerRepository()
     await repo.saveSettings(event('selection', coarse))
     const stale = await history()
-    await repo.saveSettings(event('selection', other))
+    await repo.saveSettings(event('selection', other, coarse.id))
     const latest = await history()
     await repo.saveSettings({ normalizeRecentPlaces: true, recentPlaces: stale })
     expect(await history()).toEqual(latest)
@@ -149,7 +252,7 @@ describe('transactional accepted GPS refinements', () => {
     await repo.saveSettings(event('refinement', precise))
     expect(await history()).toEqual([expect.objectContaining({ id: saved.id, latitude: precise.latitude, accuracy: 10, timestamp: 200 })])
     const returned = { ...coarse, id: 'gps:new-operation', timestamp: 400 }
-    await repo.saveSettings(event('selection', returned))
+    await repo.saveSettings(event('selection', returned, coarse.id))
     const after = await history()
     expect(after.map(place => place.id)).toEqual(['gps:history:41.010000:28.950000', saved.id])
     expect(new Set(after.map(place => place.id)).size).toBe(2)
@@ -165,7 +268,7 @@ describe('transactional accepted GPS refinements', () => {
     writer.save(event('refinement', precise))
     await writer.drain()
     expect(writer.getStatus()).toBe('failed')
-    await createPrayerRepository().saveSettings(event('selection', other))
+    await createPrayerRepository().saveSettings(event('selection', other, coarse.id))
     const latest = await history()
     fail = false
     writer.retry()
@@ -189,7 +292,7 @@ describe('transactional accepted GPS refinements', () => {
     writer.retry()
     await writer.drain()
     expect((await history())[0]).toMatchObject({ id: before[0]?.id, latitude: precise.latitude, timestamp: 200 })
-    await repo.saveSettings(event('selection', other))
+    await repo.saveSettings(event('selection', other, coarse.id))
     await repo.saveSettings(event('refinement', precise))
     expect(await getLocationChoice()).toMatchObject({ value: { place: other } })
   })

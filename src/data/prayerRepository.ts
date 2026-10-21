@@ -59,16 +59,15 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
   let locationChoice = patch.placeEvents?.length ? undefined : patch.locationChoice
   let active = originalActive
   if (patch.placeEvents?.length) {
-    for (const [index, event] of patch.placeEvents.entries()) {
+    for (const event of patch.placeEvents) {
       const next = placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
       if (!next) continue
       if (event.change === 'selection') {
-        const later = patch.placeEvents.slice(index + 1)
-        // Не восстанавливаем отменённый coarse из очереди ради его позднего refinement.
-        const refiningPendingSelection = !later.some(item => item.change === 'selection')
-          && later.some(item => item.change === 'refinement' && item.choice.place?.id === next.id)
-        if (refiningPendingSelection && event.expectedPlaceId !== undefined
-          && (active?.id ?? null) !== event.expectedPlaceId && active?.id !== next.id) continue
+        // Транзакция может начаться после более нового выбора другой вкладки.
+        // Когда предшественник известен, он должен совпасть с активным местом в транзакции.
+        const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
+        if (event.expectedPlaceId !== undefined
+          && (active?.id ?? null) !== event.expectedPlaceId && !alreadyApplied) continue
         recentPlaces = rememberPlace(recentPlaces, next)
       } else {
         if ((active?.id ?? null) !== event.expectedPlaceId) continue

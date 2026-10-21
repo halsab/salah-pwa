@@ -2,11 +2,17 @@ import type { Result } from '../../domain/result'
 import type { SettingsPatch } from '../../storage/database'
 
 export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'failed'
-export type SaveSettings = (patch: SettingsPatch, isCurrent: () => boolean) => Promise<Result<void, unknown>>
+export type SaveSettings = (
+  patch: SettingsPatch,
+  isGenerationCurrent: () => boolean,
+  isLatest: () => boolean,
+  isLocationCurrent: () => boolean,
+) => Promise<Result<void, unknown>>
 
 export function createSettingsPersistence(write: SaveSettings) {
   let latest: SettingsPatch = {}
   let revision = 0
+  let locationRevision = 0
   let epoch = 0
   let queue = Promise.resolve()
   let status: PersistenceStatus = 'idle'
@@ -21,14 +27,18 @@ export function createSettingsPersistence(write: SaveSettings) {
     }
     const operation = ++revision
     const generation = epoch
-    const isCurrent = () => generation === epoch && operation === revision
+    if (patch.locationChoice || patch.sourcePreferences || patch.placeEvents?.length) locationRevision += 1
+    const locationOperation = locationRevision
+    const isGenerationCurrent = () => generation === epoch
+    const isLatest = () => isGenerationCurrent() && operation === revision
+    const isLocationCurrent = () => isGenerationCurrent() && locationOperation === locationRevision
     notify('saving')
     // Каждый снимок включает все изменённые поля: новая настройка не теряет ранее несохранённое место.
     queue = queue.then(async () => {
-      if (!isCurrent()) return
+      if (!isLatest()) return
       const snapshot = latest
       try {
-        const result = await write(snapshot, isCurrent)
+        const result = await write(snapshot, isGenerationCurrent, isLatest, isLocationCurrent)
         if (result.ok && generation === epoch) {
           // Успешная транзакция могла завершиться до нового save, а её Promise — позже.
           // Не воспроизводим уже сохранённые события поверх новой вкладки или refinement.
@@ -39,11 +49,11 @@ export function createSettingsPersistence(write: SaveSettings) {
           }
           latest = remaining
         }
-        if (isCurrent()) {
+        if (isLatest()) {
           notify(result.ok ? 'saved' : 'failed')
         }
       } catch {
-        if (isCurrent()) notify('failed')
+        if (isLatest()) notify('failed')
       }
     })
   }

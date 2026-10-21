@@ -177,15 +177,21 @@ export function App({
   const initialRefreshStarted = useRef(false)
   const persistSettings = useCallback(async (
     patch: Parameters<AppServices['saveSettings']>[0],
-    isCurrent?: Parameters<AppServices['saveSettings']>[1],
+    isGenerationCurrent?: Parameters<AppServices['saveSettings']>[1],
+    isLatest?: () => boolean,
+    isLocationCurrent?: () => boolean,
   ) => {
-    const result = await services.saveSettings(patch, isCurrent)
+    const result = await services.saveSettings(patch, isGenerationCurrent)
     if (result.ok) {
-      if (patch.placeEvents?.length && isCurrent?.()) {
+      const generationIsCurrent = isGenerationCurrent?.() ?? true
+      const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
+      const currentIdentityCommitted = Boolean((patch.locationChoice || patch.sourcePreferences)
+        && generationIsCurrent && locationIsCurrent)
+      if (patch.placeEvents?.length && generationIsCurrent && locationIsCurrent) {
         pendingPlaceWrite.current = false
         retryOptionalSettings.current()
       }
-      if ((patch.locationChoice || patch.sourcePreferences) && isCurrent?.()) {
+      if ((patch.locationChoice || patch.sourcePreferences) && generationIsCurrent && locationIsCurrent) {
         invalidateFastCache()
         pendingFastIdentityWrite.current = false
         setFastCacheReady(true)
@@ -193,7 +199,7 @@ export function App({
         setRemoteSelectionPending(false)
         setSelectionSyncError(false)
       }
-      if (!(patch.themeFamily !== undefined && Object.keys(patch).length === 1)) {
+      if (currentIdentityCommitted || isLatest?.() && !(patch.themeFamily !== undefined && Object.keys(patch).length === 1)) {
         notifyFastScheduleSelectionChanged()
       }
     }

@@ -120,7 +120,8 @@ it('reconciles an external theme over queued local writes without losing unrelat
   writer.save(localCalendar)
   writer.save({ themeFamily: 'seasonal' })
   expect(save.mock.calls[0]?.[1]).toBeDefined()
-  expect(save.mock.calls[0]?.[1]?.()).toBe(false)
+  expect(save.mock.calls[0]?.[1]?.()).toBe(true)
+  expect(save.mock.calls[0]?.[2]?.()).toBe(false)
 
   stale.resolve(success(undefined))
   await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
