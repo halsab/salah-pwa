@@ -61,6 +61,7 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
   let selectionAccepted = true
   let committedPlaceSelectionOrder = typeof stored.committedPlaceSelectionOrder === 'number' && Number.isSafeInteger(stored.committedPlaceSelectionOrder)
     ? stored.committedPlaceSelectionOrder : undefined
+  const initialCommittedPlaceSelectionOrder = committedPlaceSelectionOrder
   let active = originalActive
   let authoritativeChoice = activeChoice
   if (patch.placeEvents?.length) {
@@ -69,16 +70,17 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
       if (!next) continue
       if (event.change === 'selection') {
         selectionAccepted = false
+        const retryBaseline = event.selectionReservationBaseline
+        if (event.selectionReservationRetried && (
+          retryBaseline === 'unavailable'
+          || retryBaseline !== undefined && retryBaseline !== (initialCommittedPlaceSelectionOrder ?? null)
+          || retryBaseline === undefined && event.expectedPlaceId !== undefined && (active?.id ?? null) !== event.expectedPlaceId
+        )) continue
         // Повтор уже зафиксированного выбора не должен менять recency или GPS snapshot.
         const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
         if (alreadyApplied && event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
           && event.selectionOrder <= committedPlaceSelectionOrder) {
           selectionAccepted = true
-          continue
-        }
-        if (event.selectionReservationRetried && event.expectedPlaceId !== undefined
-          && (active?.id ?? null) !== event.expectedPlaceId) {
-          selectionAccepted = false
           continue
         }
         // Резервирование задаёт порядок намерений, но защищает от старых записей только committed-маркер.
@@ -409,6 +411,11 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       }
       return reserveStoredPlaceSelectionOrder(generation)
     },
+    getCommittedPlaceSelectionOrder: async () => {
+      const result = await getSetting('committedPlaceSelectionOrder')
+      if (!result.ok) throw new Error('Не удалось прочитать committed-order выбора места')
+      return typeof result.value === 'number' && Number.isSafeInteger(result.value) ? result.value : undefined
+    },
     saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean,
       onPlaceEventsOutcome?: Parameters<typeof saveSettings>[4]): Promise<Result<void, StorageFailure | DataFailure>> => {
       if (patch.calendarPreferences && !isCalendarPreferences(patch.calendarPreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
@@ -421,6 +428,9 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
           || !event.choice || !placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
           || event.selectionOrder !== undefined && !Number.isFinite(event.selectionOrder)
           || event.selectionReservationRetried !== undefined && typeof event.selectionReservationRetried !== 'boolean'
+          || event.selectionReservationBaseline !== undefined && event.selectionReservationBaseline !== null
+            && event.selectionReservationBaseline !== 'unavailable'
+            && (typeof event.selectionReservationBaseline !== 'number' || !Number.isSafeInteger(event.selectionReservationBaseline))
           || event.change === 'selection' && event.selectionOrder === undefined
           || event.change !== 'selection' && !(typeof event.expectedPlaceId === 'string' || event.expectedPlaceId === null)
       }))) {

@@ -24,7 +24,7 @@ import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFast
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
 import { setLanguagePreference } from './localization'
-import { deleteSalahDatabase, getLocationChoice, setSetting, type SettingsPatch } from './storage/database'
+import { deleteSalahDatabase, getLocationChoice, getSetting, setSetting, type SettingsPatch } from './storage/database'
 import { createPrayerRepository, loadPrayerRepositoryOptionalSettings } from './data/prayerRepository'
 import { THEME_PREFERENCE_CACHE_KEY } from './ui/themePreferenceCache'
 import { required } from './test/required'
@@ -156,6 +156,7 @@ function createServices(
       ),
     ...settingsServices(overrides),
     reservePlaceSelectionOrder: overrides.reservePlaceSelectionOrder ?? (() => Promise.resolve(++selectionOrder)),
+    getCommittedPlaceSelectionOrder: overrides.getCommittedPlaceSelectionOrder ?? (() => Promise.resolve(undefined)),
     refresh: vi.fn().mockResolvedValue(initializedState),
     subscribe: vi.fn(() => () => {}),
     invalidateAndDrain: vi.fn().mockResolvedValue(undefined),
@@ -1644,6 +1645,56 @@ describe('Salah', () => {
     expect(screen.getByText('Набережные Челны')).toBeVisible()
     const restarted = await tabB.initialize()
     expect(restarted).toMatchObject({ ok: true, value: { locationChoice: remoteChoice, recentPlaces: persisted.value.recentPlaces } })
+  })
+
+  it('reconciles the rendered home after a pre-startup retry loses to a committed tab selection', async () => {
+    await deleteSalahDatabase()
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const startup = deferred<Awaited<ReturnType<NonNullable<AppServices['initializeStartup']>>>>()
+    const remote = createOfficialPlace(required(initializedState.meta.locations[1]), 2)
+    const remoteChoice = { mode: 'official' as const, locationId: required(initializedState.meta.locations[1]).id,
+      source: 'manual' as const, place: remote }
+    let initializeCalls = 0
+    const currentState = async () => {
+      const [choiceResult, optional] = await Promise.all([getLocationChoice(), loadPrayerRepositoryOptionalSettings()])
+      if (!choiceResult.ok || !optional.ok) throw new Error('Unable to read the authoritative selection')
+      return initialized({ locationChoice: choiceResult.value ?? null, recentPlaces: optional.value.recentPlaces,
+        recentPlacesMigrated: optional.value.recentPlacesMigrated })
+    }
+    let failReservation = true
+    const services = createServices({
+      initializeStartup: vi.fn(() => ++initializeCalls === 1 ? startup.promise : currentState()),
+      reservePlaceSelectionOrder: async () => {
+        if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
+        return tabA.reservePlaceSelectionOrder()
+      },
+      getCommittedPlaceSelectionOrder: tabA.getCommittedPlaceSelectionOrder,
+      saveSettings: (patch, isGenerationCurrent, onOutcome) => tabA.saveSettings(patch, isGenerationCurrent, onOutcome),
+      loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
+    })
+    render(<App services={services} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
+    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
+    await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
+    expect(await screen.findByRole('button', { name: 'Москва' })).toBeVisible()
+    await screen.findByRole('button', { name: 'Повторить' })
+
+    const winnerOrder = await tabB.reservePlaceSelectionOrder()
+    await tabB.saveSettings({ locationChoice: remoteChoice, placeEvents: [{ change: 'selection', choice: remoteChoice,
+      selectionOrder: winnerOrder }] })
+    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
+
+    expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()
+    await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: remoteChoice }))
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
+    const persisted = await loadPrayerRepositoryOptionalSettings()
+    expect(persisted).toMatchObject({ ok: true, value: { recentPlaces: [remote] } })
+
+    await act(async () => { startup.resolve(await currentState()); await startup.promise })
+    expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
+    await deleteSalahDatabase()
   })
 
   it('acknowledges a committed place write after a theme save supersedes its response', async () => {

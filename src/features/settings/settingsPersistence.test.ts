@@ -119,6 +119,36 @@ it('invalidates queued writes and waits for in-flight completion before reset', 
   expect(writer.getStatus()).toBe('idle')
 })
 
+it.each(['rebase', 'reset'] as const)('does not attach a failed reservation baseline after %s cancels its generation', async boundary => {
+  const baseline = deferred<number | undefined>()
+  const save = vi.fn<SaveSettings>().mockResolvedValue(success(undefined))
+  const readBaseline = vi.fn(() => baseline.promise)
+  let fail = true
+  const writer = createSettingsPersistence(save, () => {
+    if (fail) { fail = false; return Promise.reject(new Error('reservation failed')) }
+    return Promise.resolve(1)
+  }, readBaseline)
+  const selected = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 123 }, 'UTC', null, 'gps:retry-boundary')
+  writer.save({ locationChoice: { mode: 'calculated', source: 'manual', coordinates: selected },
+    placeEvents: [{ change: 'selection', choice: { mode: 'calculated', source: 'manual', coordinates: selected } }] })
+  await vi.waitFor(() => expect(readBaseline).toHaveBeenCalledOnce())
+
+  let boundaryPromise: Promise<void>
+  if (boundary === 'rebase') {
+    writer.rebase()
+    boundaryPromise = Promise.resolve()
+  } else boundaryPromise = writer.invalidateAndDrain()
+  baseline.resolve(undefined)
+  await boundaryPromise
+  await writer.drain()
+  expect(save).not.toHaveBeenCalled()
+
+  writer.save({ themeFamily: 'classic' })
+  await writer.drain()
+  expect(save).toHaveBeenCalledOnce()
+  expect(save.mock.calls[0]?.[0]).toEqual({ themeFamily: 'classic' })
+})
+
 it('rebases accumulated writes after accepting an external settings state', async () => {
   const save = vi.fn().mockResolvedValue(success(undefined))
   const writer = createSettingsPersistence(save)

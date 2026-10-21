@@ -9,7 +9,8 @@ export type SaveSettings = (
   isLocationCurrent: () => boolean,
 ) => Promise<Result<void, unknown>>
 
-export function createSettingsPersistence(write: SaveSettings, reserveSelectionOrder?: () => Promise<number>) {
+export function createSettingsPersistence(write: SaveSettings, reserveSelectionOrder?: () => Promise<number>,
+  readCommittedSelectionOrder?: () => Promise<number | undefined>) {
   let latest: SettingsPatch = {}
   let revision = 0
   let locationRevision = 0
@@ -39,10 +40,16 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
           latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === event ? ordered : current) }
         } catch (error) {
           reservationFailed = true
+          const baseline = readCommittedSelectionOrder
+            ? await readCommittedSelectionOrder().then(value => value ?? null).catch(() => 'unavailable' as const)
+            : undefined
           scheduledEvents.clear()
           if (latest.placeEvents?.includes(event)) {
-            const retried = { ...event, selectionReservationRetried: true }
-            latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === event ? retried : current) }
+            latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current =>
+              current.change === 'selection' && current.selectionOrder === undefined
+                ? { ...current, selectionReservationRetried: true,
+                  ...(baseline !== undefined ? { selectionReservationBaseline: baseline } : {}) }
+                : current) }
           }
           throw error
         } finally {

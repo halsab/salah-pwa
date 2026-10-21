@@ -506,6 +506,8 @@ export interface PlacePersistenceEvent {
   selectionOrder?: number
   // Retry после сбоя бронирования сохраняет исходную позицию среди намерений вкладки.
   selectionReservationRetried?: boolean
+  // Снимок committed-order до неудачного резервирования; null означает, что выбора ещё не было.
+  selectionReservationBaseline?: number | null | 'unavailable'
 }
 
 export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'recentPlacesMigrated' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>

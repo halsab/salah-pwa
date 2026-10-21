@@ -85,7 +85,8 @@ const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-c
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
   'clearAppData' | 'getDataGeneration' | 'initializeStartup' | 'loadOptionalSettings'>>,
-  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'reservePlaceSelectionOrder' | 'invalidateAndDrain'> {
+  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'reservePlaceSelectionOrder'
+    | 'getCommittedPlaceSelectionOrder' | 'invalidateAndDrain'> {
   getDays: (locationId: string, dates: readonly string[], revision: string, provider: string) => ReturnType<typeof prayerRepository.getDays>
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
@@ -217,7 +218,7 @@ export function App({
     }
     return result
   }, [invalidateFastCache, services])
-  const persistence = useSettingsPersistence(persistSettings, services.reservePlaceSelectionOrder)
+  const persistence = useSettingsPersistence(persistSettings, services.reservePlaceSelectionOrder, services.getCommittedPlaceSelectionOrder)
   const saveSettings = persistence.save
   const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain

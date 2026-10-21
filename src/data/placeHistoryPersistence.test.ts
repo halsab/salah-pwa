@@ -315,7 +315,8 @@ describe('transactional accepted GPS refinements', () => {
       return tabA.reservePlaceSelectionOrder()
     }
     let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
-    const writer = createSettingsPersistence((patch, isGenerationCurrent) => tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserveA)
+    const writer = createSettingsPersistence((patch, isGenerationCurrent) => tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }),
+      reserveA, tabA.getCommittedPlaceSelectionOrder)
     const stale = choice(coarse)
     writer.save({ locationChoice: stale, placeEvents: [{ change: 'selection', choice: stale, expectedPlaceId: original.id }] })
     await writer.drain()
@@ -332,6 +333,119 @@ describe('transactional accepted GPS refinements', () => {
     expect(await getLocationChoice()).toMatchObject({ value: winner })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000', original.id])
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
+  })
+
+  it('does not promote a pre-startup intention after its reservation fails and another tab commits', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    let failReservation = true
+    const reserveA = async () => {
+      if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
+      return tabA.reservePlaceSelectionOrder()
+    }
+    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    const writer = createSettingsPersistence((patch, isGenerationCurrent) =>
+      tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserveA, tabA.getCommittedPlaceSelectionOrder)
+    const stale = choice(coarse)
+    writer.save({ locationChoice: stale, placeEvents: [{ change: 'selection', choice: stale }] })
+    await writer.drain()
+
+    const winner = choice(other)
+    const winnerOrder = await tabB.reservePlaceSelectionOrder()
+    await tabB.saveSettings({ locationChoice: winner, placeEvents: [{ change: 'selection', choice: winner,
+      selectionOrder: winnerOrder }] })
+    writer.retry()
+    await writer.drain()
+
+    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(await getLocationChoice()).toMatchObject({ value: winner })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000'])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
+  })
+
+  it('does not promote any queued intentions after their shared reservation chain fails and another tab commits', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    let failReservation = true
+    const reserveA = async () => {
+      if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
+      return tabA.reservePlaceSelectionOrder()
+    }
+    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    const writer = createSettingsPersistence((patch, isGenerationCurrent) =>
+      tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserveA, tabA.getCommittedPlaceSelectionOrder)
+    const staleFirst = choice(coarse)
+    const staleSecond = choice({ ...other, id: 'gps:operation:queued-stale' })
+    writer.save({ locationChoice: staleFirst, placeEvents: [{ change: 'selection', choice: staleFirst }] })
+    writer.save({ locationChoice: staleSecond, placeEvents: [{ change: 'selection', choice: staleSecond }] })
+    await writer.drain()
+
+    const winner = choice({ ...precise, id: 'gps:operation:remote-winner' })
+    const winnerOrder = await tabB.reservePlaceSelectionOrder()
+    await tabB.saveSettings({ locationChoice: winner, placeEvents: [{ change: 'selection', choice: winner,
+      selectionOrder: winnerOrder }] })
+    writer.retry()
+    await writer.drain()
+
+    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(await getLocationChoice()).toMatchObject({ value: winner })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:41.030000:28.950000'])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
+  })
+
+  it('retries after a reservation failure without a competing commit, then accepts a genuinely new intention', async () => {
+    const repo = createPrayerRepository()
+    let failReservation = true
+    const reserve = async () => {
+      if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
+      return repo.reservePlaceSelectionOrder()
+    }
+    const writer = createSettingsPersistence(repo.saveSettings, reserve, repo.getCommittedPlaceSelectionOrder)
+    const first = choice(coarse)
+    writer.save({ locationChoice: first, placeEvents: [{ change: 'selection', choice: first }] })
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+    expect(await getLocationChoice()).toMatchObject({ value: undefined })
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: undefined })
+    expect(await history()).toEqual([])
+
+    writer.retry()
+    await writer.drain()
+    expect(await getLocationChoice()).toMatchObject({ value: first })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:41.010000:28.950000'])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 1 })
+
+    const next = choice(other)
+    writer.save({ locationChoice: next, placeEvents: [{ change: 'selection', choice: next }] })
+    await writer.drain()
+    expect(await getLocationChoice()).toMatchObject({ value: next })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000', 'gps:history:41.010000:28.950000'])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 2 })
+  })
+
+  it('preserves queued same-tab intention order when a failed reservation is retried without competition', async () => {
+    const repo = createPrayerRepository()
+    let failReservation = true
+    const reserve = async () => {
+      if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
+      return repo.reservePlaceSelectionOrder()
+    }
+    const writer = createSettingsPersistence(repo.saveSettings, reserve, repo.getCommittedPlaceSelectionOrder)
+    const first = choice(coarse)
+    const second = choice(other)
+    writer.save({ locationChoice: first, placeEvents: [{ change: 'selection', choice: first }] })
+    writer.save({ locationChoice: second, placeEvents: [{ change: 'selection', choice: second }] })
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+
+    writer.retry()
+    await writer.drain()
+
+    expect(await getLocationChoice()).toMatchObject({ value: second })
+    expect((await history()).map(place => place.id)).toEqual([
+      'gps:history:48.000000:20.000000', 'gps:history:41.010000:28.950000',
+    ])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 2 })
   })
 
   it('allocates wall-clock-independent selection orders across tabs and preserves rapid ordered selections', async () => {
