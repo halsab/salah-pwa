@@ -60,6 +60,12 @@ function findGpsMatch(places: readonly Place[], candidate: Place): Place | undef
     .sort((a, b) => a.distance - b.distance || a.index - b.index)[0]?.place
 }
 
+export function findRecentPlace(places: readonly Place[], candidate: Place): Place | undefined {
+  return candidate.selection === 'gps'
+    ? places.find(place => place.selection === 'gps' && place.id === candidate.id) ?? findGpsMatch(places, candidate)
+    : places.find(place => place.selection === candidate.selection && place.id === candidate.id)
+}
+
 function mergeInto(places: Place[], candidate: Place, promote: boolean): Place[] {
   const stableGpsId = candidate.selection === 'gps' && candidate.id.startsWith('gps:history:')
   const matched = candidate.selection === 'gps'

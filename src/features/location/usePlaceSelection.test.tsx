@@ -49,6 +49,22 @@ function setup(overrides: Partial<AppServices & TestSettingsServices> = {}, init
 }
 
 describe('one-shot GPS operations', () => {
+  it('gives simultaneous tab operations distinct runtime identities even for identical fix timestamps', async () => {
+    const a = setup()
+    const b = setup()
+    let pendingA!: Promise<void>
+    let pendingB!: Promise<void>
+    act(() => { pendingA = a.result.current.locate(); pendingB = b.result.current.locate() })
+    await act(async () => {
+      a.coarse.resolve(success(goodCoarseFix)); b.coarse.resolve(success(goodCoarseFix))
+      a.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' }))
+      b.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' }))
+      await Promise.all([pendingA, pendingB])
+    })
+    expect(a.result.current.place?.id).not.toBe(b.result.current.place?.id)
+    expect(a.result.current.place).toMatchObject(goodCoarseFix)
+    expect(b.result.current.place).toMatchObject(goodCoarseFix)
+  })
   it('does not reacquire a fresh restored GPS fix', () => {
     const place = createGpsPlace({ ...goodCoarseFix, timestamp: 1000 }, 'America/Los_Angeles', geometry, 'gps:cached')
     const h = setup({}, { place, source: 'automatic' })

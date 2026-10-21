@@ -1,8 +1,8 @@
 import { isLocationSelectionSource } from '../domain/locationSelection'
 import { isCalendarPreferences, restoreCalendarPreferences, type CalendarPreferences } from '../domain/calendar'
-import { migrateRecentPlaces, rememberPlace, restoreRecentPlaces } from '../domain/recentPlaces'
+import { findRecentPlace, migrateRecentPlaces, rememberPlace, restoreRecentPlaces, updateRecentPlace } from '../domain/recentPlaces'
 import type { Place } from '../domain/place'
-import { isPlace, migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
+import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
 import { getDatasetRevision } from '../domain/scheduleContext'
 import { isValidTimeZone, DUM_RT_TIME_ZONE } from '../domain/locationTime'
 import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
@@ -10,7 +10,7 @@ import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
   clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset,
-  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance,
+  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance, type PlacePersistenceEvent,
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
@@ -56,13 +56,37 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
     ? restoreRecentPlaces(stored.recentPlaces)
     : migrateRecentPlaces(stored.recentPlaces, originalActive)
   let recentPlaces = migrated
-  if (patch.placeSelectionEvents?.length) {
-    recentPlaces = patch.placeSelectionEvents.reduce((history, place) => rememberPlace(history, place), migrated)
-  } else if (patch.recentPlaces) {
+  let locationChoice = patch.placeEvents?.length ? undefined : patch.locationChoice
+  let active = originalActive
+  if (patch.placeEvents?.length) {
+    for (const [index, event] of patch.placeEvents.entries()) {
+      const next = placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
+      if (!next) continue
+      if (event.change === 'selection') {
+        const later = patch.placeEvents.slice(index + 1)
+        // Не восстанавливаем отменённый coarse из очереди ради его позднего refinement.
+        const refiningPendingSelection = !later.some(item => item.change === 'selection')
+          && later.some(item => item.change === 'refinement' && item.choice.place?.id === next.id)
+        if (refiningPendingSelection && event.expectedPlaceId !== undefined
+          && (active?.id ?? null) !== event.expectedPlaceId && active?.id !== next.id) continue
+        recentPlaces = rememberPlace(recentPlaces, next)
+      } else {
+        if ((active?.id ?? null) !== event.expectedPlaceId) continue
+        if (event.change === 'refinement') {
+          if (active?.selection !== 'gps' || next.selection !== 'gps' || active.id !== next.id) continue
+          const target = findRecentPlace(recentPlaces, active)
+          if (!target) continue
+          recentPlaces = updateRecentPlace(recentPlaces, next, target.id)
+        }
+      }
+      active = next
+      locationChoice = event.choice
+    }
+  } else if (patch.recentPlaces && !patch.normalizeRecentPlaces) {
     const incoming = restoreRecentPlaces(patch.recentPlaces)
     recentPlaces = stored.recentPlacesMigrated === true ? incoming : restoreRecentPlaces([...incoming, ...migrated])
   }
-  return { recentPlaces, recentPlacesMigrated: true as const }
+  return { recentPlaces, recentPlacesMigrated: true as const, locationChoice }
 }
 
 interface StoredOptionalSettings {
@@ -355,10 +379,15 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.calendarPreferences && !isCalendarPreferences(patch.calendarPreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
-      if (patch.placeSelectionEvents && (!Array.isArray(patch.placeSelectionEvents) || patch.placeSelectionEvents.some(place => !isPlace(place)))) {
+      if (patch.placeEvents && (!Array.isArray(patch.placeEvents) || patch.placeEvents.some((raw: unknown) => {
+        if (!raw || typeof raw !== 'object') return true
+        const event = raw as Partial<PlacePersistenceEvent>
+        return !event.change || !['selection', 'refinement', 'automatic'].includes(event.change)
+          || !event.choice || !placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
+          || event.change !== 'selection' && !(typeof event.expectedPlaceId === 'string' || event.expectedPlaceId === null)
+      }))) {
         return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       }
-      if (patch.placeSelectionEvents?.length && !patch.locationChoice) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.appearance && !['system', 'light', 'dark'].includes(patch.appearance)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.themeFamily && restoreThemeFamily(patch.themeFamily) !== patch.themeFamily) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))

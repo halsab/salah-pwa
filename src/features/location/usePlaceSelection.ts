@@ -129,6 +129,7 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     }
     const geometry = services.loadGeography().catch(() => null)
     const operationResult: { best: Place | null } = { best: null }
+    const runtimeId = `gps:${crypto.randomUUID()}`
     let preciseAccepted = false
     let revision = 0
     const failures: GeolocationFailure[] = []
@@ -185,7 +186,7 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
         const base = enriched ?? basePreview ?? operationResult.best
         const next = base
           ? refineGpsPlace(base, result.value, services.getDeviceTimeZone(), data)
-          : createGpsPlace(result.value, services.getDeviceTimeZone(), data, `gps:${operation}:${result.value.timestamp}`)
+          : createGpsPlace(result.value, services.getDeviceTimeZone(), data, runtimeId)
         if (operationResult.best && !isUsefulRefinement(operationResult.best, next)) {
           if (accuracy === 'precise') preciseAccepted = true
           return

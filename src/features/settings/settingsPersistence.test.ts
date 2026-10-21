@@ -39,24 +39,24 @@ it('retries the accepted location and its recent history as one settings snapsho
   expect(save.mock.calls[1]?.[0]).toEqual(selected)
   expect(writer.getStatus()).toBe('saved')
 })
-it('keeps every explicit selection in order when writes are superseded while storage is pending', async () => {
-  const first = deferred<ReturnType<typeof success<void>>>()
+it.each(['committed', 'failed'] as const)('keeps only uncommitted selections when an in-flight write is %s', async result => {
+  const first = deferred<ReturnType<typeof success<void>> | ReturnType<typeof failure<unknown>>>()
   const second = deferred<ReturnType<typeof success<void>>>()
   const selectedA = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 123 }, 'America/New_York', null, 'gps:operation:a')
   const selectedB = createGpsPlace({ latitude: 41, longitude: -74, accuracy: 20, timestamp: 456 }, 'America/New_York', null, 'gps:operation:b')
   const save = vi.fn<SaveSettings>().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
   const writer = createSettingsPersistence(save)
 
-  writer.save({ locationChoice: a.locationChoice, placeSelectionEvents: [selectedA] })
+  writer.save({ locationChoice: a.locationChoice, placeEvents: [{ change: 'selection', choice: { mode: 'calculated', source: 'automatic', coordinates: selectedA, place: selectedA } }] })
   await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-  writer.save({ locationChoice: b.locationChoice, placeSelectionEvents: [selectedB] })
-  first.resolve(success(undefined))
+  writer.save({ locationChoice: b.locationChoice, placeEvents: [{ change: 'selection', choice: { mode: 'calculated', source: 'automatic', coordinates: selectedB, place: selectedB } }] })
+  first.resolve(result === 'committed' ? success(undefined) : failure({ kind: 'storage' }))
   await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
 
   expect(save.mock.calls[1]?.[0]).toMatchObject({
     locationChoice: b.locationChoice,
-    placeSelectionEvents: [selectedA, selectedB],
   })
+  expect(save.mock.calls[1]?.[0].placeEvents?.map(event => event.choice.place)).toEqual(result === 'committed' ? [selectedB] : [selectedA, selectedB])
   second.resolve(success(undefined))
   await writer.drain()
 })

@@ -14,12 +14,11 @@ export function createSettingsPersistence(write: SaveSettings) {
   const notify = (next: PersistenceStatus) => { status = next; for (const listener of listeners) listener() }
   const discardPending = () => { epoch += 1; revision += 1; latest = {} }
   const save = (patch: SettingsPatch) => {
-    const previousSelections = latest.placeSelectionEvents ?? []
+    const previousEvents = latest.placeEvents ?? []
     latest = { ...latest, ...patch }
-    if (patch.placeSelectionEvents?.length) {
-      latest.placeSelectionEvents = [...previousSelections, ...patch.placeSelectionEvents]
+    if (patch.placeEvents?.length) {
+      latest.placeEvents = [...previousEvents, ...patch.placeEvents]
     }
-    const snapshot = latest
     const operation = ++revision
     const generation = epoch
     const isCurrent = () => generation === epoch && operation === revision
@@ -27,10 +26,20 @@ export function createSettingsPersistence(write: SaveSettings) {
     // Каждый снимок включает все изменённые поля: новая настройка не теряет ранее несохранённое место.
     queue = queue.then(async () => {
       if (!isCurrent()) return
+      const snapshot = latest
       try {
         const result = await write(snapshot, isCurrent)
+        if (result.ok && generation === epoch) {
+          // Успешная транзакция могла завершиться до нового save, а её Promise — позже.
+          // Не воспроизводим уже сохранённые события поверх новой вкладки или refinement.
+          const remaining: SettingsPatch = Object.fromEntries(Object.entries(latest)
+            .filter(([key, value]) => snapshot[key as keyof SettingsPatch] !== value))
+          if (remaining.placeEvents && snapshot.placeEvents) {
+            remaining.placeEvents = remaining.placeEvents.filter(event => !snapshot.placeEvents?.includes(event))
+          }
+          latest = remaining
+        }
         if (isCurrent()) {
-          if (result.ok) latest = {}
           notify(result.ok ? 'saved' : 'failed')
         }
       } catch {

@@ -16,7 +16,7 @@ import {
   type CityDataset,
 } from './domain/cities'
 import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
-import { createGpsPlace, createOfficialPlace } from './domain/place'
+import { createGpsPlace, createOfficialPlace, type Place } from './domain/place'
 import { migrateRecentPlaces, rememberPlace } from './domain/recentPlaces'
 import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from './domain/scheduleContext'
 import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFastScheduleSnapshot,
@@ -24,7 +24,8 @@ import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFast
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
 import { setLanguagePreference } from './localization'
-import type { SettingsPatch } from './storage/database'
+import { deleteSalahDatabase, getLocationChoice, setSetting, type SettingsPatch } from './storage/database'
+import { createPrayerRepository, loadPrayerRepositoryOptionalSettings } from './data/prayerRepository'
 import { THEME_PREFERENCE_CACHE_KEY } from './ui/themePreferenceCache'
 import { required } from './test/required'
 
@@ -169,6 +170,10 @@ function createServices(
     now: () => new Date('2026-09-01T10:00:00.000Z'),
     ...overrides,
   }
+}
+
+function selectedPlaces(patch?: SettingsPatch): Place[] {
+  return patch?.placeEvents?.flatMap(event => event.change === 'selection' && event.choice.place ? [event.choice.place] : []) ?? []
 }
 
 function memoryStorage(): Storage {
@@ -652,7 +657,7 @@ describe('Salah', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
     expect(await screen.findByRole('region', { name: 'Главная' })).toBeVisible()
     await waitFor(() => expect(vi.mocked(services.saveSettings).mock.calls.some(([patch]) =>
-      patch.placeSelectionEvents?.some(place => place.id === 'geonames:524901'))).toBe(true))
+      selectedPlaces(patch).some(place => place.id === 'geonames:524901'))).toBe(true))
     await userEvent.click(screen.getByRole('button', { name: /Москва/ }))
     const recent = screen.getByRole('region', { name: 'Недавние места' })
     await userEvent.click(within(recent).getByRole('button', { name: 'Казань' }))
@@ -666,10 +671,10 @@ describe('Salah', () => {
     const stored = { locationChoice: { mode: 'official' as const, locationId: 'kazan', source: 'default' as const },
       recentPlaces: [oldManual], recentPlacesMigrated: false }
     const saveSettings = vi.fn<AppServices['saveSettings']>(patch => {
-      if (patch.placeSelectionEvents?.length) {
+      if (selectedPlaces(patch).length) {
         const baseline = stored.recentPlacesMigrated ? stored.recentPlaces : migrateRecentPlaces(stored.recentPlaces,
           createOfficialPlace(required(initializedState.meta.locations[0]), 0))
-        stored.recentPlaces = patch.placeSelectionEvents.reduce((history, place) => rememberPlace(history, place), baseline)
+        stored.recentPlaces = selectedPlaces(patch).reduce((history, place) => rememberPlace(history, place), baseline)
         stored.recentPlacesMigrated = true
       }
       Object.assign(stored, patch)
@@ -702,7 +707,7 @@ describe('Salah', () => {
     expect(within(recent).getByRole('button', { name: 'Казань' })).toBeVisible()
     expect(within(recent).getByRole('button', { name: /Набережные Челны/ })).toBeVisible()
     expect(stored.recentPlaces.map(place => place.id)).toEqual(['geonames:524901', 'locality:kazan', 'locality:naberezhnye-chelny'])
-    expect(saveSettings.mock.calls[0]?.[0].placeSelectionEvents?.map(place => place.id)).toEqual(['geonames:524901'])
+    expect(selectedPlaces(saveSettings.mock.calls[0]?.[0]).map(place => place.id)).toEqual(['geonames:524901'])
   })
 
   it('keeps the pre-startup selection newest while migrating a full legacy history', async () => {
@@ -724,11 +729,11 @@ describe('Salah', () => {
     const persistedSettings = { locationChoice: { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const },
       recentPlaces: legacyHistory, recentPlacesMigrated: false }
     const saveSettings = vi.fn<AppServices['saveSettings']>(patch => {
-      if (patch.placeSelectionEvents?.length) {
+      if (selectedPlaces(patch).length) {
         const baseline = persistedSettings.recentPlacesMigrated
           ? persistedSettings.recentPlaces
           : migrateRecentPlaces(persistedSettings.recentPlaces, previousCurrent)
-        persistedSettings.recentPlaces = patch.placeSelectionEvents.reduce((history, place) => rememberPlace(history, place), baseline)
+        persistedSettings.recentPlaces = selectedPlaces(patch).reduce((history, place) => rememberPlace(history, place), baseline)
         persistedSettings.recentPlacesMigrated = true
       }
       if (patch.locationChoice) persistedSettings.locationChoice = patch.locationChoice as typeof persistedSettings.locationChoice
@@ -748,8 +753,8 @@ describe('Salah', () => {
     await waitFor(() => expect(saveSettings).toHaveBeenCalledOnce())
     expect(saveSettings.mock.calls[0]?.[0]).toMatchObject({
       locationChoice: { mode: 'calculated', coordinates: { cityId: 524901 } },
-      placeSelectionEvents: [expect.objectContaining({ id: 'geonames:524901' })],
     })
+    expect(selectedPlaces(saveSettings.mock.calls[0]?.[0]).map(place => place.id)).toEqual(['geonames:524901'])
     expect(persistedSettings.locationChoice).toMatchObject({ source: 'manual', place: { id: 'geonames:524901' } })
 
     await act(async () => { initialization.resolve(success(startupState)); await initialization.promise })
@@ -800,7 +805,7 @@ describe('Salah', () => {
     await userEvent.type(screen.getByRole('searchbox'), 'Москва')
     await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
     await waitFor(() => expect(saveSettings).toHaveBeenCalledOnce())
-    expect(saveSettings.mock.calls[0]?.[0].placeSelectionEvents).toHaveLength(1)
+    expect(selectedPlaces(saveSettings.mock.calls[0]?.[0])).toHaveLength(1)
     expect(stored.locationChoice).toMatchObject({ source: 'manual', place: { id: 'geonames:524901' } })
 
     await act(async () => { initialization.resolve(initialized()); await initialization.promise })
@@ -832,8 +837,8 @@ describe('Salah', () => {
     const acceptedPatch = saveSettings.mock.calls[0]?.[0]
     expect(acceptedPatch).toMatchObject({
       locationChoice: { mode: 'calculated', coordinates: { cityId: 524901 } },
-      placeSelectionEvents: [expect.objectContaining({ id: 'geonames:524901' })],
     })
+    expect(selectedPlaces(acceptedPatch).map(place => place.id)).toEqual(['geonames:524901'])
     await userEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(saveSettings).toHaveBeenCalledTimes(2))
     if (!acceptedPatch) throw new Error('Expected the first accepted-place persistence attempt')
@@ -1276,6 +1281,74 @@ describe('Salah', () => {
     expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
   })
 
+  it.each(['persisted', 'in-flight'] as const)('persists GPS refinement and enrichment before hydration when acceptance is %s', async stage => {
+    const repo = createPrayerRepository()
+    await setSetting('locationChoice', initializedState.locationChoice)
+    const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const nearest = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
+    const selectionGate = deferred<undefined>()
+    let firstSelection = true
+    const saveSettings = vi.fn<AppServices['saveSettings']>(async (patch, isCurrent) => {
+      if (firstSelection && selectedPlaces(patch).length) {
+        firstSelection = false
+        if (stage === 'in-flight') await selectionGate.promise
+      }
+      return repo.saveSettings(patch, isCurrent)
+    })
+    const services = createServices({
+      initializeStartup: vi.fn().mockResolvedValue(initialized()),
+      saveSettings,
+      loadOptionalSettings: vi.fn(() => optional.promise),
+      getPosition: vi.fn(accuracy => accuracy === 'coarse'
+        ? Promise.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 })) : precise.promise),
+    })
+    services.cities.findNearest = vi.fn(() => nearest.promise)
+    const view = render(<App services={services} />)
+    try {
+      await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+      await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+      await screen.findByText('41.0100, 28.9500')
+      await waitFor(() => expect(firstSelection).toBe(false))
+      if (stage === 'persisted') await waitFor(async () => {
+        expect(await getLocationChoice()).toMatchObject({ value: { place: { latitude: 41.01 } } })
+      })
+      await act(async () => { precise.resolve(success({ latitude: 41.03, longitude: 28.95, accuracy: 10, timestamp: 200 })); await Promise.resolve() })
+      selectionGate.resolve(undefined)
+      await waitFor(async () => {
+        const value = await loadPrayerRepositoryOptionalSettings()
+        expect(value).toMatchObject({ value: { recentPlaces: [expect.objectContaining({
+          id: 'gps:history:41.010000:28.950000', latitude: 41.03, accuracy: 10, timestamp: 200,
+        }), expect.objectContaining({ id: 'locality:kazan' })] } })
+      })
+      await act(async () => {
+        nearest.resolve(success({ id: 745044, name: 'Стамбул', countryCode: 'TR', admin1Code: '34', admin1Name: 'Стамбул',
+          latitude: 41.03, longitude: 28.95, population: 1, timeZone: 'Europe/Istanbul' }))
+        await Promise.resolve()
+      })
+      await waitFor(async () => expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [
+        expect.objectContaining({ name: 'Стамбул', timestamp: 200, accuracy: 10, latitude: 41.03, id: 'gps:history:41.010000:28.950000' }),
+        expect.objectContaining({ id: 'locality:kazan' }),
+      ] } }))
+      expect(await getLocationChoice()).toMatchObject({ value: { place: { name: 'Стамбул', timestamp: 200, latitude: 41.03 } } })
+      expect(saveSettings.mock.calls.filter(([patch]) => patch.placeEvents?.some(event => event.change === 'refinement'))
+        .every(([patch]) => patch.recentPlaces === undefined)).toBe(true)
+      const loaded = await loadPrayerRepositoryOptionalSettings()
+      await act(async () => { optional.resolve(loaded); await optional.promise })
+      await chooseCity('Москва', /Москва/, 'Стамбул')
+      await userEvent.click(screen.getByRole('button', { name: 'Москва' }))
+      await userEvent.click(within(screen.getByRole('region', { name: 'Недавние места' })).getByRole('button', { name: 'Сохранённая точка, 41.0300, 28.9500' }))
+      expect(services.getPosition).toHaveBeenCalledTimes(2)
+      await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: { source: 'manual', place: {
+        latitude: 41.03, longitude: 28.95, accuracy: 10, timestamp: 200,
+      } } }))
+    } finally {
+      selectionGate.resolve(undefined)
+      view.unmount()
+      await deleteSalahDatabase()
+    }
+  })
+
   it('оставляет начальный выбор места до принятия низкоточной GPS-точки', async () => {
     const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
     const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
@@ -1367,7 +1440,7 @@ describe('Salah', () => {
     await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
     await act(async () => { coarse.resolve(success({ ...savedGps, timestamp: 200 })); await Promise.resolve() })
     expect(await screen.findByRole('button', { name: 'Сохранённая точка, 41.0100, 28.9500' })).toBeVisible()
-    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.placeSelectionEvents ?? [])).not.toContainEqual(expect.objectContaining({ timestamp: 200 }))
+    expect(saveSettings.mock.calls.flatMap(([patch]) => selectedPlaces(patch))).not.toContainEqual(expect.objectContaining({ timestamp: 200 }))
   })
 
   it('migrates the original persisted GPS snapshot after a passive refresh races optional hydration', async () => {
@@ -1380,7 +1453,10 @@ describe('Salah', () => {
     delete startupState.recentPlaces
     delete startupState.recentPlacesMigrated
     const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
-    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const repo = createPrayerRepository()
+    const saveSettings = vi.fn<AppServices['saveSettings']>(repo.saveSettings)
+    await setSetting('locationChoice', startupState.locationChoice as NonNullable<PrayerRepositoryState['locationChoice']>)
+    await setSetting('recentPlaces', [oldManual])
     const services = createServices({
       initializeStartup: vi.fn().mockResolvedValue(success(startupState)),
       loadOptionalSettings: vi.fn(() => optional.promise),
@@ -1390,22 +1466,26 @@ describe('Salah', () => {
         : failure({ kind: 'geolocation' as const, reason: 'unavailable' as const }))),
       saveSettings,
     })
-    render(<App services={services} />)
-    await screen.findByRole('timer')
-    await waitFor(() => expect(services.getPermission).toHaveBeenCalledOnce(), { timeout: 5000 })
-    await waitFor(() => expect(services.getPosition).toHaveBeenCalledTimes(2), { timeout: 5000 })
-    await screen.findByText('41.5000, 30.0000')
-    await act(async () => {
-      optional.resolve(success({ recentPlaces: [oldManual], recentPlacesMigrated: false,
-        calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
-      await optional.promise
-    })
+    const view = render(<App services={services} />)
+    try {
+      await screen.findByRole('timer')
+      await waitFor(() => expect(services.getPermission).toHaveBeenCalledOnce(), { timeout: 5000 })
+      await waitFor(() => expect(services.getPosition).toHaveBeenCalledTimes(2), { timeout: 5000 })
+      await screen.findByText('41.5000, 30.0000')
+      await act(async () => {
+        optional.resolve(success({ recentPlaces: [oldManual], recentPlacesMigrated: false,
+          calendarPreferences: { calendar: 'gregorian', correction: 0 }, themeFamily: 'classic', languagePreference: 'ru', fastingMode: { manualEnabled: false } }))
+        await optional.promise
+      })
 
-    const migrated = saveSettings.mock.calls.map(([patch]) => patch.recentPlaces)
-      .find(places => Array.isArray(places) && places.some(place => place.id.startsWith('gps:history:')))
-    expect(migrated?.map(place => place.id)).toEqual(['gps:history:41.010000:28.950000', 'locality:naberezhnye-chelny'])
-    expect(migrated?.[0]).toMatchObject({ latitude: original.latitude, longitude: original.longitude, timestamp: original.timestamp, accuracy: original.accuracy })
-    expect(migrated?.some(place => place.latitude === 41.5 && place.longitude === 30)).toBe(false)
+      await waitFor(async () => expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [
+        expect.objectContaining({ id: 'gps:history:41.010000:28.950000', latitude: original.latitude,
+          longitude: original.longitude, timestamp: original.timestamp, accuracy: original.accuracy }), oldManual,
+      ] } }))
+    } finally {
+      view.unmount()
+      await deleteSalahDatabase()
+    }
   })
 
   it('ignores GPS callbacks that finish after another tab restores a newer place', async () => {
@@ -1466,6 +1546,53 @@ describe('Salah', () => {
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(saveSettings).toHaveBeenCalledOnce()
     expect(saveSettings.mock.calls[0]?.[1]?.()).toBe(false)
+  })
+
+  it('rejects a precise callback before a delayed cross-tab notification is delivered', async () => {
+    const repo = createPrayerRepository()
+    await setSetting('locationChoice', initializedState.locationChoice)
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const nearest = deferred<Awaited<ReturnType<AppServices['cities']['findNearest']>>>()
+    const services = createServices({
+      initializeStartup: vi.fn(async () => {
+        const saved = await getLocationChoice()
+        return initialized({ locationChoice: saved.ok ? saved.value ?? null : null })
+      }),
+      saveSettings: repo.saveSettings,
+      loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
+      getPosition: vi.fn(accuracy => accuracy === 'coarse'
+        ? Promise.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 })) : precise.promise),
+    })
+    services.cities.findNearest = vi.fn(() => nearest.promise)
+    const view = render(<App services={services} />)
+    try {
+      await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+      await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+      await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: { place: { latitude: 41.01 } } }))
+      const remote = createOfficialPlace(required(initializedState.meta.locations[1]), 300)
+      const choice = { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const, place: remote }
+      await createPrayerRepository().saveSettings({ locationChoice: choice, placeEvents: [{ change: 'selection', choice }] })
+      const historyBeforeCallback = await loadPrayerRepositoryOptionalSettings()
+      invalidateFastScheduleSnapshot()
+      await act(async () => {
+        precise.resolve(success({ latitude: 41.03, longitude: 28.95, accuracy: 10, timestamp: 200 }))
+        await Promise.resolve()
+      })
+      expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()
+      await act(async () => {
+        window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.changeSignal }))
+        nearest.resolve(success(null))
+        await Promise.resolve()
+      })
+      await act(async () => {
+        expect(await getLocationChoice()).toMatchObject({ value: { place: remote } })
+        expect(await loadPrayerRepositoryOptionalSettings()).toEqual(historyBeforeCallback)
+      })
+      expect(services.getPosition).toHaveBeenCalledTimes(2)
+    } finally {
+      view.unmount()
+      await deleteSalahDatabase()
+    }
   })
 
   it('does not migrate a passive GPS refresh after the one-time history migration completed', async () => {
@@ -1538,7 +1665,7 @@ describe('Salah', () => {
       ...position, timeZone: 'America/Los_Angeles',
     } })
     expect(savedSettings?.locationChoice).toMatchObject({ mode: 'calculated', coordinates: { latitude: position.latitude, longitude: position.longitude } })
-    expect(savedSettings?.placeSelectionEvents).toEqual([expect.objectContaining({ selection: 'gps', latitude: position.latitude, longitude: position.longitude, timestamp: position.timestamp })])
+    expect(selectedPlaces(savedSettings)).toEqual([expect.objectContaining({ selection: 'gps', latitude: position.latitude, longitude: position.longitude, timestamp: position.timestamp })])
   })
 
   it.each(['rejection', 'result'] as const)('при ошибке записи %s не откатывает выбранный город', async kind => {

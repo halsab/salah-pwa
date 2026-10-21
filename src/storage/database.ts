@@ -495,9 +495,16 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
+export interface PlacePersistenceEvent {
+  change: 'selection' | 'refinement' | 'automatic'
+  choice: LocationChoice
+  // Проверяется по актуальному locationChoice внутри той же транзакции.
+  expectedPlaceId?: string | null
+}
+
 export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'recentPlacesMigrated' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
-  // События выбора — команды очереди, не отдельная persisted-настройка.
-  & { placeSelectionEvents?: Place[] }
+  // События — упорядоченные команды очереди; они не хранятся в IndexedDB.
+  & { placeEvents?: PlacePersistenceEvent[]; normalizeRecentPlaces?: boolean }
 
 export interface StoredPlaceHistorySnapshot {
   locationChoice: unknown
@@ -508,34 +515,36 @@ export interface StoredPlaceHistorySnapshot {
 export type ReconcilePlaceHistory = (stored: StoredPlaceHistorySnapshot, patch: SettingsPatch) => {
   recentPlaces: Place[]
   recentPlacesMigrated: true
+  locationChoice: LocationChoice | undefined
 }
 
 export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number,
   reconcilePlaceHistory?: ReconcilePlaceHistory): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
-    if (!isCurrent()) return
+    if (!isCurrent()) throw new Error('Запись отменена')
     const transaction = database.transaction(['settings', 'control'], 'readwrite')
     try {
       if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) throw new Error('Сессия завершена')
-      if (!isCurrent()) { await transaction.done; return }
+      if (!isCurrent()) throw new Error('Запись отменена')
       let reconciledHistory: ReturnType<ReconcilePlaceHistory> | undefined
-      if (reconcilePlaceHistory && (patch.locationChoice || patch.placeSelectionEvents?.length)) {
+      if (reconcilePlaceHistory && (patch.locationChoice || patch.placeEvents?.length || patch.normalizeRecentPlaces)) {
         const settings = transaction.objectStore('settings')
         const [locationChoice, recentPlaces, recentPlacesMigrated] = await Promise.all([
           settings.get('locationChoice'), settings.get('recentPlaces'), settings.get('recentPlacesMigrated'),
         ])
-        if (!isCurrent()) { await transaction.done; return }
+        if (!isCurrent()) throw new Error('Запись отменена')
         reconciledHistory = reconcilePlaceHistory({
           locationChoice: locationChoice?.value,
           recentPlaces: recentPlaces?.value,
           recentPlacesMigrated: recentPlacesMigrated?.value,
         }, patch)
       }
-      if (!isCurrent()) { await transaction.done; return }
+      if (!isCurrent()) throw new Error('Запись отменена')
       if (patch.appearance) await transaction.objectStore('settings').put({ key: 'appearance', value: patch.appearance })
       if (patch.themeFamily) await transaction.objectStore('settings').put({ key: 'themeFamily', value: patch.themeFamily })
-      if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
+      const locationChoice = reconciledHistory ? reconciledHistory.locationChoice : patch.locationChoice
+      if (locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: locationChoice })
       if (reconciledHistory) {
         await transaction.objectStore('settings').put({ key: 'recentPlaces', value: reconciledHistory.recentPlaces })
         await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: true })
@@ -547,6 +556,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
       if (patch.languagePreference) await transaction.objectStore('settings').put({ key: 'languagePreference', value: patch.languagePreference })
       if (patch.fastingMode) await transaction.objectStore('settings').put({ key: 'fastingMode', value: patch.fastingMode })
+      if (!isCurrent()) throw new Error('Запись отменена')
       await transaction.done
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }

@@ -127,3 +127,72 @@ test('opening Settings from initial place selection cancels delayed GPS callback
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toEqual(savedChoice)
   await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(savedHistory)
 })
+
+test('GPS refinement retains its snapshot identity across tab changes and offline recall', async ({ context, page }) => {
+  await page.addInitScript(() => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks = []
+    Object.defineProperty(navigator, 'permissions', { configurable: true, value: {
+      query: () => Promise.resolve({ state: 'granted', onchange: null }),
+    } })
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+      getCurrentPosition: (success: (position: GeolocationPosition) => void) => target.__gpsCallbacks.push(success),
+    } })
+  })
+  await page.goto('./')
+  await choosePlace(page)
+  await page.locator('#home-location').click()
+  await page.getByRole('button', { name: 'По геопозиции' }).click()
+  await expect.poll(() => page.evaluate(() => (window as Window & { __gpsCallbacks: unknown[] }).__gpsCallbacks.length)).toBe(2)
+  const capturedAt = await page.evaluate(() => Date.now() - 1000)
+  await page.evaluate(timestamp => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks[0]({ coords: { latitude: 41.01, longitude: 28.95, accuracy: 500, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp })
+  }, capturedAt)
+  await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'gps:history:41.010000:28.950000', latitude: 41.01, accuracy: 500, timestamp: capturedAt }),
+  ]))
+  await page.evaluate(timestamp => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks[1]({ coords: { latitude: 41.03, longitude: 28.95, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp })
+  }, capturedAt + 1)
+  await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'gps:history:41.010000:28.950000', latitude: 41.03, accuracy: 10, timestamp: capturedAt + 1 }),
+  ]))
+  await page.locator('#home-location').click()
+  await page.getByRole('button', { name: 'По геопозиции' }).click()
+  await expect.poll(() => page.evaluate(() => (window as Window & { __gpsCallbacks: unknown[] }).__gpsCallbacks.length)).toBe(4)
+  await page.evaluate(timestamp => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks[2]({ coords: { latitude: 41.01, longitude: 28.95, accuracy: 500, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp })
+  }, capturedAt + 2)
+  await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'gps:history:41.010000:28.950000:recovered:1', latitude: 41.01 }),
+  ]))
+  // Настоящие страницы делят IndexedDB и получают browser storage events.
+  const otherTab = await context.newPage()
+  await otherTab.clock.setFixedTime(new Date(capturedAt + 1000))
+  await otherTab.goto('./')
+  await choosePlace(otherTab, 'Москва', 'Москва, Москва, Россия')
+  await expect(page.locator('#home-location')).toHaveText('Москва')
+  const latestHistory = await readSavedSetting(otherTab, 'recentPlaces')
+  await page.evaluate(timestamp => {
+    const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
+    target.__gpsCallbacks[3]({ coords: { latitude: 42, longitude: 30, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp })
+  }, capturedAt + 3)
+  await expect(page.locator('#home-location')).toHaveText('Москва')
+  await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(latestHistory)
+  await otherTab.close()
+  await page.evaluate(async () => navigator.serviceWorker.ready)
+  await context.setOffline(true)
+  try {
+    await page.locator('#home-location').click()
+    await page.getByRole('button', { name: 'Сохранённая точка, 41.0300, 28.9500' }).click()
+    await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({ place: {
+      id: 'gps:history:41.010000:28.950000', latitude: 41.03, longitude: 28.95, accuracy: 10, timestamp: capturedAt + 1,
+    } })
+    expect(await page.evaluate(() => (window as Window & { __gpsCallbacks: unknown[] }).__gpsCallbacks.length)).toBe(4)
+  } finally {
+    await context.setOffline(false)
+  }
+})
