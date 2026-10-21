@@ -1672,9 +1672,10 @@ describe('Salah', () => {
         return tabA.reservePlaceSelectionOrder()
       },
       getCommittedPlaceSelectionOrder: async () => {
+        const capturedBaseline = tabA.getCommittedPlaceSelectionOrder()
         baselineStarted.resolve(undefined)
         await baselineRead.promise
-        return tabA.getCommittedPlaceSelectionOrder()
+        return capturedBaseline
       },
       saveSettings: (patch, isGenerationCurrent, onOutcome) => tabA.saveSettings(patch, isGenerationCurrent, onOutcome),
       loadOptionalSettings: loadPrayerRepositoryOptionalSettings,

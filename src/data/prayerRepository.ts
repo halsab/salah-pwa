@@ -75,9 +75,7 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
           retryBaseline === 'unavailable'
           || retryBaseline !== undefined && retryBaseline !== (initialCommittedPlaceSelectionOrder ?? null)
           || event.expectedPlaceId !== undefined && (active?.id ?? null) !== event.expectedPlaceId
-          // Без исходного predecessor повтор безуспешного резервирования нельзя
-          // отличить от нового намерения после чужого commit.
-          || event.expectedPlaceId === undefined && retryBaseline !== null
+          || event.expectedPlaceId === undefined && retryBaseline === undefined
         )) continue
         // Повтор уже зафиксированного выбора не должен менять recency или GPS snapshot.
         const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)

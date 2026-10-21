@@ -49,7 +49,7 @@ it('keeps later same-tab reservations behind an earlier reservation failure and 
     const order = ++nextOrder
     reserved.push(order)
     return Promise.resolve(order)
-  })
+  }, () => Promise.resolve(undefined))
   const firstPlace = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 5, timestamp: 1 }, 'UTC', null, 'gps:one')
   const secondPlace = createGpsPlace({ latitude: 41, longitude: -74, accuracy: 5, timestamp: 2 }, 'UTC', null, 'gps:two')
   const first = { mode: 'calculated' as const, source: 'manual' as const, coordinates: firstPlace, place: firstPlace }
@@ -72,7 +72,7 @@ it.each(['committed', 'failed'] as const)('keeps only uncommitted selections whe
   const selectedA = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 123 }, 'America/New_York', null, 'gps:operation:a')
   const selectedB = createGpsPlace({ latitude: 41, longitude: -74, accuracy: 20, timestamp: 456 }, 'America/New_York', null, 'gps:operation:b')
   const save = vi.fn<SaveSettings>().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
-  const writer = createSettingsPersistence(save)
+  const writer = createSettingsPersistence(save, undefined, () => Promise.resolve(undefined))
 
   writer.save({ locationChoice: a.locationChoice, placeEvents: [{ change: 'selection', choice: { mode: 'calculated', source: 'automatic', coordinates: selectedA, place: selectedA } }] })
   await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
