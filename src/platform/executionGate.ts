@@ -1,13 +1,20 @@
 const LOCK_NAME = 'salah-foreground-execution-v1'
 const CHANNEL_NAME = 'salah-execution-gate-v1'
-let quiescence: Promise<void> = Promise.resolve()
+let quiescence: () => Promise<void> = async () => {}
 
-export function setExecutionQuiescence(promise: Promise<unknown>) {
-  quiescence = promise.then(() => undefined, () => undefined)
+export function setExecutionQuiescence(operation: Promise<unknown> | (() => Promise<unknown>)) {
+  quiescence = typeof operation === 'function'
+    ? () => operation().then(() => undefined)
+    : () => operation.then(() => undefined)
 }
-export function waitForExecutionQuiescence() { return quiescence }
 
-type Message = { version: 1; type: 'takeover'; requestId: string }
+export function waitForExecutionQuiescence() { return quiescence() }
+
+type Message =
+  | { version: 1; type: 'probe'; requestId: string; requesterId: string }
+  | { version: 1; type: 'owner'; requestId: string; ownerId: string }
+  | { version: 1; type: 'takeover'; requestId: string; requesterId: string; targetOwnerId: string }
+  | { version: 1; type: 'refused'; requestId: string; ownerId: string }
 
 export type ExecutionGate = {
   supported: boolean
@@ -24,65 +31,240 @@ export function createExecutionGate(): ExecutionGate {
   try {
     if (typeof BroadcastChannel !== 'undefined') channel = new BroadcastChannel(CHANNEL_NAME)
   } catch {
-    // Ошибка создания канала переводит вкладку в безопасный режим блокировки.
+    // Без канала вкладка не может безопасно запросить явную передачу.
   }
-  let held = false
-  let stopped = false
-  let pending: Promise<boolean> | null = null
-  let releaseLock: (() => void) | null = null
-  let deactivate: () => Promise<void> = async () => { await quiescence }
-  let takeover: Promise<void> | null = null
-  const contextId = crypto.randomUUID()
 
-  const acquire = () => {
+  const contextId = crypto.randomUUID()
+  let stopped = false
+  let suspended = false
+  let held = false
+  let serving = false
+  let releaseLock: (() => void) | null = null
+  let acquisition: Promise<boolean> | null = null
+  let request: Promise<boolean> | null = null
+  let takeover: Promise<void> | null = null
+  let takeoverRequestId: string | null = null
+  let closing = false
+  let deactivate: () => Promise<void> = waitForExecutionQuiescence
+  let cancelRequest: (() => void) | null = null
+  let activeRequestId: string | null = null
+  let targetOwnerId: string | null = null
+  let refusedRequestId: string | null = null
+  const isHeld = () => held
+  const isStopped = () => stopped
+  const isSuspended = () => suspended
+  const shouldClose = () => closing
+
+  const release = () => {
+    serving = false
+    releaseLock?.()
+  }
+
+  const acquire = (isCurrent: () => boolean = () => !stopped): Promise<boolean> => {
     if (stopped || !locks || !channel) return Promise.resolve(false)
-    if (pending) return pending
-    pending = new Promise<boolean>(resolve => {
-      let settled = false
-      const settle = (value: boolean) => { if (!settled) { settled = true; resolve(value) } }
-      void Promise.resolve().then(() => locks.request(LOCK_NAME, { mode: 'exclusive', ifAvailable: true }, async lock => {
-        if (!lock) { settle(false); return }
+    if (held) return Promise.resolve(serving)
+    if (acquisition) return acquisition
+
+    let finish!: (acquired: boolean) => void
+    const result = new Promise<boolean>(resolve => { finish = resolve })
+    acquisition = result
+    let settled = false
+    const settle = (value: boolean) => {
+      if (settled) return
+      settled = true
+      if (acquisition === result) acquisition = null
+      finish(value)
+    }
+
+    try {
+      void locks.request(LOCK_NAME, { mode: 'exclusive', ifAvailable: true }, async lock => {
+        if (!lock || stopped || !isCurrent()) {
+          settle(false)
+          return
+        }
+
+        let releaseHeld!: () => void
+        const heldLock = new Promise<void>(resolve => { releaseHeld = resolve })
         held = true
+        releaseLock = releaseHeld
         settle(true)
-        await new Promise<void>(done => { releaseLock = done })
+        await heldLock
         held = false
         releaseLock = null
-      })).catch(() => settle(false)).finally(() => { pending = null })
-    })
-    return pending
+      }).catch(() => settle(false))
+    } catch {
+      settle(false)
+    }
+    return result
+  }
+
+  const finishRequester = (resolve: (value: boolean) => void, value: boolean, timers: number[]) => {
+    if (cancelRequest) cancelRequest = null
+    for (const timer of timers) {
+      window.clearInterval(timer)
+      window.clearTimeout(timer)
+    }
+    resolve(value)
   }
 
   if (channel) channel.onmessage = event => {
-    const message = event.data as Partial<Message>
-    if (!held || message.version !== 1 || message.type !== 'takeover' || takeover) return
-    const release = releaseLock
-    takeover = (async () => {
-      await deactivate()
-      release?.()
-    })().finally(() => { takeover = null })
+    const message = event.data as Partial<Message> | null
+    if (!message || message.version !== 1 || stopped) return
+
+    if (message.type === 'probe' && typeof message.requestId === 'string'
+      && typeof message.requesterId === 'string' && held) {
+      channel.postMessage({ version: 1, type: 'owner', requestId: message.requestId, ownerId: contextId } satisfies Message)
+      return
+    }
+
+    if (message.type === 'owner' && typeof message.requestId === 'string'
+      && typeof message.ownerId === 'string' && message.requestId === activeRequestId) {
+      targetOwnerId = message.ownerId
+      if (targetOwnerId !== contextId) {
+        channel.postMessage({ version: 1, type: 'takeover', requestId: message.requestId,
+          requesterId: contextId, targetOwnerId } satisfies Message)
+      }
+      return
+    }
+
+    if (message.type === 'takeover' && typeof message.requestId === 'string'
+      && typeof message.requesterId === 'string' && message.targetOwnerId === contextId) {
+      if (takeover) {
+        if (takeoverRequestId !== message.requestId) {
+          channel.postMessage({ version: 1, type: 'refused', requestId: message.requestId, ownerId: contextId } satisfies Message)
+        }
+        return
+      }
+      if (!held || closing) {
+        channel.postMessage({ version: 1, type: 'refused', requestId: message.requestId, ownerId: contextId } satisfies Message)
+        return
+      }
+      const requestId = message.requestId
+      takeoverRequestId = requestId
+      serving = false
+      takeover = (async () => {
+        try {
+          await deactivate()
+          if (!isHeld()) return
+          release()
+          if (shouldClose()) { stopped = true; channel.close() }
+        } catch {
+          closing = false
+          channel.postMessage({ version: 1, type: 'refused', requestId, ownerId: contextId } satisfies Message)
+        }
+      })().finally(() => { takeover = null; takeoverRequestId = null })
+      return
+    }
+
+    if (message.type === 'refused' && typeof message.requestId === 'string'
+      && message.requestId === activeRequestId) refusedRequestId = message.requestId
   }
 
   return {
     supported: Boolean(locks && channel),
-    start: () => acquire(),
-    requestOwnership: async () => {
-      if (held) return true
-      if (!locks || !channel) return false
-      const acquired = await acquire()
-      if (acquired) return true
-      channel.postMessage({ version: 1, type: 'takeover', requestId: `${contextId}:${crypto.randomUUID()}` } satisfies Message)
-      return new Promise(resolve => {
-        let finished = false
-        const attempt = async () => {
-          if (finished || stopped) return
-          if (await acquire()) { finished = true; clearInterval(timer); resolve(true) }
-        }
-        const timer = window.setInterval(() => { void attempt() }, 200)
-        window.setTimeout(() => { if (!finished) { finished = true; clearInterval(timer); resolve(false) } }, 15000)
-      })
+    start: async () => {
+      if (suspended) return false
+      if (held) return serving
+      const acquired = await acquire(() => !stopped && !isSuspended())
+      if (!acquired || stopped || isSuspended()) return false
+      serving = true
+      return true
     },
-    close: () => { stopped = true; releaseLock?.(); channel?.close() },
-    relinquish: async () => { await deactivate(); if (held) releaseLock?.() },
+    requestOwnership: () => {
+      if (request) return request
+      if (stopped || !locks || !channel) return Promise.resolve(false)
+      suspended = false
+      if (held && !serving) {
+        const recovery = (async () => {
+          try {
+            await deactivate()
+            if (isStopped() || isSuspended()) return false
+            release()
+            await Promise.resolve()
+            const acquired = await acquire(() => !isStopped() && !isSuspended())
+            if (acquired && isHeld() && !isStopped() && !isSuspended()) { serving = true; return true }
+          } catch { /* Ошибка quiescence оставляет владение у этого контекста. */ }
+          return false
+        })()
+        request = recovery.finally(() => { request = null })
+        return request
+      }
+
+      let resolveRequest!: (value: boolean) => void
+      const currentRequest = new Promise<boolean>(resolve => { resolveRequest = resolve })
+      request = currentRequest
+      const requestId = `${contextId}:${crypto.randomUUID()}`
+      activeRequestId = requestId
+      targetOwnerId = null
+      refusedRequestId = null
+      let completed = false
+      const isRequestActive = () => !completed && !stopped && !isSuspended()
+      const timers: number[] = []
+      const finish = (value: boolean) => {
+        if (completed) return
+        completed = true
+        finishRequester(resolveRequest, value, timers)
+        if (request === currentRequest) request = null
+        if (activeRequestId === requestId) activeRequestId = null
+        targetOwnerId = null
+        refusedRequestId = null
+      }
+      cancelRequest = () => finish(false)
+
+      const attempt = async () => {
+        if (!isRequestActive()) return
+        const acquired = await acquire(isRequestActive)
+        if (!isRequestActive()) {
+          if (acquired) release()
+          return
+        }
+        if (acquired && held) {
+          serving = true
+          finish(true)
+          return
+        }
+        if (refusedRequestId === requestId) {
+          finish(false)
+          return
+        }
+        if (!targetOwnerId) {
+          channel.postMessage({ version: 1, type: 'probe', requestId, requesterId: contextId } satisfies Message)
+        } else {
+          channel.postMessage({ version: 1, type: 'takeover', requestId, requesterId: contextId,
+            targetOwnerId } satisfies Message)
+        }
+      }
+
+      void attempt()
+      timers.push(window.setInterval(() => { void attempt() }, 250))
+      timers.push(window.setTimeout(() => finish(false), 15_000))
+      return currentRequest
+    },
+    close: () => {
+      if (stopped) return
+      cancelRequest?.()
+      closing = true
+      if (held && !takeover) {
+        serving = false
+        void deactivate().then(() => {
+          release()
+          stopped = true
+          channel?.close()
+        }).catch(() => { closing = false })
+      } else if (!held) {
+        release()
+        stopped = true
+        channel?.close()
+      }
+    },
+    relinquish: async () => {
+      suspended = true
+      cancelRequest?.()
+      if (!held) return
+      serving = false
+      await deactivate()
+      release()
+    },
     onTakeover: callback => { deactivate = callback },
   }
 }

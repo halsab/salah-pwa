@@ -23,7 +23,6 @@ export function readThemePreferenceCache(): ThemeFamily {
   } catch {
     // Повреждённый JSON ниже удаляется так же, как устаревший формат.
   }
-  try { localStorage.removeItem(THEME_PREFERENCE_CACHE_KEY) } catch { /* Очистка необязательна для безопасного cache miss. */ }
   return DEFAULT_THEME_FAMILY
 }
 

@@ -347,9 +347,27 @@ export function App({
     cancelInteractiveGps()
     backScreen()
   }, [backScreen, cancelInteractiveGps])
-  const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
+  const { reset, resetting, drain: drainReset } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
+  const quiescenceOperation = useRef<() => Promise<void>>(async () => {})
+  useEffect(() => {
+    quiescenceOperation.current = () => {
+      const failures: unknown[] = []
+      try { services.cities.cancelPending?.() }
+      catch (error) { failures.push(error) }
+      const drains = [
+        () => services.invalidateAndDrain(),
+        () => invalidateSaves(),
+        () => drainReset(),
+      ]
+      return Promise.allSettled(drains.map(drain => Promise.resolve().then(drain))).then(results => {
+        for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
+        if (failures.length) throw new AggregateError(failures, 'Не удалось безопасно завершить работу вкладки')
+      })
+    }
+  }, [services, invalidateSaves, drainReset])
+  useEffect(() => () => { setExecutionQuiescence(() => quiescenceOperation.current()) }, [])
   const locationSelectionVisible = navigation.screen === 'location' || (navigation.screen === 'home' && !place)
   const previousLocationSelectionVisible = useRef(locationSelectionVisible)
   useEffect(() => {
@@ -357,7 +375,7 @@ export function App({
     previousLocationSelectionVisible.current = locationSelectionVisible
     if (wasVisible && !locationSelectionVisible && navigation.screen !== 'search') cancelInteractiveGps()
   }, [cancelInteractiveGps, locationSelectionVisible, navigation.screen])
-  const resetWithFastCache = useCallback(async () => {
+  const resetWithFastCache = useCallback(() => {
     pendingPlaceWrite.current = false
     pendingFastIdentityWrite.current = true
     optionalSettingsToken.current += 1
@@ -366,21 +384,21 @@ export function App({
     invalidateFastCache()
     clearThemePreferenceCache()
     setThemeEditedLocally(false)
-    const cleared = await reset()
-    if (cleared) {
-      lastRemoteThemeFamily.current = null
-    } else {
-      pendingFastIdentityWrite.current = false
-      setFastCacheReady(true)
-      themePreferenceRevision.current += 1
-      editedTheme.current = false
-      setThemeEditedLocally(false)
-      setThemeFamily(persistedThemeFamily.current)
-      lastRemoteThemeFamily.current = persistedThemeFamily.current
-      writeThemePreferenceCache(persistedThemeFamily.current)
-      retryOptionalSettings.current()
-    }
-    return cleared
+    return reset(cleared => {
+      if (cleared) {
+        lastRemoteThemeFamily.current = null
+      } else {
+        pendingFastIdentityWrite.current = false
+        setFastCacheReady(true)
+        themePreferenceRevision.current += 1
+        editedTheme.current = false
+        setThemeEditedLocally(false)
+        setThemeFamily(persistedThemeFamily.current)
+        lastRemoteThemeFamily.current = persistedThemeFamily.current
+        writeThemePreferenceCache(persistedThemeFamily.current)
+        retryOptionalSettings.current()
+      }
+    })
   }, [invalidateFastCache, reset])
   useEffect(() => () => { void invalidateSaves() }, [invalidateSaves])
   useEffect(() => {
@@ -449,6 +467,7 @@ export function App({
         persistedThemeFamily.current = nextThemeFamily
         setThemeFamily(nextThemeFamily)
         writeThemePreferenceCache(nextThemeFamily)
+        themeChannel.current?.postMessage(nextThemeFamily)
       }
       if (!editedFasting.current && state.fastingMode !== undefined) setFastingMode(restoreFastingModePreferences(state.fastingMode))
       sessionHasPlace.current = Boolean(state.locationChoice)
@@ -496,6 +515,7 @@ export function App({
           persistedThemeFamily.current = nextThemeFamily
           setThemeFamily(nextThemeFamily)
           writeThemePreferenceCache(nextThemeFamily)
+          themeChannel.current?.postMessage(nextThemeFamily)
         }
         if (!editedFasting.current) setFastingMode(restoreFastingModePreferences(value.fastingMode))
         setLanguagePreference(value.languagePreference)
@@ -619,8 +639,6 @@ export function App({
       window.removeEventListener('online', refresh)
       window.removeEventListener('pageshow', refresh)
       window.removeEventListener('storage', handleStorage)
-      services.cities.cancelPending?.()
-      setExecutionQuiescence(Promise.all([services.invalidateAndDrain(), invalidateSaves()]))
     }
   }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings, invalidateSaves])
 
@@ -656,7 +674,7 @@ export function App({
   }), [services])
   const systemTone = useSystemAppearance()
   const theme = useMemo(() => resolveTheme(themeFamily, today, systemTone), [systemTone, themeFamily, today])
-  useLayoutEffect(() => applyTheme(theme), [theme])
+  useLayoutEffect(() => { applyTheme(theme) }, [theme])
   const {
     schedule,
     context,

@@ -24,12 +24,12 @@ describe('synchronous theme preference cache', () => {
     expect(readThemePreferenceCache()).toBe('seasonal')
   })
 
-  it.each(['{', '{"version":2,"themeFamily":"seasonal"}', '{"version":1,"themeFamily":"other"}'])('fails closed for invalid cache %s', raw => {
+  it.each(['{', '{"version":2,"themeFamily":"seasonal"}', '{"version":1,"themeFamily":"other"}'])('fails closed without mutating invalid cache %s', raw => {
     const storage = memoryStorage()
     storage.setItem('salah-theme-preference-v1', raw)
     vi.stubGlobal('localStorage', storage)
     expect(readThemePreferenceCache()).toBe(DEFAULT_THEME_FAMILY)
-    expect(storage.getItem('salah-theme-preference-v1')).toBeNull()
+    expect(storage.getItem('salah-theme-preference-v1')).toBe(raw)
   })
 
   it('treats denied storage as unavailable without throwing', () => {

@@ -36,6 +36,11 @@ export default defineConfig({
       testMatch: ['**/mobile.spec.ts'],
       use: { ...devices['iPhone 13'] },
     },
+    {
+      name: 'webkit-execution-gate',
+      testMatch: ['**/execution-gate.spec.ts'],
+      use: { ...devices['Desktop Safari'] },
+    },
     // Обновление service worker меняет dist/sw.js; запускается строго после остальных.
     {
       name: 'chromium-sw',
