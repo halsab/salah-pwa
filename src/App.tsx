@@ -83,15 +83,9 @@ import {
 const loadSecondaryScreens = () => import('./features/SecondaryScreens')
 const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about']
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
-let lastPlaceSelectionOrder = 0
-function nextPlaceSelectionOrder(): number {
-  const clock = typeof performance !== 'undefined' ? performance.timeOrigin + performance.now() : Date.now()
-  lastPlaceSelectionOrder = Math.max(clock, lastPlaceSelectionOrder + 0.001)
-  return lastPlaceSelectionOrder
-}
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
   'clearAppData' | 'getDataGeneration' | 'initializeStartup' | 'loadOptionalSettings'>>,
-  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
+  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'reservePlaceSelectionOrder' | 'invalidateAndDrain'> {
   getDays: (locationId: string, dates: readonly string[], revision: string, provider: string) => ReturnType<typeof prayerRepository.getDays>
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
@@ -223,7 +217,7 @@ export function App({
     }
     return result
   }, [invalidateFastCache, services])
-  const persistence = useSettingsPersistence(persistSettings)
+  const persistence = useSettingsPersistence(persistSettings, services.reservePlaceSelectionOrder)
   const saveSettings = persistence.save
   const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain
@@ -284,8 +278,7 @@ export function App({
     const expectedPlaceId = change === 'refinement' ? next.id
       : previousPlace.current?.id ?? (change === 'selection' && !legacyHistoryAnchorCaptured.current ? undefined : null)
     const patch: SettingsPatch = { locationChoice: choice,
-      placeEvents: [{ change, choice, ...(expectedPlaceId !== undefined ? { expectedPlaceId } : {}),
-        ...(change === 'selection' ? { selectionOrder: nextPlaceSelectionOrder() } : {}) }] }
+      placeEvents: [{ change, choice, ...(expectedPlaceId !== undefined ? { expectedPlaceId } : {}) }] }
     pendingPlaceWrite.current = true
     if (change === 'selection') {
       const existing = recentPlacesLoaded.current ? recentRef.current

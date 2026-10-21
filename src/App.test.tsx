@@ -133,6 +133,7 @@ function createServices(
   overrides: Partial<AppServices & TestSettingsServices> = {},
 ): AppServices & TestSettingsServices {
   const days = [kazanYesterday, kazanToday, kazanTomorrow, chelnyToday]
+  let selectionOrder = 0
 
   return {
     initialize: vi.fn().mockResolvedValue(initialized()),
@@ -154,6 +155,7 @@ function createServices(
         )),
       ),
     ...settingsServices(overrides),
+    reservePlaceSelectionOrder: overrides.reservePlaceSelectionOrder ?? (() => Promise.resolve(++selectionOrder)),
     refresh: vi.fn().mockResolvedValue(initializedState),
     subscribe: vi.fn(() => () => {}),
     invalidateAndDrain: vi.fn().mockResolvedValue(undefined),
@@ -1601,6 +1603,7 @@ describe('Salah', () => {
     const services = createServices({
       initializeStartup: vi.fn(() => ++initializeCalls === 1 ? startup.promise : currentState()),
       saveSettings,
+      reservePlaceSelectionOrder: tabA.reservePlaceSelectionOrder,
       loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
     })
     render(<App services={services} />)
@@ -1659,7 +1662,7 @@ describe('Salah', () => {
       return result
     })
     const loadOptionalSettings = vi.fn(loadPrayerRepositoryOptionalSettings)
-    const services = createServices({ saveSettings, loadOptionalSettings })
+    const services = createServices({ saveSettings, reservePlaceSelectionOrder: repo.reservePlaceSelectionOrder, loadOptionalSettings })
     render(<App services={services} version="ack-test" />)
     await screen.findByRole('timer')
     const priorChangeSignal = localStorage.getItem(FAST_SCHEDULE_STORAGE_KEYS.changeSignal)
@@ -1691,6 +1694,7 @@ describe('Salah', () => {
         return initialized({ locationChoice: saved.ok ? saved.value ?? null : null })
       }),
       saveSettings: repo.saveSettings,
+      reservePlaceSelectionOrder: repo.reservePlaceSelectionOrder,
       loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
       getPosition: vi.fn(accuracy => accuracy === 'coarse'
         ? Promise.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 })) : precise.promise),

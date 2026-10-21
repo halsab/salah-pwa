@@ -10,6 +10,7 @@ import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
   clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset,
+  reservePlaceSelectionOrder as reserveStoredPlaceSelectionOrder,
   replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance, type PlacePersistenceEvent,
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
@@ -60,6 +61,9 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
   let selectionAccepted = true
   let placeSelectionOrder = typeof stored.placeSelectionOrder === 'number' && Number.isFinite(stored.placeSelectionOrder)
     ? stored.placeSelectionOrder : undefined
+  const latestEventOrder = Math.max(-Infinity, ...(patch.placeEvents ?? [])
+    .filter(event => event.change === 'selection' && event.selectionOrder !== undefined)
+    .map(event => event.selectionOrder as number))
   let active = originalActive
   let authoritativeChoice = activeChoice
   if (patch.placeEvents?.length) {
@@ -71,17 +75,25 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
         // Транзакция может начаться после более нового выбора другой вкладки.
         // Когда предшественник известен, он должен совпасть с активным местом в транзакции.
         const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
-        const hasNewerSelection = !alreadyApplied && event.selectionOrder !== undefined && placeSelectionOrder !== undefined
-          && placeSelectionOrder >= event.selectionOrder
+        if (alreadyApplied && event.selectionOrder !== undefined && placeSelectionOrder !== undefined
+          && event.selectionOrder <= placeSelectionOrder) {
+          selectionAccepted = true
+          continue
+        }
+        // Порядок выделяется транзакционно до очереди записи; принимаем пакет только
+        // если его последнее намерение не было вытеснено другой вкладкой.
+        const hasNewerSelection = event.selectionOrder !== undefined && placeSelectionOrder !== undefined
+          && placeSelectionOrder > latestEventOrder
         const isNewerExplicitIntent = event.selectionOrder !== undefined
-          && (placeSelectionOrder === undefined || event.selectionOrder > placeSelectionOrder)
+          && (placeSelectionOrder === undefined || event.selectionOrder >= placeSelectionOrder
+            || latestEventOrder === placeSelectionOrder)
         if (hasNewerSelection || event.expectedPlaceId !== undefined
           && (active?.id ?? null) !== event.expectedPlaceId && !alreadyApplied && !isNewerExplicitIntent) {
           selectionAccepted = false
           continue
         }
         recentPlaces = rememberPlace(recentPlaces, next)
-        if (event.selectionOrder !== undefined) placeSelectionOrder = event.selectionOrder
+        if (event.selectionOrder !== undefined) placeSelectionOrder = Math.max(placeSelectionOrder ?? 0, event.selectionOrder)
         selectionAccepted = true
       } else {
         if ((active?.id ?? null) !== event.expectedPlaceId) continue
@@ -284,6 +296,8 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
   let installation: ReturnType<typeof replaceDataset> | null = null
   let epoch = 0
   let generation = 0
+  let generationInitialized = false
+  const hasInitializedGeneration = () => generationInitialized
   let invalidRevision: string | null = null
   let latest: PrayerRepositorySnapshot = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null }
   const emit = (snapshot: PrayerRepositorySnapshot) => {
@@ -364,6 +378,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       const meta = result.ok && result.value.dataState === 'invalid' ? await getDatasetMeta(provider.id) : null
       if (operation === epoch && result.ok) {
         generation = dataGeneration
+        generationInitialized = true
         latest = result.value
         if (meta?.ok && meta.value) invalidRevision = getDatasetRevision(meta.value)
       }
@@ -375,6 +390,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (!result.ok) return result
       if (operation === epoch) {
         generation = result.value.generation
+        generationInitialized = true
         latest = result.value.state
       }
       return success(result.value.state)
@@ -390,6 +406,13 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       const result = await getPrayerDays(locationId, dates, revision, provider.id)
       if (operation === epoch && (!result.ok && result.error.kind === 'data' || result.ok && result.value.some(day => !day))) invalidRevision = revision
       return result
+    },
+    reservePlaceSelectionOrder: async () => {
+      if (!generationInitialized) {
+        const currentGeneration = await getDataGeneration()
+        if (!hasInitializedGeneration()) generation = currentGeneration
+      }
+      return reserveStoredPlaceSelectionOrder(generation)
     },
     saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean,
       onPlaceEventsOutcome?: Parameters<typeof saveSettings>[4]): Promise<Result<void, StorageFailure | DataFailure>> => {

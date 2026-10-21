@@ -615,6 +615,31 @@ export async function getDataGeneration(): Promise<number> {
   return (await (await getDatabase()).get('control', 'generation')) ?? 0
 }
 
+/** Выдаёт межвкладочный логический порядок выбора без системных часов. */
+export async function reservePlaceSelectionOrder(generation?: number): Promise<number> {
+  const database = await getDatabase()
+  const transaction = database.transaction(['settings', 'control'], 'readwrite')
+  try {
+    if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) {
+      throw new Error('Сессия завершена')
+    }
+    const settings = transaction.objectStore('settings')
+    const stored = await settings.get('placeSelectionOrder')
+    // Сохраняем высокий маркер предыдущей версии, где порядок был основан на часах.
+    const current = typeof stored?.value === 'number' && Number.isFinite(stored.value)
+      && stored.value >= 0 && stored.value < Number.MAX_SAFE_INTEGER ? Math.floor(stored.value) : 0
+    if (current >= Number.MAX_SAFE_INTEGER) throw new Error('Исчерпан порядок выбора места')
+    const next = current + 1
+    await settings.put({ key: 'placeSelectionOrder', value: next })
+    await transaction.done
+    return next
+  } catch (error) {
+    try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }
+    await transaction.done.catch(() => undefined)
+    throw error
+  }
+}
+
 export function clearAppData(): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()

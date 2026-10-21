@@ -1,5 +1,5 @@
 import type { Result } from '../../domain/result'
-import type { SettingsPatch } from '../../storage/database'
+import type { PlacePersistenceEvent, SettingsPatch } from '../../storage/database'
 
 export type PersistenceStatus = 'idle' | 'saving' | 'saved' | 'failed'
 export type SaveSettings = (
@@ -9,22 +9,42 @@ export type SaveSettings = (
   isLocationCurrent: () => boolean,
 ) => Promise<Result<void, unknown>>
 
-export function createSettingsPersistence(write: SaveSettings) {
+export function createSettingsPersistence(write: SaveSettings, reserveSelectionOrder?: () => Promise<number>) {
   let latest: SettingsPatch = {}
   let revision = 0
   let locationRevision = 0
   let epoch = 0
   let queue = Promise.resolve()
+  let reservationQueue = Promise.resolve()
+  let fallbackSelectionOrder = 0
+  const reservingEvents = new Set<PlacePersistenceEvent>()
   let status: PersistenceStatus = 'idle'
   const listeners = new Set<() => void>()
   const notify = (next: PersistenceStatus) => { status = next; for (const listener of listeners) listener() }
   const discardPending = () => { epoch += 1; revision += 1; latest = {} }
+  const reservePendingEvents = () => {
+    for (const event of latest.placeEvents ?? []) {
+      if (event.change !== 'selection' || event.selectionOrder !== undefined || reservingEvents.has(event)) continue
+      reservingEvents.add(event)
+      reservationQueue = reservationQueue.catch(() => undefined).then(async () => {
+        try {
+          if (!latest.placeEvents?.includes(event)) return
+          const order = reserveSelectionOrder ? await reserveSelectionOrder() : ++fallbackSelectionOrder
+          const ordered = { ...event, selectionOrder: order }
+          latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === event ? ordered : current) }
+        } finally {
+          reservingEvents.delete(event)
+        }
+      })
+    }
+  }
   const save = (patch: SettingsPatch) => {
     const previousEvents = latest.placeEvents ?? []
     latest = { ...latest, ...patch }
     if (patch.placeEvents?.length) {
       latest.placeEvents = [...previousEvents, ...patch.placeEvents]
     }
+    reservePendingEvents()
     const operation = ++revision
     const generation = epoch
     if (patch.locationChoice || patch.sourcePreferences || patch.placeEvents?.length) locationRevision += 1
@@ -35,7 +55,12 @@ export function createSettingsPersistence(write: SaveSettings) {
     notify('saving')
     // Каждый снимок включает все изменённые поля: новая настройка не теряет ранее несохранённое место.
     queue = queue.then(async () => {
+      await reservationQueue.catch(() => undefined)
       if (!isLatest()) return
+      if (latest.placeEvents?.some(event => event.change === 'selection' && event.selectionOrder === undefined)) {
+        notify('failed')
+        return
+      }
       const snapshot = latest
       try {
         const result = await write(snapshot, isGenerationCurrent, isLatest, isLocationCurrent)

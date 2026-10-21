@@ -228,6 +228,119 @@ describe('transactional accepted GPS refinements', () => {
     expect(restored.map(place => place.id)).toEqual([refinedHistory[0]?.id])
   })
 
+  it('keeps the committed order and history when identical and different older selections arrive late', async () => {
+    const repo = createPrayerRepository()
+    const committed = choice(other)
+    await setSetting('locationChoice', committed)
+    await setSetting('recentPlacesMigrated', true)
+    await setSetting('placeSelectionOrder', 200)
+    const older = createOfficialPlace({ id: 'older-history', name: 'Older', latitude: 30, longitude: 10 }, 2)
+    const committedHistory = [{ ...other, id: 'gps:history:committed' }, older]
+    await setSetting('recentPlaces', committedHistory)
+
+    await repo.saveSettings({ locationChoice: committed, placeEvents: [{ change: 'selection', choice: committed,
+      expectedPlaceId: other.id, selectionOrder: 100 }] })
+    const afterIdempotentReplay = await history()
+    await repo.saveSettings({ locationChoice: committed, placeEvents: [{ change: 'selection', choice: committed,
+      expectedPlaceId: other.id, selectionOrder: 200 }] })
+    await repo.saveSettings({ locationChoice: choice(coarse), placeEvents: [{ change: 'selection', choice: choice(coarse),
+      expectedPlaceId: other.id, selectionOrder: 150 }] })
+
+    expect(await getLocationChoice()).toMatchObject({ value: committed })
+    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 200 })
+    expect(afterIdempotentReplay).toEqual(committedHistory)
+    expect(await history()).toEqual(committedHistory)
+  })
+
+  it('allocates wall-clock-independent selection orders across tabs and preserves rapid ordered selections', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    await setSetting('placeSelectionOrder', 900)
+    const firstOrder = await tabA.reservePlaceSelectionOrder()
+    const secondOrder = await tabA.reservePlaceSelectionOrder()
+    const thirdOrder = await tabB.reservePlaceSelectionOrder()
+    expect([firstOrder, secondOrder, thirdOrder]).toEqual([901, 902, 903])
+
+    const writer = createSettingsPersistence(tabA.saveSettings, tabA.reservePlaceSelectionOrder)
+    const initial = createOfficialPlace({ id: 'order-initial', name: 'Initial', latitude: 53, longitude: 40 }, 1)
+    await setSetting('locationChoice', { mode: 'official', locationId: initial.id, source: 'manual', place: initial })
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse), expectedPlaceId: initial.id }] })
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(other), expectedPlaceId: initial.id }] })
+    await writer.drain()
+
+    expect(await getLocationChoice()).toMatchObject({ value: choice(other) })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000',
+      'gps:history:41.010000:28.950000', initial.id])
+    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 905 })
+  })
+
+  it('keeps logical order increasing across a simulated system-clock rollback and retries the same reserved selection', async () => {
+    const repo = createPrayerRepository()
+    await setSetting('placeSelectionOrder', 2_000_000_000_000.5)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(2_000_000_000_000)
+    const firstOrder = await repo.reservePlaceSelectionOrder()
+    clock.mockReturnValue(1)
+    const secondOrder = await createPrayerRepository().reservePlaceSelectionOrder()
+    expect(firstOrder).toBe(2_000_000_000_001)
+    expect(secondOrder).toBe(firstOrder + 1)
+
+    const selected = choice(coarse)
+    let fail = true
+    const writer = createSettingsPersistence(async (patch, isCurrent) => {
+      if (fail) {
+        fail = false
+        return failure({ kind: 'storage', reason: 'unavailable' })
+      }
+      return repo.saveSettings(patch, isCurrent)
+    }, repo.reservePlaceSelectionOrder)
+    writer.save({ locationChoice: selected, placeEvents: [{ change: 'selection', choice: selected }] })
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+    expect(await getLocationChoice()).toMatchObject({ value: undefined })
+    const reservedOrder = await getSetting('placeSelectionOrder')
+    writer.retry()
+    await writer.drain()
+
+    expect(await getLocationChoice()).toMatchObject({ value: selected })
+    expect(await getSetting('placeSelectionOrder')).toEqual(reservedOrder)
+    expect(await history()).toHaveLength(1)
+  })
+
+  it('retries a failed order reservation without blocking later settings writes', async () => {
+    const repo = createPrayerRepository()
+    let failReservation = true
+    const reserve = async () => {
+      if (failReservation) {
+        failReservation = false
+        throw new Error('temporary storage failure')
+      }
+      return repo.reservePlaceSelectionOrder()
+    }
+    const writer = createSettingsPersistence(repo.saveSettings, reserve)
+    const selected = choice(coarse)
+    writer.save({ locationChoice: selected, placeEvents: [{ change: 'selection', choice: selected }] })
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+
+    writer.retry()
+    await writer.drain()
+    expect(await getLocationChoice()).toMatchObject({ value: selected })
+    expect(writer.getStatus()).toBe('saved')
+  })
+
+  it('reserves and persists an early selection after reset before startup initialization resolves', async () => {
+    await clearAppData()
+    const repo = createPrayerRepository()
+    const selected = choice(coarse)
+    const writer = createSettingsPersistence(repo.saveSettings, repo.reservePlaceSelectionOrder)
+    writer.save({ locationChoice: selected, placeEvents: [{ change: 'selection', choice: selected }] })
+    await writer.drain()
+
+    expect(await getLocationChoice()).toMatchObject({ value: selected })
+    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 1 })
+    expect(await history()).toHaveLength(1)
+  })
+
   it('rejects an obsolete pre-startup selection after another tab commits, while migrating legacy history once', async () => {
     const tabA = createPrayerRepository()
     const tabB = createPrayerRepository()
