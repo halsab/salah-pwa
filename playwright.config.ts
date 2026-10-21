@@ -28,7 +28,9 @@ export default defineConfig({
         '**/security.spec.ts',
         '**/execution-gate.spec.ts',
       ],
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], launchOptions: {
+        args: ['--enable-features=BackForwardCache'], ignoreDefaultArgs: ['--disable-back-forward-cache'],
+      } },
     },
     // Критические сценарии мобильного WebKit (portrait).
     {

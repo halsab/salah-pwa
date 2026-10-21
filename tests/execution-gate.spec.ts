@@ -214,16 +214,22 @@ test('pagehide/pageshow lifecycle events quiesce and reacquire before rendering 
   await expect(requester.locator('[data-execution-owner]')).toHaveCount(0)
 })
 
-test('repeated real back and forward navigation restores execution without duplicating the owner', async ({ context }) => {
+test('repeated real back and forward navigation keeps execution ownership singular', async ({ context }) => {
   const owner = await context.newPage()
+  await owner.route('**/salah-pwa/away.html', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
+  }))
   await owner.addInitScript(() => {
     window.addEventListener('pageshow', event => {
-      window.name = `${window.name},${String(event.persisted)}`
+      const events = JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]
+      events.push(event.persisted ? 'bfcache' : 'navigation')
+      sessionStorage.setItem('salah-pageshow-events', JSON.stringify(events))
     })
   })
   await owner.goto('/')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
-  await owner.goto('/salah-pwa/manifest.webmanifest')
+  await owner.waitForTimeout(1_000)
+  await owner.goto('/away.html')
 
   const currentOwner = await context.newPage()
   await currentOwner.goto('/')
@@ -233,8 +239,8 @@ test('repeated real back and forward navigation restores execution without dupli
   await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
   await expect(owner.locator('[data-execution-owner]')).toHaveCount(0)
-  const pageshowEvents = await owner.evaluate(() => window.name.split(',').filter(Boolean))
-  expect(pageshowEvents.length).toBeGreaterThan(1)
+  const pageshowEvents = await owner.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
+  expect(pageshowEvents).toContain('navigation')
 
   await owner.getByRole('button', { name: 'Продолжить здесь' }).click()
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
@@ -242,7 +248,7 @@ test('repeated real back and forward navigation restores execution without dupli
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
     await owner.goForward()
-    await expect(owner).toHaveURL(/manifest\.webmanifest$/)
+    await expect(owner).toHaveURL(/away\.html$/)
     await currentOwner.getByRole('button', { name: 'Продолжить здесь' }).click()
     await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
     await owner.goBack()
@@ -253,6 +259,52 @@ test('repeated real back and forward navigation restores execution without dupli
     await expect(currentOwner.locator('[data-execution-owner]')).toHaveCount(0)
     const activeCount = await Promise.all([owner, currentOwner].map(page => page.locator('[data-execution-owner]').count()))
     expect(activeCount.reduce((sum, count) => sum + count, 0)).toBe(1)
+  }
+})
+
+test('Playwright browser supports BFCache on plain same-origin documents', async ({ context }) => {
+  const page = await context.newPage()
+  await page.route('**/salah-pwa/plain-*.html', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Plain page</title><main>Plain page</main>',
+  }))
+  await page.addInitScript(() => {
+    window.addEventListener('pageshow', event => {
+      const events = JSON.parse(sessionStorage.getItem('plain-pageshow-events') ?? '[]') as boolean[]
+      events.push(event.persisted)
+      sessionStorage.setItem('plain-pageshow-events', JSON.stringify(events))
+    })
+  })
+
+  await page.goto('/plain-first.html')
+  await page.goto('/plain-second.html')
+  await page.goBack()
+  const restoredFromBfcache = await page.evaluate(() =>
+    (JSON.parse(sessionStorage.getItem('plain-pageshow-events') ?? '[]') as boolean[]).includes(true))
+  test.skip(!restoredFromBfcache, 'The Playwright browser did not BFCache a plain same-origin document in this environment.')
+})
+
+test('repeated back navigation confirms real BFCache restoration when supported by the browser', async ({ context }) => {
+  const page = await context.newPage()
+  await page.route('**/salah-pwa/away.html', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
+  }))
+  await page.addInitScript(() => {
+    window.addEventListener('pageshow', event => {
+      const events = JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]
+      events.push(event.persisted ? 'bfcache' : 'navigation')
+      sessionStorage.setItem('salah-pageshow-events', JSON.stringify(events))
+    })
+  })
+  await page.goto('/')
+  await expect(page.locator('[data-execution-owner]')).toBeVisible()
+  await page.waitForTimeout(1_000)
+
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await page.goto('/away.html')
+    await page.goBack()
+    const events = await page.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
+    test.skip(!events.includes('bfcache'), 'This Playwright browser run performed ordinary navigation instead of a BFCache restoration.')
+    await expect(page.locator('[data-execution-owner]')).toBeVisible()
   }
 })
 

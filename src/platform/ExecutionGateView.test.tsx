@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 type MockGate = {
@@ -23,9 +24,10 @@ vi.mock('./executionGate', () => ({
 import { ExecutionGateView } from './ExecutionGateView'
 
 function deferred<T>() {
-  let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
-  return { promise, resolve }
+  let resolve!: (value?: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((done, fail) => { resolve = value => done(value as T); reject = fail })
+  return { promise, resolve, reject }
 }
 
 function createGate(start: Promise<boolean>) {
@@ -136,6 +138,54 @@ describe('execution gate presentation', () => {
     expect(screen.queryByTestId('app')).not.toBeInTheDocument()
   })
 
+  it('preserves a delayed lifecycle relinquishment failure after pageshow advances the generation', async () => {
+    const drain = deferred<undefined>()
+    const owner = createGate(Promise.resolve(true))
+    owner.relinquish.mockReturnValueOnce(drain.promise)
+    mocks.createGate.mockReset().mockReturnValue(owner)
+    render(<ExecutionGateView />)
+
+    act(() => { window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })) })
+    act(() => { window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })) })
+    expect(screen.getByText('Ожидаем завершения безопасного переключения…')).toBeVisible()
+
+    await act(async () => { drain.reject(new Error('quiescence failed')); await Promise.resolve() })
+    expect(screen.getByRole('alert')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Попробовать снова' })).toBeEnabled()
+    expect(mocks.createGate).toHaveBeenCalledOnce()
+    expect(screen.queryByTestId('app')).not.toBeInTheDocument()
+  })
+
+  it('keeps a visible resolving state while restoration quiescence is pending', async () => {
+    const drain = deferred<undefined>()
+    const owner = createGate(Promise.resolve(true))
+    owner.relinquish.mockReturnValueOnce(drain.promise)
+    mocks.createGate.mockReset().mockReturnValue(owner)
+    render(<ExecutionGateView />)
+
+    act(() => { window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })) })
+    act(() => { window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })) })
+    expect(screen.getByText('Ожидаем завершения безопасного переключения…')).toBeVisible()
+    expect(screen.queryByTestId('app')).not.toBeInTheDocument()
+    expect(mocks.createGate).toHaveBeenCalledOnce()
+
+    await act(async () => { drain.resolve(undefined); await drain.promise; await Promise.resolve() })
+    expect(await screen.findByTestId('app')).toBeInTheDocument()
+  })
+
+  it('does not let StrictMode cleanup cancel a lock-owning controller before remount', async () => {
+    const start = deferred<boolean>()
+    const first = createGate(start.promise)
+    const second = createGate(Promise.resolve(true))
+    mocks.createGate.mockReset().mockReturnValueOnce(first).mockReturnValueOnce(second)
+    render(<StrictMode><ExecutionGateView /></StrictMode>)
+
+    await act(async () => { start.resolve(true); await start.promise })
+    expect(await screen.findByTestId('app')).toBeInTheDocument()
+    expect(first.close).toHaveBeenCalledOnce()
+    expect(second.start).toHaveBeenCalledOnce()
+  })
+
   it('keeps ownership resolution separate from the confirmed blocked screen', async () => {
     const start = deferred<boolean>()
     mocks.gate = createGate(start.promise)
@@ -143,6 +193,7 @@ describe('execution gate presentation', () => {
     const view = render(<ExecutionGateView />)
 
     expect(screen.queryByRole('heading', { name: 'Приложение уже открыто' })).not.toBeInTheDocument()
+    expect(screen.queryByText('Ожидаем завершения безопасного переключения…')).not.toBeInTheDocument()
     expect(screen.queryByTestId('app')).not.toBeInTheDocument()
 
     await act(async () => { start.resolve(false); await start.promise })

@@ -284,6 +284,7 @@ export function createExecutionGate(): ExecutionGate {
         await deactivate()
         release()
         await lockTask
+        channel?.close()
         coordinationError = false
       } catch (error) {
         coordinationError = true

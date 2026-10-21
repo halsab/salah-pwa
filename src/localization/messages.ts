@@ -24,6 +24,8 @@ export const RU_MESSAGES = Object.freeze({
   executionGateDescription: 'Salah работает в другой вкладке. Вы можете продолжить здесь.',
   executionGateContinue: 'Продолжить здесь',
   executionGateSwitching: 'Переключаем…',
+  executionGateResolvingTitle: 'Восстанавливаем приложение',
+  executionGateResolvingDescription: 'Ожидаем завершения безопасного переключения…',
   executionGateFailure: 'Не удалось переключиться. Попробуйте ещё раз.',
   executionGateUnsupported: 'Для безопасной работы требуется поддержка блокировки вкладок. Повторите попытку.',
   executionGateError: 'Не удалось проверить безопасное владение вкладкой. Повторите попытку.',

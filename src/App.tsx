@@ -376,7 +376,10 @@ export function App({
       return operation
     }
   }, [services, invalidateSaves, drainReset, hasPendingReset])
-  useEffect(() => () => { setExecutionQuiescence(() => quiescenceOperation.current()) }, [])
+  useEffect(() => {
+    setExecutionQuiescence(() => quiescenceOperation.current())
+    return () => { setExecutionQuiescence(() => quiescenceOperation.current()) }
+  }, [])
   const locationSelectionVisible = navigation.screen === 'location' || (navigation.screen === 'home' && !place)
   const previousLocationSelectionVisible = useRef(locationSelectionVisible)
   useEffect(() => {

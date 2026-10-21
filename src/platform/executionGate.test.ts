@@ -224,4 +224,24 @@ describe('execution gate', () => {
     expect(await requester.requestOwnership()).toBe(true)
     requester.close()
   })
+
+  it('keeps an actively held Web Lock until disposal quiescence completes', async () => {
+    const locks = setup()
+    const owner = createExecutionGate()
+    const requester = createExecutionGate()
+    const drain = deferred()
+    owner.onTakeover(() => drain.promise)
+    expect(await owner.start()).toBe(true)
+
+    owner.close()
+    const request = requester.requestOwnership()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(locks.held).toBe(true)
+    expect(await createExecutionGate().start()).toBe(false)
+
+    drain.resolve()
+    expect(await request).toBe(true)
+    expect(locks.held).toBe(true)
+    requester.close()
+  })
 })
