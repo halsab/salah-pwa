@@ -25,15 +25,16 @@ function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, 
   return nameLookupMessage(nameLookupState, locale)
 }
 
-export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
+export function LocationScreen({ place, activePlace, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
   gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom, currentTime = new Date(), activeHistoryId }: {
-  place: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
+  place: Place | null; activePlace?: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
   onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
   gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
   currentTime?: Date; activeHistoryId?: string
 }) {
   const { locale, t } = useLocalization()
-  const recent = recentPlaces.filter(item => item.id !== activeHistoryId && (!place || !isSameRecentPlace(item, place)))
+  const selected = activePlace === undefined ? place : activePlace
+  const recent = recentPlaces.filter(item => item.id !== activeHistoryId && (!selected || !isSameRecentPlace(item, selected)))
   const gpsPlace = place?.selection === 'gps'
   const busy = gpsState.status === 'locating' || gpsState.status === 'refining'
   const lowAccuracy = gpsState.status === 'ready' && gpsState.lowAccuracy

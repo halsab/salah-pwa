@@ -305,7 +305,7 @@ export function App({
 
   const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
-  const { place, source: placeSelectionSource, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
+  const { place, gpsPreview, source: placeSelectionSource, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
     cancelInteractive: cancelInteractiveGps,
     selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(
     services, locations, onPlaceChosen, persistPlace,
@@ -788,8 +788,8 @@ export function App({
       {!dialogOpen ? <div
         className="app-background screen-background"
       >
-          {!place ? <LocationScreen initial place={null} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
-            onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+          {!place ? <LocationScreen initial place={gpsPreview} activePlace={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
+            onBack={backScreen} onSearch={() => { cancelInteractiveGps(); flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
             gpsState={gpsState} nameLookupState={nameLookupState} onAcceptGps={acceptGps}
             notice={<>{persistenceNotice}{recoveryNotices}</>} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="home-settings" onClick={openSettingsDialog}>{t('settings')}</ActionButton></ScreenFooter>} /> : <ScheduleContent
             schedule={remoteSelectionPending ? null : schedule}
@@ -836,8 +836,8 @@ export function App({
       {navigation.screen === 'religious-events' ? <ReligiousEventsScreen today={today} correction={calendarPreferences.correction}
         hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} loadError={religiousEventLoadError} /> : null}
 
-      {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} {...(activeHistoryId ? { activeHistoryId } : {})} onSelectRecent={selectRecent}
-        onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+      {navigation.screen === 'location' ? <LocationScreen place={gpsPreview ?? place} activePlace={place} recentPlaces={recentPlaces} {...(activeHistoryId ? { activeHistoryId } : {})} onSelectRecent={selectRecent}
+        onBack={closeLocationDialog} onSearch={() => { cancelInteractiveGps(); flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
         onAcceptGps={acceptGps} gpsState={gpsState} nameLookupState={nameLookupState} currentTime={currentTime} notice={persistenceNotice} /> : null}
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
         onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}

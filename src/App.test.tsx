@@ -1116,6 +1116,74 @@ describe('Salah', () => {
     expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
   })
 
+  it('оставляет начальный выбор места до принятия низкоточной GPS-точки', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: null })),
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
+    await act(async () => { coarse.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 2400, timestamp: 100 })); await Promise.resolve() })
+    expect(await screen.findByRole('heading', { name: 'Выберите место' })).toBeVisible()
+    expect(screen.getByText('41.0100, 28.9500')).toBeVisible()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(saveSettings.mock.calls.some(([patch]) => patch.locationChoice?.place?.selection === 'gps')).toBe(false)
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
+
+    await act(async () => { precise.resolve(failure({ kind: 'geolocation', reason: 'unavailable' })); await Promise.resolve() })
+    await userEvent.click(screen.getByRole('button', { name: 'Использовать эту точку' }))
+    expect(await screen.findByRole('timer')).toBeVisible()
+    expect(saveSettings.mock.calls.some(([patch]) => patch.locationChoice?.place?.selection === 'gps')).toBe(true)
+  })
+
+  it('cancels a pending GPS preview from Location before opening city search', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized()),
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+    await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+    await act(async () => { coarse.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 2400, timestamp: 100 })); await Promise.resolve() })
+    await screen.findByText('41.0100, 28.9500')
+    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
+    const search = await screen.findByRole('searchbox')
+    await userEvent.type(search, 'Москва')
+    const writesAtSearch = saveSettings.mock.calls.length
+    await act(async () => { precise.resolve(success({ latitude: 41.011, longitude: 28.951, accuracy: 10, timestamp: 200 })); await Promise.resolve() })
+    expect(screen.getByRole('searchbox')).toHaveValue('Москва')
+    expect(await screen.findByRole('button', { name: /Москва/ })).toBeVisible()
+    expect(saveSettings.mock.calls).toHaveLength(writesAtSearch)
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? []).some(place => place.selection === 'gps')).toBe(false)
+  })
+
+  it('does not hide a saved GPS row merely because an unaccepted preview is nearby', async () => {
+    const coarse = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
+    const savedGps = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 1200, timestamp: 100 }, 'Europe/Moscow', null,
+      'gps:history:41.010000:28.950000')
+    const saveSettings = vi.fn<AppServices['saveSettings']>().mockResolvedValue(success(undefined))
+    const services = createServices({
+      initialize: vi.fn().mockResolvedValue(initialized({ recentPlaces: [savedGps], recentPlacesMigrated: true })),
+      getPosition: vi.fn((accuracy: string) => accuracy === 'coarse' ? coarse.promise : precise.promise),
+      saveSettings,
+    })
+    render(<App services={services} />)
+    await userEvent.click(await screen.findByRole('button', { name: 'Казань' }))
+    await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
+    await act(async () => { coarse.resolve(success({ ...savedGps, timestamp: 200 })); await Promise.resolve() })
+    expect(await screen.findByRole('button', { name: 'Сохранённая точка, 41.0100, 28.9500' })).toBeVisible()
+    expect(saveSettings.mock.calls.flatMap(([patch]) => patch.recentPlaces ?? [])).not.toContainEqual(expect.objectContaining({ timestamp: 200 }))
+  })
+
   it('migrates the original persisted GPS snapshot after a passive refresh races optional hydration', async () => {
     const original = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 80, timestamp: 100 }, 'Europe/Moscow', null, 'gps:legacy-current')
     const oldManual = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 50)
@@ -1138,7 +1206,8 @@ describe('Salah', () => {
     })
     render(<App services={services} />)
     await screen.findByRole('timer')
-    await waitFor(() => expect(services.getPosition).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(services.getPermission).toHaveBeenCalledOnce(), { timeout: 5000 })
+    await waitFor(() => expect(services.getPosition).toHaveBeenCalledTimes(2), { timeout: 5000 })
     await screen.findByText('41.5000, 30.0000')
     await act(async () => {
       optional.resolve(success({ recentPlaces: [oldManual], recentPlacesMigrated: false,
