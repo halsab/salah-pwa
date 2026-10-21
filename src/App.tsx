@@ -83,6 +83,12 @@ import {
 const loadSecondaryScreens = () => import('./features/SecondaryScreens')
 const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about']
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
+let lastPlaceSelectionOrder = 0
+function nextPlaceSelectionOrder(): number {
+  const clock = typeof performance !== 'undefined' ? performance.timeOrigin + performance.now() : Date.now()
+  lastPlaceSelectionOrder = Math.max(clock, lastPlaceSelectionOrder + 0.001)
+  return lastPlaceSelectionOrder
+}
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
   'clearAppData' | 'getDataGeneration' | 'initializeStartup' | 'loadOptionalSettings'>>,
   Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
@@ -181,10 +187,22 @@ export function App({
     isLatest?: () => boolean,
     isLocationCurrent?: () => boolean,
   ) => {
-    const result = await services.saveSettings(patch, isGenerationCurrent)
+    const selectionResult: { accepted: boolean } = { accepted: true }
+    const result = await services.saveSettings(patch, isGenerationCurrent, outcome => {
+      selectionResult.accepted = outcome.selectionAccepted
+    })
     if (result.ok) {
       const generationIsCurrent = isGenerationCurrent?.() ?? true
       const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
+      if (patch.placeEvents?.some(event => event.change === 'selection') && !selectionResult.accepted
+        && generationIsCurrent && locationIsCurrent) {
+        pendingPlaceWrite.current = false
+        pendingFastIdentityWrite.current = false
+        setFastCacheReady(false)
+        setRemoteSelectionPending(true)
+        retrySelectionSync.current()
+        return result
+      }
       const currentIdentityCommitted = Boolean((patch.locationChoice || patch.sourcePreferences)
         && generationIsCurrent && locationIsCurrent)
       if (patch.placeEvents?.length && generationIsCurrent && locationIsCurrent) {
@@ -266,7 +284,8 @@ export function App({
     const expectedPlaceId = change === 'refinement' ? next.id
       : previousPlace.current?.id ?? (change === 'selection' && !legacyHistoryAnchorCaptured.current ? undefined : null)
     const patch: SettingsPatch = { locationChoice: choice,
-      placeEvents: [{ change, choice, ...(expectedPlaceId !== undefined ? { expectedPlaceId } : {}) }] }
+      placeEvents: [{ change, choice, ...(expectedPlaceId !== undefined ? { expectedPlaceId } : {}),
+        ...(change === 'selection' ? { selectionOrder: nextPlaceSelectionOrder() } : {}) }] }
     pendingPlaceWrite.current = true
     if (change === 'selection') {
       const existing = recentPlacesLoaded.current ? recentRef.current

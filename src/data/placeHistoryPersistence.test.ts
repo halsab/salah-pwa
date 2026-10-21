@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createGpsPlace, createOfficialPlace, type Place } from '../domain/place'
 import { success, failure } from '../domain/result'
 import { createSettingsPersistence } from '../features/settings/settingsPersistence'
+import { getDeviceTimeZone } from '../domain/locationTime'
 import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, setSetting, type LocationChoice, type SettingsPatch } from '../storage/database'
 import { createPrayerRepository, loadPrayerRepositoryOptionalSettings } from './prayerRepository'
 
@@ -9,8 +10,10 @@ const coarse = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 500
 const precise = { ...coarse, latitude: 41.03, accuracy: 10, timestamp: 200 }
 const other = createGpsPlace({ latitude: 48, longitude: 20, accuracy: 20, timestamp: 300 }, 'Europe/Moscow', null, 'gps:operation:b')
 const choice = (place: Place): LocationChoice => ({ mode: 'calculated', source: 'automatic', coordinates: place, place })
+let selectionOrder = 0
 const event = (change: 'selection' | 'refinement', place: Place, previousId: string | null = null): SettingsPatch => ({
-  locationChoice: choice(place), placeEvents: [{ change, choice: choice(place), expectedPlaceId: change === 'selection' ? previousId : place.id }],
+  locationChoice: choice(place), placeEvents: [{ change, choice: choice(place), expectedPlaceId: change === 'selection' ? previousId : place.id,
+    ...(change === 'selection' ? { selectionOrder: ++selectionOrder } : {}) }],
 })
 function deferred() {
   let resolve!: () => void
@@ -193,10 +196,10 @@ describe('transactional accepted GPS refinements', () => {
       return tabA.saveSettings(patch, isCurrent)
     })
 
-    delayed.save({ locationChoice: obsolete, placeEvents: [{ change: 'selection', choice: obsolete, expectedPlaceId: original.id }] })
+    delayed.save({ locationChoice: obsolete, placeEvents: [{ change: 'selection', choice: obsolete, expectedPlaceId: original.id, selectionOrder: 100 }] })
     await started.promise
     const current = choice(other)
-    await tabB.saveSettings({ locationChoice: current, placeEvents: [{ change: 'selection', choice: current, expectedPlaceId: original.id }] })
+    await tabB.saveSettings({ locationChoice: current, placeEvents: [{ change: 'selection', choice: current, expectedPlaceId: original.id, selectionOrder: 200 }] })
     const currentHistory = await history()
     allowWrite.resolve()
     await delayed.drain()
@@ -210,24 +213,85 @@ describe('transactional accepted GPS refinements', () => {
     const repo = createPrayerRepository()
     await setSetting('locationChoice', choice(precise))
     await setSetting('recentPlacesMigrated', true)
+    await setSetting('placeSelectionOrder', 200)
     const refinedHistory = [{ ...precise, id: 'gps:history:41.010000:28.950000' }]
     await setSetting('recentPlaces', refinedHistory)
     await repo.saveSettings({ locationChoice: choice(coarse), placeEvents: [{ change: 'selection', choice: choice(coarse),
-      expectedPlaceId: other.id }] })
+      expectedPlaceId: other.id, selectionOrder: 100 }] })
 
     expect(await getLocationChoice()).toMatchObject({ value: choice(precise) })
-    expect(await history()).toEqual(refinedHistory)
+    const restored = await history()
+    expect(restored).toHaveLength(1)
+    expect(restored[0]).toMatchObject({ id: refinedHistory[0]?.id, latitude: precise.latitude,
+      longitude: precise.longitude, accuracy: precise.accuracy, timestamp: precise.timestamp })
+    expect(restored[0]?.timeZone).toBe(getDeviceTimeZone())
+    expect(restored.map(place => place.id)).toEqual([refinedHistory[0]?.id])
+  })
+
+  it('rejects an obsolete pre-startup selection after another tab commits, while migrating legacy history once', async () => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const original = createOfficialPlace({ id: 'legacy-current', name: 'Legacy current', latitude: 55, longitude: 49 }, 10)
+    const originalChoice: LocationChoice = { mode: 'official', locationId: 'legacy-current', source: 'manual', place: original }
+    const legacy = Array.from({ length: 10 }, (_, index) => index === 3 ? original
+      : createOfficialPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 30 + index, longitude: 20 + index }, index))
+    await setSetting('locationChoice', originalChoice)
+    await setSetting('recentPlaces', legacy)
+    await setSetting('recentPlacesMigrated', false)
+
+    const obsolete = choice(coarse)
+    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    const allowObsoleteWrite = deferred()
+    const obsoleteWrite = allowObsoleteWrite.promise.then(() => tabA.saveSettings({ locationChoice: obsolete,
+      placeEvents: [{ change: 'selection', choice: obsolete, selectionOrder: 100 }] }, undefined, value => { outcome = value }))
+    const winner = createOfficialPlace({ id: 'newer-tab', name: 'Newer tab', latitude: 60, longitude: 40 }, 20)
+    const winnerChoice: LocationChoice = { mode: 'official', locationId: 'newer-tab', source: 'manual', place: winner }
+    await tabB.saveSettings({ locationChoice: winnerChoice, placeEvents: [{ change: 'selection', choice: winnerChoice,
+      expectedPlaceId: original.id, selectionOrder: 200 }] })
+    allowObsoleteWrite.resolve()
+    await obsoleteWrite
+
+    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winnerChoice })
+    expect(await getLocationChoice()).toMatchObject({ value: winnerChoice })
+    const migrated = await history()
+    expect(migrated.map(place => place.id)).toEqual([winner.id, original.id, ...legacy.filter(place => place.id !== original.id).slice(0, 8).map(place => place.id)])
+    expect(migrated).toHaveLength(10)
+    expect(migrated.filter(place => place.id === original.id)).toHaveLength(1)
+    expect(await getSetting('recentPlacesMigrated')).toMatchObject({ value: true })
+    expect(await getSetting('placeSelectionOrder')).toMatchObject({ value: 200 })
+
+    const restarted = createPrayerRepository()
+    expect(await restarted.initialize()).toMatchObject({ ok: true, value: { locationChoice: winnerChoice } })
+    expect(await getLocationChoice()).toMatchObject({ value: winnerChoice })
+    expect(await history()).toEqual(migrated)
+  })
+
+  it('applies the newer cross-tab intent when the older transaction happens to commit first', async () => {
+    const original = createOfficialPlace({ id: 'original', name: 'Original', latitude: 55, longitude: 49 }, 1)
+    const originalChoice: LocationChoice = { mode: 'official', locationId: 'original', source: 'manual', place: original }
+    await setSetting('locationChoice', originalChoice)
+    const first = choice(coarse)
+    const second = choice(other)
+    await createPrayerRepository().saveSettings({ locationChoice: first,
+      placeEvents: [{ change: 'selection', choice: first, expectedPlaceId: original.id, selectionOrder: 100 }] })
+    await createPrayerRepository().saveSettings({ locationChoice: second,
+      placeEvents: [{ change: 'selection', choice: second, expectedPlaceId: original.id, selectionOrder: 200 }] })
+
+    expect(await getLocationChoice()).toMatchObject({ value: second })
+    expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000',
+      'gps:history:41.010000:28.950000', original.id])
   })
 
   it('does not replay an uncommitted coarse selection over a newer tab selection while saving its refinement', async () => {
     const repo = createPrayerRepository()
     const original = createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.12 }, 1)
     await setSetting('locationChoice', { mode: 'official', locationId: 'kazan', source: 'manual', place: original })
-    await repo.saveSettings(event('selection', other, original.id))
+    await repo.saveSettings({ ...event('selection', other, original.id), placeEvents: [{ change: 'selection', choice: choice(other),
+      expectedPlaceId: original.id, selectionOrder: 200 }] })
     const before = await history()
     const selected = choice(coarse)
     await repo.saveSettings({ locationChoice: choice(precise), placeEvents: [
-      { change: 'selection', choice: selected, expectedPlaceId: original.id },
+      { change: 'selection', choice: selected, expectedPlaceId: original.id, selectionOrder: 100 },
       { change: 'refinement', choice: choice(precise), expectedPlaceId: coarse.id },
     ] })
     expect(await getLocationChoice()).toMatchObject({ value: { place: other } })

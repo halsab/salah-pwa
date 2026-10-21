@@ -157,7 +157,7 @@ describe('local initialization and persistence', () => {
     await saveLocationChoice({ mode: 'official', locationId: 'kazan', source: 'manual' })
     await setSetting('recentPlaces', legacyHistory)
 
-    expect(await repo.saveSettings({ locationChoice: choice, placeEvents: [selectedEarlier, selected].map(place => ({ change: 'selection', choice: { mode: 'calculated', source: 'manual', coordinates: place, place } })) })).toEqual(success(undefined))
+    expect(await repo.saveSettings({ locationChoice: choice, placeEvents: [selectedEarlier, selected].map((place, index) => ({ change: 'selection', choice: { mode: 'calculated', source: 'manual', coordinates: place, place }, selectionOrder: index + 1 })) })).toEqual(success(undefined))
     expect(await initializePrayerRepositoryStartup()).toMatchObject({ value: { locationChoice: { mode: 'calculated', place: { id: selected.id } } } })
     const optional = await loadPrayerRepositoryOptionalSettings()
     if (!optional.ok) throw new Error('History read after selection failed')
@@ -225,7 +225,7 @@ describe('local initialization and persistence', () => {
   it('keeps an explicit selection write failure retryable as one consistent settings snapshot', async () => {
     const selected = createOfficialPlace(required(dataset.locations[0]), 100)
     const choice: LocationChoice = { mode: 'official', locationId: selected.id.replace('locality:', ''), source: 'manual', place: selected }
-    const patch: import('../storage/database').SettingsPatch = { locationChoice: choice, placeEvents: [{ change: 'selection', choice }] }
+    const patch: import('../storage/database').SettingsPatch = { locationChoice: choice, placeEvents: [{ change: 'selection', choice, selectionOrder: 1 }] }
     vi.stubGlobal('indexedDB', { open: () => { throw new Error('disabled') } })
     expect(await repo.saveSettings(patch)).toMatchObject({ ok: false, error: { kind: 'storage' } })
     vi.unstubAllGlobals()
@@ -234,5 +234,12 @@ describe('local initialization and persistence', () => {
     expect(await repo.saveSettings(patch)).toEqual(success(undefined))
     expect(await initializePrayerRepositoryStartup()).toMatchObject({ value: { locationChoice: { place: { id: selected.id } } } })
     expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [expect.objectContaining({ id: selected.id })], recentPlacesMigrated: true } })
+  })
+  it('rejects explicit persistence events without a pre-queue selection order', async () => {
+    const selected = createOfficialPlace(required(dataset.locations[0]), 100)
+    const choice: LocationChoice = { mode: 'official', locationId: selected.id.replace('locality:', ''), source: 'manual', place: selected }
+    expect(await repo.saveSettings({ locationChoice: choice, placeEvents: [{ change: 'selection', choice }] }))
+      .toMatchObject({ ok: false, error: { kind: 'data', reason: 'invalid' } })
+    expect(await getLocationChoice()).toMatchObject({ value: undefined })
   })
 })

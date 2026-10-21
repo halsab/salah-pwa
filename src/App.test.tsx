@@ -641,7 +641,7 @@ describe('Salah', () => {
     expect(await screen.findByText('Не удалось сохранить изменения')).toBeVisible()
     await userEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(screen.queryByText('Не удалось сохранить изменения')).not.toBeInTheDocument())
-    expect(saveSettings).toHaveBeenLastCalledWith({ sourcePreferences: manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19, asrMethod: 'standard' } }) }, expect.any(Function))
+    expect(saveSettings).toHaveBeenLastCalledWith({ sourcePreferences: manualCalculation({ profile: 'karachi', overrides: { fajrAngle: 19, asrMethod: 'standard' } }) }, expect.any(Function), expect.any(Function))
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
     await userEvent.click(screen.getByRole('button', { name: 'Параметры' }))
     expect(screen.getByRole('combobox', { name: 'Аср' })).toHaveValue('standard')
@@ -879,7 +879,7 @@ describe('Salah', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Календарь' }), 'gregorian')
     expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('1')
     expect(screen.queryByRole('combobox', { name: 'Поправка даты' })).not.toBeInTheDocument()
-    await waitFor(() => expect(services.saveSettings).toHaveBeenLastCalledWith({ calendarPreferences: { calendar: 'gregorian', correction: 1 } }, expect.any(Function)))
+    await waitFor(() => expect(services.saveSettings).toHaveBeenLastCalledWith({ calendarPreferences: { calendar: 'gregorian', correction: 1 } }, expect.any(Function), expect.any(Function)))
   })
 
   it('сохраняет автоактивацию текущей ночи Рамадана при просмотре другой даты', async () => {
@@ -1550,7 +1550,7 @@ describe('Salah', () => {
 
     const remoteChoice = { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const, place: remotePlace }
     await tabB.saveSettings({ locationChoice: remoteChoice, placeEvents: [{ change: 'selection', choice: remoteChoice,
-      expectedPlaceId: 'locality:kazan' }] })
+      expectedPlaceId: 'locality:kazan', selectionOrder: 200 }] })
 
     invalidateFastScheduleSnapshot()
     await act(async () => {
@@ -1565,6 +1565,82 @@ describe('Salah', () => {
     expect(saveSettings.mock.calls[0]?.[1]?.()).toBe(false)
     const stored = await loadPrayerRepositoryOptionalSettings()
     expect(stored.ok && stored.value.recentPlaces).toEqual([remotePlace])
+  })
+
+  it('reconciles a pre-startup selection rejected after a newer tab wins and preserves one-time legacy migration', async () => {
+    vi.stubGlobal('localStorage', memoryStorage())
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const original = createOfficialPlace(required(initializedState.meta.locations[0]), 1)
+    const originalChoice = { mode: 'official' as const, locationId: 'kazan', source: 'manual' as const, place: original }
+    const legacyHistory = Array.from({ length: 10 }, (_, index) => index === 4 ? original
+      : createOfficialPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 30 + index, longitude: 20 + index }, index))
+    await setSetting('locationChoice', originalChoice)
+    await setSetting('recentPlaces', legacyHistory)
+    await setSetting('recentPlacesMigrated', false)
+
+    const startup = deferred<Awaited<ReturnType<NonNullable<AppServices['initializeStartup']>>>>()
+    const allowEarlyWrite = deferred<undefined>()
+    const remote = createOfficialPlace(required(initializedState.meta.locations[1]), 2)
+    const remoteChoice = { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const, place: remote }
+    let initializeCalls = 0
+    const currentState = async () => {
+      const [choiceResult, optional] = await Promise.all([getLocationChoice(), loadPrayerRepositoryOptionalSettings()])
+      if (!choiceResult.ok || !optional.ok) throw new Error('Unable to read the committed cross-tab state')
+      return initialized({ locationChoice: choiceResult.value ?? null, recentPlaces: optional.value.recentPlaces,
+        recentPlacesMigrated: optional.value.recentPlacesMigrated })
+    }
+    let earlyOrder = 0
+    const saveSettings = vi.fn<AppServices['saveSettings']>(async (patch, isCurrent, onOutcome) => {
+      if (patch.placeEvents?.some(event => event.change === 'selection') && earlyOrder === 0) {
+        earlyOrder = patch.placeEvents.find(event => event.change === 'selection')?.selectionOrder ?? 0
+        await allowEarlyWrite.promise
+      }
+      return tabA.saveSettings(patch, isCurrent, onOutcome)
+    })
+    const services = createServices({
+      initializeStartup: vi.fn(() => ++initializeCalls === 1 ? startup.promise : currentState()),
+      saveSettings,
+      loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
+    })
+    render(<App services={services} />)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Найти город' }))
+    await userEvent.type(screen.getByRole('searchbox'), 'Москва')
+    await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
+    expect(await screen.findByRole('button', { name: 'Москва' })).toBeVisible()
+    await waitFor(() => expect(earlyOrder).toBeGreaterThan(0))
+
+    await tabB.saveSettings({ locationChoice: remoteChoice, placeEvents: [{ change: 'selection', choice: remoteChoice,
+      expectedPlaceId: original.id, selectionOrder: earlyOrder + 1 }] })
+    await act(async () => { allowEarlyWrite.resolve(undefined); await Promise.resolve() })
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible())
+
+    const ids = ['locality:naberezhnye-chelny', 'locality:kazan', ...legacyHistory.filter(place => place.id !== original.id).slice(0, 8).map(place => place.id)]
+    const persisted = await loadPrayerRepositoryOptionalSettings()
+    expect(persisted).toMatchObject({ ok: true, value: { recentPlacesMigrated: true } })
+    if (!persisted.ok) throw new Error('Migrated recent places were not readable')
+    expect(persisted.value.recentPlaces.map(place => place.id)).toEqual(ids)
+    expect(await getLocationChoice()).toMatchObject({ value: remoteChoice })
+    expect(persisted.value.recentPlaces.filter(place => place.id === original.id)).toHaveLength(1)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Набережные Челны' }))
+    const recent = screen.getByRole('region', { name: 'Недавние места' })
+    expect(within(recent).getAllByRole('button').map(button => button.textContent.trim())).toEqual([
+      'Казань', 'Legacy 0', 'Legacy 1', 'Legacy 2', 'Legacy 3', 'Legacy 5', 'Legacy 6', 'Legacy 7', 'Legacy 8',
+    ])
+
+    invalidateFastScheduleSnapshot()
+    await act(async () => {
+      window.dispatchEvent(new StorageEvent('storage', { key: FAST_SCHEDULE_STORAGE_KEYS.changeSignal }))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(screen.getByText('Набережные Челны')).toBeVisible())
+    startup.resolve(initialized({ locationChoice: originalChoice, recentPlaces: legacyHistory, recentPlacesMigrated: false }))
+    await act(async () => { await startup.promise })
+    expect(screen.getByText('Набережные Челны')).toBeVisible()
+    const restarted = await tabB.initialize()
+    expect(restarted).toMatchObject({ ok: true, value: { locationChoice: remoteChoice, recentPlaces: persisted.value.recentPlaces } })
   })
 
   it('acknowledges a committed place write after a theme save supersedes its response', async () => {
@@ -1627,7 +1703,8 @@ describe('Salah', () => {
       await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: { place: { latitude: 41.01 } } }))
       const remote = createOfficialPlace(required(initializedState.meta.locations[1]), 300)
       const choice = { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const, place: remote }
-      await createPrayerRepository().saveSettings({ locationChoice: choice, placeEvents: [{ change: 'selection', choice }] })
+      await createPrayerRepository().saveSettings({ locationChoice: choice,
+        placeEvents: [{ change: 'selection', choice, selectionOrder: performance.timeOrigin + performance.now() + 1 }] })
       const historyBeforeCallback = await loadPrayerRepositoryOptionalSettings()
       invalidateFastScheduleSnapshot()
       await act(async () => {
@@ -1988,7 +2065,7 @@ describe('Salah', () => {
     act(() => { receive?.({ data: 'seasonal' } as MessageEvent) })
 
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('seasonal'))
-    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'seasonal' }, expect.any(Function)))
+    await waitFor(() => expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'seasonal' }, expect.any(Function), expect.any(Function)))
     expect(initialize).toHaveBeenCalledTimes(1)
   })
 
@@ -2034,7 +2111,7 @@ describe('Salah', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Тема' }), 'classic')
     expect(document.documentElement.dataset.theme).toBe('classic')
-    expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'classic' }, expect.any(Function))
+    expect(saveSettings).toHaveBeenCalledWith({ themeFamily: 'classic' }, expect.any(Function), expect.any(Function))
   })
 
   it('кеширует семейство только после успешного сохранения и после retry', async () => {
