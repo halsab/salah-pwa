@@ -16,106 +16,100 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
   let locationRevision = 0
   let epoch = 0
   let queue = Promise.resolve()
-  let reservationQueue = Promise.resolve()
-  let reservationFailed = false
+  const newReservations = () => ({
+    queue: Promise.resolve(),
+    failed: false,
+    previousOrder: undefined as number | undefined,
+    scheduled: new Set<PlacePersistenceEvent>(),
+    baselines: new Map<PlacePersistenceEvent, Promise<number | null | 'unavailable'>>(),
+  })
+  let reservations = newReservations()
   let fallbackSelectionOrder = 0
-  const scheduledEvents = new Set<PlacePersistenceEvent>()
-  const intentBaselines = new Map<PlacePersistenceEvent, Promise<number | null | 'unavailable'>>()
   let status: PersistenceStatus = 'idle'
   const listeners = new Set<() => void>()
   const notify = (next: PersistenceStatus) => { status = next; for (const listener of listeners) listener() }
-  const discardPending = () => { epoch += 1; revision += 1; latest = {}; intentBaselines.clear() }
+  const discardPending = () => {
+    epoch += 1
+    revision += 1
+    latest = {}
+    reservations = newReservations()
+  }
   const reservePendingEvents = () => {
-    if (reservationFailed) {
-      reservationQueue = Promise.resolve()
-      reservationFailed = false
+    const state = reservations
+    const isCurrent = () => state === reservations
+    if (state.failed) {
+      state.queue = Promise.resolve()
+      state.failed = false
+      state.scheduled.clear()
     }
     for (const event of latest.placeEvents ?? []) {
-      if (event.change !== 'selection' || event.selectionOrder !== undefined || scheduledEvents.has(event)) continue
-      scheduledEvents.add(event)
-      reservationQueue = reservationQueue.then(async () => {
-        let reservingEvent = event
+      if (event.change !== 'selection' || event.selectionOrder !== undefined || state.scheduled.has(event)) continue
+      state.scheduled.add(event)
+      state.queue = state.queue.then(async () => {
+        let pending = event
+        const stillPending = () => isCurrent() && Boolean(latest.placeEvents?.includes(pending))
+        const replace = (updated: PlacePersistenceEvent) => {
+          latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === pending ? updated : current) }
+          pending = updated
+        }
         try {
-          if (!latest.placeEvents?.includes(reservingEvent)) return
-          if (reservingEvent.expectedPlaceId === undefined && reservingEvent.selectionReservationBaseline === undefined) {
-            const baselineRead = intentBaselines.get(event)
-            const baseline = baselineRead ? await baselineRead : 'unavailable'
-            intentBaselines.delete(event)
-            if (!(latest.placeEvents ?? []).includes(reservingEvent)) return
-            const capturedEvent = { ...reservingEvent, selectionReservationBaseline: baseline }
-            latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === reservingEvent ? capturedEvent : current) }
-            reservingEvent = capturedEvent
+          if (!stillPending()) return
+          if (pending.selectionReservationBaseline === undefined) {
+            const baseline = await (state.baselines.get(event) ?? Promise.resolve('unavailable' as const))
+            if (!stillPending()) return
+            state.baselines.delete(event)
+            replace({ ...pending, selectionReservationBaseline: baseline })
             if (baseline === 'unavailable') throw new Error('The original selection baseline is unavailable')
-          }
-          if (reservingEvent.selectionReservationRetried && reservingEvent.selectionReservationBaseline === 'unavailable') {
+          } else if (pending.selectionReservationBaseline === 'unavailable') {
             if (!readCommittedSelectionOrder) throw new Error('Committed selection order is unavailable')
             const baseline = (await readCommittedSelectionOrder()) ?? null
-            if (!latest.placeEvents?.includes(reservingEvent)) return
-            if (reservingEvent.expectedPlaceId === undefined && baseline !== null) {
-              throw new Error('The original selection baseline is unknown')
-            }
-            const rebasedEvent = { ...reservingEvent, selectionReservationBaseline: baseline }
-            latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === reservingEvent ? rebasedEvent : current) }
-            reservingEvent = rebasedEvent
+            if (!stillPending()) return
+            // Неизвестное исходное намерение восстанавливается только до первого committed-выбора.
+            if (baseline !== null) throw new Error('The original selection baseline is unknown')
+            replace({ ...pending, selectionReservationBaseline: baseline })
           }
-          if (!latest.placeEvents?.includes(reservingEvent)) return
           const order = reserveSelectionOrder ? await reserveSelectionOrder() : ++fallbackSelectionOrder
-          const ordered = { ...reservingEvent, selectionOrder: order }
-          latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === reservingEvent ? ordered : current) }
+          if (!stillPending()) return
+          replace({ ...pending, selectionOrder: order,
+            ...(state.previousOrder !== undefined ? { selectionPredecessorOrder: state.previousOrder } : {}) })
+          state.previousOrder = order
         } catch (error) {
-          reservationFailed = true
-          let baseline: number | null | 'unavailable' | undefined = reservingEvent.selectionReservationBaseline
-          if (baseline === undefined && readCommittedSelectionOrder) {
-            try { baseline = (await readCommittedSelectionOrder()) ?? null }
-            catch { baseline = 'unavailable' }
-          }
-          scheduledEvents.clear()
-          const pendingEvents = latest.placeEvents ?? []
-          const retriedEvents = await Promise.all(pendingEvents.map(async current => {
-            if (current.change !== 'selection' || current.selectionOrder !== undefined) return [current, current] as const
-            let eventBaseline = current.selectionReservationBaseline
-            if (eventBaseline === undefined && current.expectedPlaceId === undefined) {
-              const baselineRead = intentBaselines.get(current)
-              eventBaseline = baselineRead ? await baselineRead : 'unavailable'
-            } else if (eventBaseline === undefined) {
-              eventBaseline = baseline
-            }
-            intentBaselines.delete(current)
-            return [current, { ...current, selectionReservationRetried: true,
-              ...(eventBaseline !== undefined ? { selectionReservationBaseline: eventBaseline } : {}) }] as const
-          }))
-          const retriedByEvent = new Map(retriedEvents)
-          latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => retriedByEvent.get(current) ?? current) }
+          if (!stillPending()) return
+          state.failed = true
+          // Отклонённая цепочка не возобновляется, даже если новый save уже начал retry.
           throw error
         } finally {
-          scheduledEvents.delete(event)
+          state.scheduled.delete(event)
         }
       })
+      void state.queue.catch(() => undefined)
     }
   }
   const save = (patch: SettingsPatch) => {
     let previousEvents = latest.placeEvents ?? []
-    if (reservationFailed && patch.placeEvents?.some(event => event.change === 'selection')) {
-      const abandoned = previousEvents.filter(event => event.change === 'selection' && event.selectionOrder === undefined)
-      for (const event of abandoned) intentBaselines.delete(event)
-      previousEvents = previousEvents.filter(event => !abandoned.includes(event))
+    if (reservations.failed && patch.placeEvents?.some(event => event.change === 'selection')) {
+      for (const event of previousEvents) {
+        if (event.change === 'selection' && event.selectionOrder === undefined) reservations.baselines.delete(event)
+      }
+      previousEvents = previousEvents.filter(event => event.change !== 'selection' || event.selectionOrder !== undefined)
     }
     latest = { ...latest, ...patch }
     if (patch.placeEvents?.length) {
       latest.placeEvents = [...previousEvents, ...patch.placeEvents]
       for (const event of patch.placeEvents) {
-        if (event.change !== 'selection' || event.expectedPlaceId !== undefined || event.selectionReservationBaseline !== undefined) continue
+        if (event.change !== 'selection' || event.selectionOrder !== undefined || event.selectionReservationBaseline !== undefined) continue
         try {
           const baseline = readCommittedSelectionOrder?.()
-          intentBaselines.set(event, baseline
+          reservations.baselines.set(event, baseline
             ? baseline.then(value => value ?? null).catch(() => 'unavailable')
             : Promise.resolve('unavailable'))
         } catch {
-          intentBaselines.set(event, Promise.resolve('unavailable'))
+          reservations.baselines.set(event, Promise.resolve('unavailable'))
         }
       }
     }
     reservePendingEvents()
+    const reservationState = reservations
     const operation = ++revision
     const generation = epoch
     if (patch.locationChoice || patch.sourcePreferences || patch.placeEvents?.length) locationRevision += 1
@@ -126,9 +120,9 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
     notify('saving')
     // Каждый снимок включает все изменённые поля: новая настройка не теряет ранее несохранённое место.
     queue = queue.then(async () => {
-      await reservationQueue.catch(() => undefined)
+      await reservationState.queue.catch(() => undefined)
       if (!isLatest()) return
-      if (reservationFailed || latest.placeEvents?.some(event => event.change === 'selection' && event.selectionOrder === undefined)) {
+      if (reservationState.failed || latest.placeEvents?.some(event => event.change === 'selection' && event.selectionOrder === undefined)) {
         notify('failed')
         return
       }
@@ -160,6 +154,11 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
     getStatus: () => status,
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     drain: async () => { let current; do { current = queue; await current } while (current !== queue) },
-    invalidateAndDrain: async () => { discardPending(); await queue; notify('idle') },
+    invalidateAndDrain: async () => {
+      discardPending()
+      const generation = epoch
+      await queue
+      if (generation === epoch && !Object.keys(latest).length) notify('idle')
+    },
   }
 }

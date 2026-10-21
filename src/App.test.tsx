@@ -1604,7 +1604,7 @@ describe('Salah', () => {
     const services = createServices({
       initializeStartup: vi.fn(() => ++initializeCalls === 1 ? startup.promise : currentState()),
       saveSettings,
-      reservePlaceSelectionOrder: tabA.reservePlaceSelectionOrder,
+      reservePlaceSelectionOrder: tabA.reservePlaceSelectionOrder, getCommittedPlaceSelectionOrder: tabA.getCommittedPlaceSelectionOrder,
       loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
     })
     render(<App services={services} />)
@@ -1722,7 +1722,7 @@ describe('Salah', () => {
       return result
     })
     const loadOptionalSettings = vi.fn(loadPrayerRepositoryOptionalSettings)
-    const services = createServices({ saveSettings, reservePlaceSelectionOrder: repo.reservePlaceSelectionOrder, loadOptionalSettings })
+    const services = createServices({ saveSettings, reservePlaceSelectionOrder: repo.reservePlaceSelectionOrder, getCommittedPlaceSelectionOrder: repo.getCommittedPlaceSelectionOrder, loadOptionalSettings })
     render(<App services={services} version="ack-test" />)
     await screen.findByRole('timer')
     const priorChangeSignal = localStorage.getItem(FAST_SCHEDULE_STORAGE_KEYS.changeSignal)
@@ -1743,7 +1743,7 @@ describe('Salah', () => {
       deviceTimeZone: services.getDeviceTimeZone() })).not.toBeNull())
   })
 
-  it('rejects a precise callback before a delayed cross-tab notification is delivered', async () => {
+  it.each([false, true])('rejects a precise callback before a delayed cross-tab notification (localStorage unavailable: %s)', async storageUnavailable => {
     const repo = createPrayerRepository()
     await setSetting('locationChoice', initializedState.locationChoice)
     const precise = deferred<Awaited<ReturnType<AppServices['getPosition']>>>()
@@ -1754,7 +1754,7 @@ describe('Salah', () => {
         return initialized({ locationChoice: saved.ok ? saved.value ?? null : null })
       }),
       saveSettings: repo.saveSettings,
-      reservePlaceSelectionOrder: repo.reservePlaceSelectionOrder,
+      reservePlaceSelectionOrder: repo.reservePlaceSelectionOrder, getCommittedPlaceSelectionOrder: repo.getCommittedPlaceSelectionOrder,
       loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
       getPosition: vi.fn(accuracy => accuracy === 'coarse'
         ? Promise.resolve(success({ latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 })) : precise.promise),
@@ -1767,10 +1767,17 @@ describe('Salah', () => {
       await waitFor(async () => expect(await getLocationChoice()).toMatchObject({ value: { place: { latitude: 41.01 } } }))
       const remote = createOfficialPlace(required(initializedState.meta.locations[1]), 300)
       const choice = { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const, place: remote }
-      await createPrayerRepository().saveSettings({ locationChoice: choice,
-        placeEvents: [{ change: 'selection', choice, selectionOrder: performance.timeOrigin + performance.now() + 1 }] })
+      const otherTab = createPrayerRepository()
+      await otherTab.saveSettings({ locationChoice: choice,
+        placeEvents: [{ change: 'selection', choice, selectionOrder: await otherTab.reservePlaceSelectionOrder() }] })
       const historyBeforeCallback = await loadPrayerRepositoryOptionalSettings()
-      invalidateFastScheduleSnapshot()
+      if (storageUnavailable) {
+        vi.stubGlobal('localStorage', {
+          getItem: () => { throw new Error('storage denied') },
+          setItem: () => { throw new Error('storage denied') },
+          removeItem: () => { throw new Error('storage denied') },
+        })
+      } else invalidateFastScheduleSnapshot()
       await act(async () => {
         precise.resolve(success({ latitude: 41.03, longitude: 28.95, accuracy: 10, timestamp: 200 }))
         await Promise.resolve()

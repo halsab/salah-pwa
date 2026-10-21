@@ -117,7 +117,8 @@ describe('recentPlaces', () => {
     const first = { ...gps(40, -73, 100), id: 'gps:history:legacy' }
     const far = { ...gps(41, -74, 200), id: 'gps:history:legacy' }
     const malformed = { ...gps(42, -75, 300), latitude: Number.NaN }
-    const normalized = restoreRecentPlaces([first, far, malformed, first])
+    const nearbyFar = { ...gps(41.0001, -74, 250), id: first.id }
+    const normalized = restoreRecentPlaces([first, far, malformed, nearbyFar, first])
     expect(normalized).toHaveLength(2)
     expect(normalized.map(place => place.id)).toEqual(['gps:history:legacy', 'gps:history:legacy:recovered:1'])
     expect(new Set(normalized.map(place => place.id)).size).toBe(normalized.length)

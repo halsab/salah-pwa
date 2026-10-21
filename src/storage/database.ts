@@ -500,13 +500,13 @@ export async function deleteSalahDatabase(): Promise<void> {
 export interface PlacePersistenceEvent {
   change: 'selection' | 'refinement' | 'automatic'
   choice: LocationChoice
-  // Проверяется у refinements и повторов неудачного резервирования.
+  // Неявные обновления проверяют активное место; явные намерения — committed baseline.
   expectedPlaceId?: string | null
   // Межвкладочный порядок явного выбора резервируется в IndexedDB до записи.
   selectionOrder?: number
-  // Retry после сбоя бронирования сохраняет исходную позицию среди намерений вкладки.
-  selectionReservationRetried?: boolean
-  // Снимок committed-order до неудачного резервирования; null означает, что выбора ещё не было.
+  // Предыдущая резервация той же очереди разрешает быстрый выбор после собственного commit.
+  selectionPredecessorOrder?: number
+  // Снимок committed-order при поступлении намерения; null означает отсутствие выбора.
   selectionReservationBaseline?: number | null | 'unavailable'
 }
 
@@ -522,7 +522,7 @@ export interface StoredPlaceHistorySnapshot {
 }
 
 export interface PlaceEventsOutcome {
-  selectionAccepted: boolean
+  locationAccepted: boolean
   locationChoice: LocationChoice | null
 }
 
@@ -530,7 +530,7 @@ export type ReconcilePlaceHistory = (stored: StoredPlaceHistorySnapshot, patch: 
   recentPlaces: Place[]
   recentPlacesMigrated: true
   locationChoice: LocationChoice | undefined
-  selectionAccepted: boolean
+  locationAccepted: boolean
   committedPlaceSelectionOrder: number | undefined
   activeLocationChoice: LocationChoice | null
 }
@@ -582,7 +582,7 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
       await transaction.done
       if (patch.placeEvents?.length && reconciledHistory) {
         try {
-          onPlaceEventsOutcome?.({ selectionAccepted: reconciledHistory.selectionAccepted,
+          onPlaceEventsOutcome?.({ locationAccepted: reconciledHistory.locationAccepted,
             locationChoice: reconciledHistory.activeLocationChoice })
         } catch {
           // Ошибка наблюдателя не должна превращать завершённую запись в ложный сбой хранения.
@@ -618,6 +618,20 @@ export function getStoredDataset(provider = DEFAULT_PROVIDER_ID): Promise<Result
 
 export async function getDataGeneration(): Promise<number> {
   return (await (await getDatabase()).get('control', 'generation')) ?? 0
+}
+
+export async function getPlaceSelectionBaseline() {
+  const database = await getDatabase()
+  // Baseline и generation должны относиться к одному состоянию до возможного reset.
+  const transaction = database.transaction(['settings', 'control'], 'readonly')
+  const [generation, committed] = await Promise.all([
+    transaction.objectStore('control').get('generation'),
+    transaction.objectStore('settings').get('committedPlaceSelectionOrder'),
+  ])
+  await transaction.done
+  const order = committed?.value
+  return { generation: generation ?? 0,
+    order: typeof order === 'number' && Number.isSafeInteger(order) ? order : undefined }
 }
 
 /** Выдаёт межвкладочный логический порядок выбора без системных часов. */

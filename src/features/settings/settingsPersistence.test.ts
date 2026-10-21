@@ -66,6 +66,33 @@ it('keeps later same-tab reservations behind an earlier reservation failure and 
   expect(reserved).toEqual([1, 2])
   expect(save.mock.lastCall?.[0].placeEvents?.map(event => event.selectionOrder)).toEqual([1, 2])
 })
+it('keeps a rejected reservation chain stopped when another save starts its retry', async () => {
+  let reject!: (error: Error) => void
+  const reservation = new Promise<number>((_, no) => { reject = no })
+  const started = deferred<undefined>()
+  const retry = deferred<number>()
+  const save = vi.fn<SaveSettings>().mockResolvedValue(success(undefined))
+  let calls = 0
+  const reserve = () => {
+    if (++calls === 1) { started.resolve(undefined); return reservation }
+    return calls === 2 ? retry.promise : Promise.resolve(2)
+  }
+  const writer = createSettingsPersistence(save, reserve, () => Promise.resolve(undefined))
+  writer.save({ placeEvents: [{ change: 'selection', choice: a.locationChoice }] })
+  writer.save({ placeEvents: [{ change: 'selection', choice: b.locationChoice }] })
+  await started.promise
+  void reservation.catch(() => writer.save({ themeFamily: 'classic' }))
+  reject(new Error('temporary reservation failure'))
+  // Освобождаем готовые microtasks, удерживая только новую первую резервацию.
+  for (let turn = 0; turn < 25; turn += 1) await Promise.resolve()
+  expect(calls).toBe(2)
+  expect(save).not.toHaveBeenCalled()
+  retry.resolve(1)
+  await writer.drain()
+  expect(save).toHaveBeenCalledOnce()
+  expect(save.mock.lastCall?.[0].placeEvents?.map(event => event.selectionOrder)).toEqual([1, 2])
+  expect(writer.getStatus()).toBe('saved')
+})
 it.each(['committed', 'failed'] as const)('keeps only uncommitted selections when an in-flight write is %s', async result => {
   const first = deferred<ReturnType<typeof success<void>> | ReturnType<typeof failure<unknown>>>()
   const second = deferred<ReturnType<typeof success<void>>>()

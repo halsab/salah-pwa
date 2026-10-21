@@ -182,13 +182,13 @@ export function App({
     isLatest?: () => boolean,
     isLocationCurrent?: () => boolean,
   ) => {
-    const selectionResult: { accepted: boolean } = { accepted: true }
+    const placeResult: { accepted: boolean } = { accepted: true }
     const result = await services.saveSettings(patch, isGenerationCurrent, outcome => {
-      selectionResult.accepted = outcome.selectionAccepted
+      placeResult.accepted = outcome.locationAccepted
     })
     const generationIsCurrent = isGenerationCurrent?.() ?? true
     const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
-    if (patch.placeEvents?.some(event => event.change === 'selection') && !selectionResult.accepted
+    if (patch.placeEvents?.length && !placeResult.accepted
       && generationIsCurrent && locationIsCurrent) {
       pendingPlaceWrite.current = false
       pendingFastIdentityWrite.current = false

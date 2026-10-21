@@ -90,12 +90,13 @@ export function restoreRecentPlaces(value: unknown): Place[] {
   const identities = new Set<string>()
   for (const place of valid) {
     const stableMatch = place.selection === 'gps'
-      ? normalized.find(item => item.selection === 'gps' && item.id === place.id)
+      ? normalized.find(item => item.selection === 'gps' && item.id === place.id
+        && distanceMeters(item, place) <= GPS_HISTORY_DEDUPE_METERS)
       : undefined
     const match = place.selection === 'gps'
       ? stableMatch ?? findGpsMatch(normalized, place)
       : normalized.find(item => item.selection === place.selection && item.id === place.id)
-    if (match && (place.selection !== 'gps' || distanceMeters(match, place) <= GPS_HISTORY_DEDUPE_METERS)) continue
+    if (match) continue
     const id = uniqueIdentity(place.selection === 'gps' ? historyIdentity(place) : place.id, identities)
     identities.add(id)
     normalized.push({ ...place, id })

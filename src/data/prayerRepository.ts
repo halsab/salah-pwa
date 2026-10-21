@@ -9,7 +9,7 @@ import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences }
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
-  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset,
+  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset, getPlaceSelectionBaseline,
   reservePlaceSelectionOrder as reserveStoredPlaceSelectionOrder,
   replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance, type PlacePersistenceEvent,
 } from '../storage/database'
@@ -58,41 +58,35 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
     : migrateRecentPlaces(stored.recentPlaces, originalActive)
   let recentPlaces = migrated
   let locationChoice = patch.placeEvents?.length ? undefined : patch.locationChoice
-  let selectionAccepted = true
+  let locationAccepted = true
   let committedPlaceSelectionOrder = typeof stored.committedPlaceSelectionOrder === 'number' && Number.isSafeInteger(stored.committedPlaceSelectionOrder)
     ? stored.committedPlaceSelectionOrder : undefined
-  const initialCommittedPlaceSelectionOrder = committedPlaceSelectionOrder
   let active = originalActive
   let authoritativeChoice = activeChoice
   if (patch.placeEvents?.length) {
     for (const event of patch.placeEvents) {
       const next = placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
+      locationAccepted = false
       if (!next) continue
       if (event.change === 'selection') {
-        selectionAccepted = false
-        const retryBaseline = event.selectionReservationBaseline
-        if (event.selectionReservationRetried && (
-          retryBaseline === 'unavailable'
-          || retryBaseline !== undefined && retryBaseline !== (initialCommittedPlaceSelectionOrder ?? null)
-          || event.expectedPlaceId !== undefined && (active?.id ?? null) !== event.expectedPlaceId
-          || event.expectedPlaceId === undefined && retryBaseline === undefined
-        )) continue
         // Повтор уже зафиксированного выбора не должен менять recency или GPS snapshot.
         const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
         if (alreadyApplied && event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
           && event.selectionOrder <= committedPlaceSelectionOrder) {
-          selectionAccepted = true
+          locationAccepted = true
           continue
         }
         // Резервирование задаёт порядок намерений, но защищает от старых записей только committed-маркер.
         if (event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
-          && event.selectionOrder <= committedPlaceSelectionOrder) {
-          selectionAccepted = false
-          continue
-        }
+          && event.selectionOrder <= committedPlaceSelectionOrder) continue
+        const baseline = event.selectionReservationBaseline
+        // Чужой commit после намерения побеждает даже при задержке первой резервации.
+        // Собственный предшественник разрешает последовательные выборы одной вкладки.
+        if (baseline === 'unavailable' || baseline !== undefined
+          && baseline !== (committedPlaceSelectionOrder ?? null)
+          && (event.selectionPredecessorOrder === undefined || event.selectionPredecessorOrder !== committedPlaceSelectionOrder)) continue
         recentPlaces = rememberPlace(recentPlaces, next)
         if (event.selectionOrder !== undefined) committedPlaceSelectionOrder = Math.max(committedPlaceSelectionOrder ?? 0, event.selectionOrder)
-        selectionAccepted = true
       } else {
         if ((active?.id ?? null) !== event.expectedPlaceId) continue
         if (event.change === 'refinement') {
@@ -102,6 +96,7 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
           recentPlaces = updateRecentPlace(recentPlaces, next, target.id)
         }
       }
+      locationAccepted = true
       active = next
       authoritativeChoice = event.choice
       locationChoice = event.choice
@@ -110,7 +105,7 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
     const incoming = restoreRecentPlaces(patch.recentPlaces)
     recentPlaces = stored.recentPlacesMigrated === true ? incoming : restoreRecentPlaces([...incoming, ...migrated])
   }
-  return { recentPlaces, recentPlacesMigrated: true as const, locationChoice, selectionAccepted,
+  return { recentPlaces, recentPlacesMigrated: true as const, locationChoice, locationAccepted,
     committedPlaceSelectionOrder: patch.placeEvents?.some(event => event.change === 'selection') ? committedPlaceSelectionOrder : undefined,
     activeLocationChoice: patch.placeEvents?.length ? authoritativeChoice : null }
 }
@@ -406,16 +401,21 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       return result
     },
     reservePlaceSelectionOrder: async () => {
+      const operation = epoch
       if (!generationInitialized) {
         const currentGeneration = await getDataGeneration()
-        if (!hasInitializedGeneration()) generation = currentGeneration
+        if (operation !== epoch) throw new Error('Сессия завершена')
+        if (!hasInitializedGeneration()) { generation = currentGeneration; generationInitialized = true }
       }
       return reserveStoredPlaceSelectionOrder(generation)
     },
     getCommittedPlaceSelectionOrder: async () => {
-      const result = await getSetting('committedPlaceSelectionOrder')
-      if (!result.ok) throw new Error('Не удалось прочитать committed-order выбора места')
-      return typeof result.value === 'number' && Number.isSafeInteger(result.value) ? result.value : undefined
+      const operation = epoch
+      const baseline = await getPlaceSelectionBaseline()
+      if (operation !== epoch) throw new Error('Сессия завершена')
+      if (!generationInitialized) { generation = baseline.generation; generationInitialized = true }
+      if (baseline.generation !== generation) throw new Error('Сессия завершена')
+      return baseline.order
     },
     saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean,
       onPlaceEventsOutcome?: Parameters<typeof saveSettings>[4]): Promise<Result<void, StorageFailure | DataFailure>> => {
@@ -428,7 +428,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
         return !event.change || !['selection', 'refinement', 'automatic'].includes(event.change)
           || !event.choice || !placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
           || event.selectionOrder !== undefined && !Number.isFinite(event.selectionOrder)
-          || event.selectionReservationRetried !== undefined && typeof event.selectionReservationRetried !== 'boolean'
+          || event.selectionPredecessorOrder !== undefined && !Number.isSafeInteger(event.selectionPredecessorOrder)
           || event.selectionReservationBaseline !== undefined && event.selectionReservationBaseline !== null
             && event.selectionReservationBaseline !== 'unavailable'
             && (typeof event.selectionReservationBaseline !== 'number' || !Number.isSafeInteger(event.selectionReservationBaseline))
@@ -442,11 +442,11 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.languagePreference && restoreLanguagePreference(patch.languagePreference) !== patch.languagePreference) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.fastingMode && !isFastingModePreferences(patch.fastingMode)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
-      let selectionAccepted = true
+      let locationAccepted = true
       return saveSettings(patch, isCurrent, generation, reconcilePlaceHistory, outcome => {
-        selectionAccepted = outcome.selectionAccepted
+        locationAccepted = outcome.locationAccepted
         if (patch.placeEvents?.length) onPlaceEventsOutcome?.(outcome)
-      }).then(result => result.ok && patch.placeEvents?.some(event => event.change === 'selection') && !selectionAccepted
+      }).then(result => result.ok && patch.placeEvents?.length && !locationAccepted
         ? failure({ kind: 'data', reason: 'superseded' }) : result)
     },
   }

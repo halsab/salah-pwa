@@ -293,14 +293,153 @@ describe('transactional accepted GPS refinements', () => {
     await tabB.saveSettings({ locationChoice: newer, placeEvents: [{ change: 'selection', choice: newer,
       selectionOrder: newerOrder }] })
     const older = choice(coarse)
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     await tabA.saveSettings({ locationChoice: older, placeEvents: [{ change: 'selection', choice: older,
       selectionOrder: olderOrder }] }, undefined, value => { outcome = value })
 
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: newer })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: newer })
     expect(await getLocationChoice()).toMatchObject({ value: newer })
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: newerOrder })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000'])
+  })
+
+  it.each([false, true])('rejects a delayed first reservation after a competing commit (expectedPlaceId: %s)', async withExpected => {
+    const tabA = createPrayerRepository()
+    const tabB = createPrayerRepository()
+    const original = choice({ ...coarse, id: 'gps:original' })
+    await setSetting('locationChoice', original)
+    const reserving = deferred()
+    const release = deferred()
+    const writer = createSettingsPersistence(tabA.saveSettings, async () => {
+      reserving.resolve()
+      await release.promise
+      return tabA.reservePlaceSelectionOrder()
+    }, tabA.getCommittedPlaceSelectionOrder)
+    writer.save({ locationChoice: choice(coarse), placeEvents: [{ change: 'selection', choice: choice(coarse),
+      ...(withExpected ? { expectedPlaceId: 'gps:original' } : {}) }] })
+    await reserving.promise
+    const winner = choice(other)
+    const order = await tabB.reservePlaceSelectionOrder()
+    await tabB.saveSettings({ placeEvents: [{ change: 'selection', choice: winner, selectionOrder: order }] })
+    const before = await history()
+    release.resolve()
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+    expect(await getLocationChoice()).toMatchObject({ value: winner })
+    expect(await history()).toEqual(before)
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: order })
+  })
+
+  it.each([['rebase', 'reject'], ['rebase', 'resolve'], ['reset', 'reject'], ['reset', 'resolve']] as const)('isolates obsolete reservation after %s (%s) from a fresh selection', async (boundary, completion) => {
+    const repo = createPrayerRepository()
+    const reserving = deferred()
+    let reject!: (error: Error) => void
+    let resolve!: (order: number) => void
+    const staleReservation = new Promise<number>((yes, no) => { resolve = yes; reject = no })
+    let calls = 0
+    const write = vi.fn(repo.saveSettings)
+    const writer = createSettingsPersistence(write, () => {
+      if (++calls === 1) { reserving.resolve(); return staleReservation }
+      return repo.reservePlaceSelectionOrder()
+    }, repo.getCommittedPlaceSelectionOrder)
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse) }] })
+    await reserving.promise
+    const draining = boundary === 'reset' ? writer.invalidateAndDrain() : (writer.rebase(), Promise.resolve())
+    if (boundary === 'reset') { await clearAppData(); await repo.initializeStartup() }
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(other) }] })
+    if (completion === 'reject') reject(new Error('obsolete reservation failed'))
+    else resolve(999)
+    await draining
+    await writer.drain()
+    expect(write).toHaveBeenCalledOnce()
+    expect(writer.getStatus()).toBe('saved')
+    expect(await getLocationChoice()).toMatchObject({ value: choice(other) })
+    expect(await history()).toEqual([expect.objectContaining({ latitude: other.latitude })])
+  })
+
+  it.each([['rebase', 'reject'], ['rebase', 'resolve'], ['reset', 'reject'], ['reset', 'resolve']] as const)('isolates obsolete delayed baseline completion after %s (%s)', async (boundary, completion) => {
+    const repo = createPrayerRepository()
+    const reading = deferred()
+    let reject!: (error: Error) => void
+    let resolve!: (order: number | undefined) => void
+    const staleBaseline = new Promise<number | undefined>((yes, no) => { resolve = yes; reject = no })
+    let reads = 0
+    const write = vi.fn(repo.saveSettings)
+    const reserve = vi.fn(repo.reservePlaceSelectionOrder)
+    const writer = createSettingsPersistence(write, reserve, () => {
+      if (++reads === 1) { reading.resolve(); return staleBaseline }
+      return repo.getCommittedPlaceSelectionOrder()
+    })
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse) }] })
+    await reading.promise
+    const draining = boundary === 'reset' ? writer.invalidateAndDrain() : (writer.rebase(), Promise.resolve())
+    if (boundary === 'reset') { await clearAppData(); await repo.initializeStartup() }
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(other) }] })
+    if (completion === 'reject') reject(new Error('obsolete baseline failed'))
+    else resolve(999)
+    await draining
+    await writer.drain()
+    expect(reserve).toHaveBeenCalledOnce()
+    expect(write).toHaveBeenCalledOnce()
+    expect(writer.getStatus()).toBe('saved')
+    expect(await getLocationChoice()).toMatchObject({ value: choice(other) })
+    expect(await history()).toEqual([expect.objectContaining({ latitude: other.latitude })])
+  })
+
+  it.each([false, true])('accepts rapid same-tab intentions across an in-flight commit (expectedPlaceId: %s)', async withExpected => {
+    const repo = createPrayerRepository()
+    const writing = deferred()
+    const releaseWrite = deferred()
+    const baselineRead = deferred()
+    let calls = 0
+    let reads = 0
+    const writer = createSettingsPersistence(async (patch, isCurrent) => {
+      if (++calls === 1) { writing.resolve(); await releaseWrite.promise }
+      return repo.saveSettings(patch, isCurrent)
+    }, repo.reservePlaceSelectionOrder, async () => {
+      const baseline = await repo.getCommittedPlaceSelectionOrder()
+      if (++reads === 2) baselineRead.resolve()
+      return baseline
+    })
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse), ...(withExpected ? { expectedPlaceId: null } : {}) }] })
+    await writing.promise
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(other), ...(withExpected ? { expectedPlaceId: coarse.id } : {}) }] })
+    await baselineRead.promise
+    releaseWrite.resolve()
+    await writer.drain()
+    expect(writer.getStatus()).toBe('saved')
+    expect(await getLocationChoice()).toMatchObject({ value: choice(other) })
+    expect((await history()).map(place => place.latitude)).toEqual([other.latitude, coarse.latitude])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 2 })
+  })
+
+  it('preserves the own in-flight predecessor when a new selection replaces a failed reservation', async () => {
+    const repo = createPrayerRepository()
+    const writing = deferred()
+    const releaseWrite = deferred()
+    const failed = deferred()
+    let reservations = 0
+    let writes = 0
+    const writer = createSettingsPersistence(async (patch, isCurrent) => {
+      if (++writes === 1) { writing.resolve(); await releaseWrite.promise }
+      return repo.saveSettings(patch, isCurrent)
+    }, async () => {
+      if (++reservations === 2) { failed.resolve(); throw new Error('temporary failure') }
+      return repo.reservePlaceSelectionOrder()
+    }, repo.getCommittedPlaceSelectionOrder)
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse) }] })
+    await writing.promise
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(precise) }] })
+    await failed.promise
+    // Дожидаемся обработчика ошибки резервации, пока первая запись ещё удерживается.
+    await vi.waitFor(() => expect(reservations).toBe(2))
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(other) }] })
+    releaseWrite.resolve()
+    await writer.drain()
+    expect(writer.getStatus()).toBe('saved')
+    expect(await getLocationChoice()).toMatchObject({ value: choice(other) })
+    expect((await history()).map(place => place.latitude)).toEqual([other.latitude, coarse.latitude])
+    expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 2 })
   })
 
   it('does not let a retried failed reservation overwrite a newer cross-tab selection', async () => {
@@ -314,7 +453,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
       return tabA.reservePlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     const writer = createSettingsPersistence((patch, isGenerationCurrent) => tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }),
       reserveA, tabA.getCommittedPlaceSelectionOrder)
     const stale = choice(coarse)
@@ -329,7 +468,7 @@ describe('transactional accepted GPS refinements', () => {
     writer.retry()
     await writer.drain()
 
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: winner })
     expect(await getLocationChoice()).toMatchObject({ value: winner })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000', original.id])
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
@@ -343,7 +482,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
       return tabA.reservePlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     const writer = createSettingsPersistence((patch, isGenerationCurrent) =>
       tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserveA, tabA.getCommittedPlaceSelectionOrder)
     const stale = choice(coarse)
@@ -358,7 +497,7 @@ describe('transactional accepted GPS refinements', () => {
     await writer.drain()
 
     expect(writer.getStatus()).toBe('failed')
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: winner })
     expect(await getLocationChoice()).toMatchObject({ value: winner })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000'])
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
@@ -375,7 +514,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
       return tabA.reservePlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     const writer = createSettingsPersistence(async (patch, isGenerationCurrent) => {
       return tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value })
     }, reserveA, async () => {
@@ -398,7 +537,7 @@ describe('transactional accepted GPS refinements', () => {
     await writer.drain()
 
     expect(writer.getStatus()).toBe('failed')
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: winner })
     expect(await getLocationChoice()).toMatchObject({ value: winner })
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000'])
@@ -419,7 +558,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
       return repo.reservePlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     const writer = createSettingsPersistence(async (patch, isGenerationCurrent) =>
       repo.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserve, repo.getCommittedPlaceSelectionOrder)
     const selected = choice(coarse)
@@ -431,7 +570,7 @@ describe('transactional accepted GPS refinements', () => {
     await writer.drain()
 
     expect(writer.getStatus()).toBe('saved')
-    expect(outcome).toEqual({ selectionAccepted: true, locationChoice: selected })
+    expect(outcome).toEqual({ locationAccepted: true, locationChoice: selected })
     expect(await getLocationChoice()).toMatchObject({ value: selected })
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: 51 })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:41.010000:28.950000', previous.id])
@@ -455,7 +594,7 @@ describe('transactional accepted GPS refinements', () => {
     }
     const baselineStarted = deferred()
     const baselineRead = deferred()
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     const writer = createSettingsPersistence(async (patch, isGenerationCurrent) =>
       tabA.saveSettings(patch, isGenerationCurrent, value => { outcome = value }), reserve, async () => {
       const capturedBaseline = tabA.getCommittedPlaceSelectionOrder()
@@ -476,7 +615,7 @@ describe('transactional accepted GPS refinements', () => {
     await writer.drain()
 
     expect(writer.getStatus()).toBe('failed')
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: winner })
     expect(await getLocationChoice()).toMatchObject({ value: winner })
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000', previous.id])
@@ -501,7 +640,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
       return tabA.reservePlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     let persistedPatch: SettingsPatch | undefined
     const writer = createSettingsPersistence(async (patch, isGenerationCurrent) => {
       persistedPatch = patch
@@ -526,9 +665,8 @@ describe('transactional accepted GPS refinements', () => {
     writer.retry()
     await writer.drain()
 
-    expect(outcome).toEqual({ selectionAccepted: true, locationChoice: later })
+    expect(outcome).toEqual({ locationAccepted: true, locationChoice: later })
     expect(await getLocationChoice()).toMatchObject({ value: later })
-    expect(persistedPatch?.placeEvents?.map(event => event.selectionReservationRetried)).toEqual([true, true])
     expect(persistedPatch?.placeEvents?.map(event => event.selectionReservationBaseline)).toEqual([50, winnerOrder])
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder + 2 })
     expect((await history()).map(place => place.id)).toEqual([
@@ -543,7 +681,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failBaseline) throw new Error('temporary baseline failure')
       return repo.getCommittedPlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     let attemptedPatch: SettingsPatch | undefined
     const writer = createSettingsPersistence(async (patch, isGenerationCurrent) => {
       attemptedPatch = patch
@@ -568,7 +706,7 @@ describe('transactional accepted GPS refinements', () => {
     await writer.drain()
     expect(attemptedPatch?.placeEvents).toEqual(expect.arrayContaining([expect.objectContaining({ choice: fresh,
       selectionReservationBaseline: null })]))
-    expect(outcome).toEqual({ selectionAccepted: true, locationChoice: fresh })
+    expect(outcome).toEqual({ locationAccepted: true, locationChoice: fresh })
     expect(writer.getStatus()).toBe('saved')
     expect(await getLocationChoice()).toMatchObject({ value: fresh })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:48.000000:20.000000'])
@@ -585,7 +723,7 @@ describe('transactional accepted GPS refinements', () => {
       if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
       return tabA.reservePlaceSelectionOrder()
     }
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     let writtenPatch: SettingsPatch | undefined
     const writer = createSettingsPersistence((patch, isGenerationCurrent) => {
       writtenPatch = patch
@@ -607,7 +745,7 @@ describe('transactional accepted GPS refinements', () => {
     expect(writer.getStatus()).toBe('failed')
     expect(reserveCalls).toBe(3)
     expect(writtenPatch?.placeEvents).toHaveLength(2)
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winner })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: winner })
     expect(await getLocationChoice()).toMatchObject({ value: winner })
     expect((await history()).map(place => place.id)).toEqual(['gps:history:41.030000:28.950000'])
     expect(await getSetting('committedPlaceSelectionOrder')).toMatchObject({ value: winnerOrder })
@@ -750,6 +888,27 @@ describe('transactional accepted GPS refinements', () => {
     expect(writer.getStatus()).toBe('saved')
   })
 
+  it('does not adopt a reset generation while a pre-startup intent baseline is delayed', async () => {
+    const repo = createPrayerRepository()
+    const captured = deferred()
+    const release = deferred()
+    const writer = createSettingsPersistence(repo.saveSettings, repo.reservePlaceSelectionOrder, async () => {
+      const baseline = await repo.getCommittedPlaceSelectionOrder()
+      captured.resolve()
+      await release.promise
+      return baseline
+    })
+    writer.save({ placeEvents: [{ change: 'selection', choice: choice(coarse) }] })
+    await captured.promise
+    await clearAppData()
+    release.resolve()
+    await writer.drain()
+    expect(writer.getStatus()).toBe('failed')
+    expect(await getLocationChoice()).toEqual(success(undefined))
+    expect(await getSetting('recentPlaces')).toEqual(success(undefined))
+    expect(await getSetting('committedPlaceSelectionOrder')).toEqual(success(undefined))
+  })
+
   it('reserves and persists an early selection after reset before startup initialization resolves', async () => {
     await clearAppData()
     const repo = createPrayerRepository()
@@ -775,7 +934,7 @@ describe('transactional accepted GPS refinements', () => {
     await setSetting('recentPlacesMigrated', false)
 
     const obsolete = choice(coarse)
-    let outcome: { selectionAccepted: boolean; locationChoice: LocationChoice | null } | undefined
+    let outcome: { locationAccepted: boolean; locationChoice: LocationChoice | null } | undefined
     const allowObsoleteWrite = deferred()
     const obsoleteWrite = allowObsoleteWrite.promise.then(() => tabA.saveSettings({ locationChoice: obsolete,
       placeEvents: [{ change: 'selection', choice: obsolete, selectionOrder: 100 }] }, undefined, value => { outcome = value }))
@@ -786,7 +945,7 @@ describe('transactional accepted GPS refinements', () => {
     allowObsoleteWrite.resolve()
     await obsoleteWrite
 
-    expect(outcome).toEqual({ selectionAccepted: false, locationChoice: winnerChoice })
+    expect(outcome).toEqual({ locationAccepted: false, locationChoice: winnerChoice })
     expect(await getLocationChoice()).toMatchObject({ value: winnerChoice })
     const migrated = await history()
     expect(migrated.map(place => place.id)).toEqual([winner.id, original.id, ...legacy.filter(place => place.id !== original.id).slice(0, 8).map(place => place.id)])
