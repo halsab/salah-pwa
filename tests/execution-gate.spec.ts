@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 test('two tabs share one execution owner and explicitly hand it off', async ({ context }) => {
   const first = await context.newPage()
   const second = await context.newPage()
-  await Promise.all([first.goto('/'), second.goto('/')])
+  await Promise.all([first.goto('./'), second.goto('./')])
 
   await expect.poll(async () => (await Promise.all([first, second].map(page => page.locator('[data-execution-owner]').count())))
     .reduce((sum, count) => sum + count, 0)).toBe(1)
@@ -25,9 +25,9 @@ test('two tabs share one execution owner and explicitly hand it off', async ({ c
 test('a blocked tab can acquire ownership after the owner closes', async ({ context }) => {
   const owner = await context.newPage()
   const requester = await context.newPage()
-  await owner.goto('/')
+  await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
-  await requester.goto('/')
+  await requester.goto('./')
   await expect(requester.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   await owner.close()
   await requester.getByRole('button', { name: 'Продолжить здесь' }).click()
@@ -37,9 +37,9 @@ test('a blocked tab can acquire ownership after the owner closes', async ({ cont
 test('a full reload releases the prior page lifecycle lock and starts only one App', async ({ context }) => {
   const owner = await context.newPage()
   const requester = await context.newPage()
-  await owner.goto('/')
+  await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
-  await requester.goto('/')
+  await requester.goto('./')
   await expect(requester.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
 
   await owner.reload()
@@ -50,7 +50,7 @@ test('a full reload releases the prior page lifecycle lock and starts only one A
 
 test('simultaneous takeover requests never authorize two apps', async ({ context }) => {
   const pages = await Promise.all([context.newPage(), context.newPage(), context.newPage()])
-  await Promise.all(pages.map(page => page.goto('/')))
+  await Promise.all(pages.map(page => page.goto('./')))
   await expect.poll(async () => (await Promise.all(pages.map(page => page.locator('[data-execution-owner]').count())))
     .reduce((sum, count) => sum + count, 0)).toBe(1)
 
@@ -67,7 +67,7 @@ test('simultaneous takeover requests never authorize two apps', async ({ context
 
 test('rapid ownership switching across three tabs keeps exactly one active app', async ({ context }) => {
   const pages = await Promise.all([context.newPage(), context.newPage(), context.newPage()])
-  await Promise.all(pages.map(page => page.goto('/')))
+  await Promise.all(pages.map(page => page.goto('./')))
   await expect.poll(async () => (await Promise.all(pages.map(page => page.locator('[data-execution-owner]').count())))
     .reduce((sum, count) => sum + count, 0)).toBe(1)
 
@@ -89,14 +89,14 @@ test('rapid ownership switching across three tabs keeps exactly one active app',
 
 test('the blocked gate applies seasonal dark tokens without mounting the App', async ({ context }) => {
   const owner = await context.newPage()
-  await owner.goto('/')
+  await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
 
   const blocked = await context.newPage()
   await blocked.emulateMedia({ colorScheme: 'dark' })
   await blocked.addInitScript(() => localStorage.setItem('salah-theme-preference-v1',
     JSON.stringify({ version: 1, themeFamily: 'seasonal' })))
-  await blocked.goto('/')
+  await blocked.goto('./')
 
   await expect(blocked.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   await expect.poll(() => blocked.evaluate(() => document.documentElement.dataset.theme)).toBe('seasonal')
@@ -125,7 +125,7 @@ const gateThemes = [
 for (const palette of gateThemes) {
   test(`blocked screen uses readable application surfaces for ${palette.family} ${palette.key} ${palette.tone}`, async ({ context }) => {
     const owner = await context.newPage()
-    await owner.goto('/')
+    await owner.goto('./')
     await expect(owner.locator('[data-execution-owner]')).toBeVisible()
 
     const blocked = await context.newPage()
@@ -133,7 +133,7 @@ for (const palette of gateThemes) {
     await blocked.emulateMedia({ colorScheme: palette.tone })
     await blocked.addInitScript(family => localStorage.setItem('salah-theme-preference-v1',
       JSON.stringify({ version: 1, themeFamily: family })), palette.family)
-    await blocked.goto('/')
+    await blocked.goto('./')
     await expect(blocked.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
 
     const presentation = await blocked.evaluate(() => {
@@ -201,9 +201,9 @@ for (const palette of gateThemes) {
 test('pagehide/pageshow lifecycle events quiesce and reacquire before rendering App', async ({ context }) => {
   const owner = await context.newPage()
   const requester = await context.newPage()
-  await owner.goto('/')
+  await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
-  await requester.goto('/')
+  await requester.goto('./')
   await expect(requester.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
 
   await owner.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
@@ -226,32 +226,38 @@ test('repeated real back and forward navigation keeps execution ownership singul
       sessionStorage.setItem('salah-pageshow-events', JSON.stringify(events))
     })
   })
-  await owner.goto('/')
+  await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
   await owner.waitForTimeout(1_000)
-  await owner.goto('/away.html')
+  await owner.goto('away.html')
+  await expect(owner).toHaveURL(/\/salah-pwa\/away\.html$/)
+  await expect(owner).toHaveTitle('Away')
+  await expect(owner.getByText('Outside Salah')).toBeVisible()
+  const bfcacheResults: boolean[] = []
 
   const currentOwner = await context.newPage()
-  await currentOwner.goto('/')
+  await currentOwner.goto('./')
   await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
-  await owner.goBack()
+  await owner.goBack({ waitUntil: 'commit' })
+  bfcacheResults.push(await owner.evaluate(() =>
+    (JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]).at(-1) === 'bfcache'))
 
   await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
   await expect(owner.locator('[data-execution-owner]')).toHaveCount(0)
-  const pageshowEvents = await owner.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
-  expect(pageshowEvents).toContain('navigation')
-
   await owner.getByRole('button', { name: 'Продолжить здесь' }).click()
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
   await expect(currentOwner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
-    await owner.goForward()
+    await owner.goForward({ waitUntil: 'commit' })
     await expect(owner).toHaveURL(/away\.html$/)
+    await expect(owner).toHaveTitle('Away')
     await currentOwner.getByRole('button', { name: 'Продолжить здесь' }).click()
     await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
-    await owner.goBack()
+    await owner.goBack({ waitUntil: 'commit' })
+    bfcacheResults.push(await owner.evaluate(() =>
+      (JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]).at(-1) === 'bfcache'))
     await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
     await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
     await owner.getByRole('button', { name: 'Продолжить здесь' }).click()
@@ -260,12 +266,15 @@ test('repeated real back and forward navigation keeps execution ownership singul
     const activeCount = await Promise.all([owner, currentOwner].map(page => page.locator('[data-execution-owner]').count()))
     expect(activeCount.reduce((sum, count) => sum + count, 0)).toBe(1)
   }
+  test.skip(bfcacheResults.some(restored => !restored),
+    'BFCache was unavailable for one or more real application restorations; ownership passed after ordinary navigation, but BFCache was not verified.')
+  expect(bfcacheResults).toEqual([true, true, true, true])
 })
 
-test('Playwright browser supports BFCache on plain same-origin documents', async ({ context }) => {
+test('Playwright browser restores plain same-origin documents from BFCache', async ({ context }) => {
   const page = await context.newPage()
   await page.route('**/salah-pwa/plain-*.html', route => route.fulfill({
-    contentType: 'text/html', body: '<!doctype html><title>Plain page</title><main>Plain page</main>',
+    contentType: 'text/html', body: `<!doctype html><title>${new URL(route.request().url()).pathname.split('/').at(-1)}</title><main>Plain same-origin document</main>`,
   }))
   await page.addInitScript(() => {
     window.addEventListener('pageshow', event => {
@@ -275,15 +284,22 @@ test('Playwright browser supports BFCache on plain same-origin documents', async
     })
   })
 
-  await page.goto('/plain-first.html')
-  await page.goto('/plain-second.html')
-  await page.goBack()
+  await page.goto('plain-first.html')
+  await expect(page).toHaveTitle('plain-first.html')
+  await expect(page.getByText('Plain same-origin document')).toBeVisible()
+  await page.goto('plain-second.html')
+  await expect(page).toHaveTitle('plain-second.html')
+  await expect(page.getByText('Plain same-origin document')).toBeVisible()
+  await page.goBack({ waitUntil: 'commit' })
+  await expect(page).toHaveTitle('plain-first.html')
   const restoredFromBfcache = await page.evaluate(() =>
-    (JSON.parse(sessionStorage.getItem('plain-pageshow-events') ?? '[]') as boolean[]).includes(true))
-  test.skip(!restoredFromBfcache, 'The Playwright browser did not BFCache a plain same-origin document in this environment.')
+    (JSON.parse(sessionStorage.getItem('plain-pageshow-events') ?? '[]') as boolean[]).at(-1))
+  test.skip(restoredFromBfcache !== true,
+    'BFCache is unavailable in this Playwright browser environment; this navigation was not BFCache-verified.')
+  expect(restoredFromBfcache).toBe(true)
 })
 
-test('repeated back navigation confirms real BFCache restoration when supported by the browser', async ({ context }) => {
+test('repeated back and forward navigation confirms real BFCache restoration', async ({ context }) => {
   const page = await context.newPage()
   await page.route('**/salah-pwa/away.html', route => route.fulfill({
     contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
@@ -295,28 +311,40 @@ test('repeated back navigation confirms real BFCache restoration when supported 
       sessionStorage.setItem('salah-pageshow-events', JSON.stringify(events))
     })
   })
-  await page.goto('/')
+  await page.goto('./')
   await expect(page.locator('[data-execution-owner]')).toBeVisible()
   await page.waitForTimeout(1_000)
 
+  const restorationResults: string[] = []
   for (let cycle = 0; cycle < 3; cycle += 1) {
-    await page.goto('/away.html')
-    await page.goBack()
+    await page.goto('away.html')
+    await expect(page).toHaveTitle('Away')
+    await expect(page.getByText('Outside Salah')).toBeVisible()
+    await page.goBack({ waitUntil: 'commit' })
+    await expect(page).toHaveURL(/\/salah-pwa\/$/)
     const events = await page.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
-    test.skip(!events.includes('bfcache'), 'This Playwright browser run performed ordinary navigation instead of a BFCache restoration.')
+    restorationResults.push(events.at(-1) ?? 'missing')
     await expect(page.locator('[data-execution-owner]')).toBeVisible()
+    await page.goForward({ waitUntil: 'commit' })
+    await expect(page).toHaveTitle('Away')
+    await page.goBack({ waitUntil: 'commit' })
+    const restoredAgain = await page.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
+    restorationResults.push(restoredAgain.at(-1) ?? 'missing')
   }
+  test.skip(restorationResults.some(result => result !== 'bfcache'),
+    `BFCache was unavailable for one or more real back/forward navigations (${restorationResults.join(', ')}); this scenario was not BFCache-verified.`)
+  expect(restorationResults).toEqual(Array.from({ length: 6 }, () => 'bfcache'))
 })
 
 test('classic light blocked styling reads cached state without mutating it', async ({ context }) => {
   const owner = await context.newPage()
-  await owner.goto('/')
+  await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
 
   const blocked = await context.newPage()
   await blocked.emulateMedia({ colorScheme: 'light' })
   await blocked.addInitScript(() => localStorage.setItem('salah-theme-preference-v1', '{'))
-  await blocked.goto('/')
+  await blocked.goto('./')
 
   await expect(blocked.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   await expect.poll(() => blocked.evaluate(() => document.documentElement.dataset.theme)).toBe('classic')

@@ -76,6 +76,8 @@ export function ExecutionGateView() {
       !disposed && generation === token && gate.current === controller
     const showControllerResult = (controller: ReturnType<typeof createExecutionGate>, token: number, ok: boolean) => {
       if (!isCurrent(controller, token)) return
+      setBusy(false)
+      setFailed(false)
       setPhase(ok ? 'owned' : controller.supported && !controller.hasError() ? 'blocked' : 'error')
       if (!ok) setFailureKind(controller.supported ? 'coordination' : 'unsupported')
       else setFailureKind(null)
@@ -111,7 +113,12 @@ export function ExecutionGateView() {
       const controller = gate.current
       const token = ++generation
       lifecycle.current = token
-      flushSync(() => setPhase('resolving'))
+      flushSync(() => {
+        setPhase('resolving')
+        setBusy(false)
+        setFailed(false)
+        setFailureKind(null)
+      })
       if (!controller) return
       relinquishTask = controller.relinquish()
       void relinquishTask.catch(() => {
@@ -128,7 +135,12 @@ export function ExecutionGateView() {
       const token = ++generation
       lifecycle.current = token
       const previous = gate.current
-      flushSync(() => setPhase('resolving'))
+      flushSync(() => {
+        setPhase('resolving')
+        setBusy(false)
+        setFailed(false)
+        setFailureKind(null)
+      })
       void relinquishTask.then(() => {
         if (disposed || generation !== token) return
         previous?.close()

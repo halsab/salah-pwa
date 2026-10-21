@@ -121,6 +121,71 @@ describe('execution gate presentation', () => {
     expect(screen.queryByTestId('app')).not.toBeInTheDocument()
   })
 
+  it('keeps takeover available when a successful old request completes after lifecycle replacement', async () => {
+    const oldRequest = deferred<boolean>()
+    const previous = createGate(Promise.resolve(false))
+    previous.requestOwnership = vi.fn(() => oldRequest.promise)
+    const restored = createGate(Promise.resolve(false))
+    restored.requestOwnership = vi.fn().mockResolvedValue(true)
+    mocks.createGate.mockReset().mockReturnValueOnce(previous).mockReturnValueOnce(restored)
+    render(<ExecutionGateView />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Продолжить здесь' }))
+    expect(screen.getByRole('button', { name: 'Переключаем…' })).toBeDisabled()
+    await act(async () => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+      await Promise.resolve()
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+      await Promise.resolve()
+    })
+    const restoredButton = await screen.findByRole('button', { name: 'Продолжить здесь' })
+    expect(restoredButton).toBeEnabled()
+
+    await act(async () => { oldRequest.resolve(true); await oldRequest.promise })
+    expect(screen.queryByTestId('app')).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+    expect(restoredButton).toBeEnabled()
+
+    fireEvent.click(restoredButton)
+    expect(await screen.findByTestId('app')).toBeInTheDocument()
+    expect(restored.requestOwnership).toHaveBeenCalledOnce()
+    expect(mocks.app).toHaveBeenCalledOnce()
+  })
+
+  it('does not apply an old failed request state to the replacement controller', async () => {
+    const oldRequest = deferred<boolean>()
+    const previous = createGate(Promise.resolve(false))
+    previous.requestOwnership = vi.fn(() => oldRequest.promise)
+    let previousHasError = false
+    previous.hasError = () => previousHasError
+    const restored = createGate(Promise.resolve(false))
+    restored.requestOwnership = vi.fn().mockResolvedValue(true)
+    mocks.createGate.mockReset().mockReturnValueOnce(previous).mockReturnValueOnce(restored)
+    render(<ExecutionGateView />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Продолжить здесь' }))
+    await act(async () => {
+      window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+      await Promise.resolve()
+      window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+      await Promise.resolve()
+    })
+    const restoredButton = await screen.findByRole('button', { name: 'Продолжить здесь' })
+    await act(async () => {
+      previousHasError = true
+      oldRequest.resolve(false)
+      await oldRequest.promise
+    })
+
+    expect(screen.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Продолжить здесь' })).toBeEnabled()
+    fireEvent.click(restoredButton)
+    expect(await screen.findByTestId('app')).toBeInTheDocument()
+    expect(restored.requestOwnership).toHaveBeenCalledOnce()
+    expect(mocks.app).toHaveBeenCalledOnce()
+  })
+
   it('shows a retryable error when lifecycle relinquishment fails', async () => {
     const owner = createGate(Promise.resolve(true))
     owner.relinquish.mockRejectedValueOnce(new Error('quiescence failed'))

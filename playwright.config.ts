@@ -26,9 +26,15 @@ export default defineConfig({
         '**/privacy.spec.ts',
         '**/location-selection.spec.ts',
         '**/security.spec.ts',
-        '**/execution-gate.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'], launchOptions: {
+        args: ['--enable-features=BackForwardCache'], ignoreDefaultArgs: ['--disable-back-forward-cache'],
+      } },
+    },
+    {
+      name: 'chromium-execution-gate',
+      testMatch: ['**/execution-gate.spec.ts'],
+      use: { ...devices['Desktop Chrome'], serviceWorkers: 'block', launchOptions: {
         args: ['--enable-features=BackForwardCache'], ignoreDefaultArgs: ['--disable-back-forward-cache'],
       } },
     },
@@ -41,13 +47,13 @@ export default defineConfig({
     {
       name: 'webkit-execution-gate',
       testMatch: ['**/execution-gate.spec.ts'],
-      use: { ...devices['Desktop Safari'] },
+      use: { ...devices['Desktop Safari'], serviceWorkers: 'block' },
     },
     // Обновление service worker меняет dist/sw.js; запускается строго после остальных.
     {
       name: 'chromium-sw',
       testMatch: '**/sw-update.spec.ts',
-      dependencies: ['chromium', 'mobile-safari-portrait'],
+      dependencies: ['chromium', 'mobile-safari-portrait', 'chromium-execution-gate', 'webkit-execution-gate'],
       use: { ...devices['Desktop Chrome'] },
     },
   ],
