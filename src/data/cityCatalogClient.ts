@@ -1,7 +1,6 @@
 import type { DataFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
-  type CityCatalog,
   type CityCatalogService,
   type CityWorkerCommand,
   type CityWorkerRequest,
@@ -15,7 +14,7 @@ interface PendingRequest {
 
 let worker: Worker | null = null
 let nextRequestId = 0
-let catalogPromise: Promise<Result<CityCatalog, DataFailure>> | null = null
+let catalogPromise: Promise<Result<undefined, DataFailure>> | null = null
 const pendingRequests = new Map<number, PendingRequest>()
 
 function unavailableFailure(): DataFailure {
@@ -85,7 +84,7 @@ export const cityCatalogService: CityCatalogService = {
   load: () => {
     if (catalogPromise) return catalogPromise
 
-    const loading = request<CityCatalog>({ type: 'load' }).then((result) => {
+    const loading = request<undefined>({ type: 'load' }).then((result) => {
       if (!result.ok && catalogPromise === loading) catalogPromise = null
       return result
     })

@@ -39,17 +39,8 @@ export interface CityDataset {
   cities: CompactCityRecord[]
 }
 
-export interface CountryCityGroup {
-  code: string
-  name: string
-  cities: City[]
-  totalCount: number
-}
-
 const MAX_SEARCH_RESULTS = 60
-const MAX_OVERVIEW_CITIES_PER_COUNTRY = 5
 const countryNames = new Intl.DisplayNames(['ru'], { type: 'region' })
-const countryCollator = new Intl.Collator('ru', { sensitivity: 'base' })
 
 export function normalizeCitySearch(value: string): string {
   return value
@@ -159,61 +150,4 @@ export function validNearestQuery(latitude: number, longitude: number, maxDistan
   return Number.isFinite(latitude) && Math.abs(latitude) <= 90
     && Number.isFinite(longitude) && Math.abs(longitude) <= 180
     && Number.isFinite(maxDistanceKm) && maxDistanceKm >= 0
-}
-
-export function getCountryGroups(
-  dataset: CityDataset,
-  citiesPerCountry = MAX_OVERVIEW_CITIES_PER_COUNTRY,
-): CountryCityGroup[] {
-  const materializationLimit = Math.min(
-    Math.max(Math.floor(citiesPerCountry), 0),
-    MAX_OVERVIEW_CITIES_PER_COUNTRY,
-  )
-  const groups = new Map<string, CountryCityGroup>()
-
-  for (const city of [...dataset.cities].sort((a, b) => b[7] - a[7] || a[0] - b[0])) {
-    const countryCode = city[3]
-    let group = groups.get(countryCode)
-    if (!group) {
-      group = {
-        code: countryCode,
-        name: getCountryName(countryCode),
-        cities: [],
-        totalCount: 0,
-      }
-      groups.set(countryCode, group)
-    }
-
-    group.totalCount += 1
-    if (group.cities.length < materializationLimit) {
-      group.cities.push(materializeCity(city))
-    }
-  }
-
-  return [...groups.values()].sort((left, right) =>
-    countryCollator.compare(left.name, right.name))
-}
-
-export function groupCitiesByCountry(
-  cities: readonly City[],
-): CountryCityGroup[] {
-  const groups = new Map<string, CountryCityGroup>()
-
-  for (const city of cities) {
-    let group = groups.get(city.countryCode)
-    if (!group) {
-      group = {
-        code: city.countryCode,
-        name: getCountryName(city.countryCode),
-        cities: [],
-        totalCount: 0,
-      }
-      groups.set(city.countryCode, group)
-    }
-    group.cities.push(city)
-    group.totalCount += 1
-  }
-
-  return [...groups.values()].sort((left, right) =>
-    countryCollator.compare(left.name, right.name))
 }

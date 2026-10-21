@@ -18,13 +18,12 @@ import type { LocationSelectionSource } from '../../domain/locationSelection'
 
 const SNAPSHOT_KEY = 'salah:fast-schedule:v1'
 const ACTIVE_CONTEXT_KEY = 'salah:fast-schedule-context:v1'
-const CHANGE_SIGNAL_KEY = 'salah:fast-schedule-change:v1'
 const SNAPSHOT_SCHEMA = 1
 const SNAPSHOT_LIMIT_BYTES = 4_096
 const MAX_AGE_MS = 24 * 60 * 60_000
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/
 export const FAST_SCHEDULE_STORAGE_KEYS = {
-  snapshot: SNAPSHOT_KEY, activeContext: ACTIVE_CONTEXT_KEY, changeSignal: CHANGE_SIGNAL_KEY,
+  snapshot: SNAPSHOT_KEY, activeContext: ACTIVE_CONTEXT_KEY,
 } as const
 
 export interface FastScheduleStartup {
@@ -298,12 +297,6 @@ export function invalidateFastScheduleSnapshot(): string | null {
   const store = storage()
   if (!store) return null
   return rotateGeneration(store)
-}
-
-export function notifyFastScheduleSelectionChanged(): void {
-  const store = storage()
-  if (!store) return
-  try { store.setItem(CHANGE_SIGNAL_KEY, `${Date.now()}:${Math.random()}`) } catch { /* Cross-tab sync is optional. */ }
 }
 
 function cacheMeta(meta: DatasetMeta | null, context: ScheduleContext): DatasetMeta | null {

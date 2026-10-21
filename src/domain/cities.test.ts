@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   findNearestCity,
-  groupCitiesByCountry,
   searchCities,
   type CityDataset,
   type CompactCityRecord,
@@ -118,17 +117,4 @@ describe('searchCities', () => {
     ])
   })
 
-})
-
-describe('groupCitiesByCountry', () => {
-
-  it('группирует материализованные результаты поиска', () => {
-    const matches = searchCities(dataset, 'россия')
-    const groups = groupCitiesByCountry(matches)
-
-    expect(groups).toHaveLength(1)
-    expect(groups[0]?.code).toBe('RU')
-    expect(groups[0]?.cities.map(({ id }) => id)).toEqual([524901, 551487])
-    expect(groups[0]?.totalCount).toBe(2)
-  })
 })

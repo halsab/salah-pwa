@@ -1,4 +1,5 @@
 import { DUM_RT_TIME_ZONE, getDeviceTimeZone } from './locationTime'
+import { haversineDistanceKm } from './location'
 import type { Place } from './place'
 import { restorePlaceMetadata } from './place'
 import { isPlace } from './placeMigration'
@@ -7,14 +8,7 @@ export const MAX_RECENT_PLACES = 10
 export const GPS_HISTORY_DEDUPE_METERS = 500
 
 function distanceMeters(a: Place, b: Place): number {
-  const radians = (degrees: number) => degrees * Math.PI / 180
-  const latitudeDelta = radians(b.latitude - a.latitude)
-  const longitudeDelta = radians(b.longitude - a.longitude)
-  const firstLatitude = radians(a.latitude)
-  const secondLatitude = radians(b.latitude)
-  const haversine = Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(firstLatitude) * Math.cos(secondLatitude) * Math.sin(longitudeDelta / 2) ** 2
-  return 6_371_000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
+  return haversineDistanceKm(a.latitude, a.longitude, b.latitude, b.longitude) * 1_000
 }
 
 function gpsIdentity(place: Place): string {

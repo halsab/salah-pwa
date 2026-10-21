@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { getDatasetRevision } from '../domain/scheduleContext'
 import { getDeviceTimeZone } from '../domain/locationTime'
+import { success } from '../domain/result'
 import type { Result } from '../domain/result'
 import type { PrayerDataset } from '../domain/types'
 import {
@@ -11,7 +12,6 @@ import {
   getStartupData,
   clearAppData,
   getLocationChoice,
-  getPrayerDay,
   getPrayerDays,
   getStoredDataset,
   getSetting,
@@ -117,6 +117,14 @@ function unwrap<Value>(result: Result<Value, unknown>): Value {
   return result.value
 }
 
+async function readDay(locationId: string, date: string, provider = 'dumRt') {
+  const meta = await getDatasetMeta(provider)
+  if (!meta.ok) return meta
+  if (!meta.value) return success(undefined)
+  const result = await getPrayerDays(locationId, [date], getDatasetRevision(meta.value), provider)
+  return result.ok ? success(result.value[0]) : result
+}
+
 const dataset: PrayerDataset = {
   schemaVersion: 2,
   source: {
@@ -179,11 +187,11 @@ describe('database', () => {
     unwrap(await replaceDataset(first, identity, { revision: null, isCurrent: () => true, provider: 'synthetic-a' }))
     unwrap(await replaceDataset(second, identity, { revision: null, isCurrent: () => true, provider: 'synthetic-b' }))
 
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-a'))).toMatchObject({ fajrStart: '02:21' })
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-b'))).toMatchObject({ fajrStart: '02:45' })
+    expect(unwrap(await readDay('kazan', '2026-09-01', 'synthetic-a'))).toMatchObject({ fajrStart: '02:21' })
+    expect(unwrap(await readDay('kazan', '2026-09-01', 'synthetic-b'))).toMatchObject({ fajrStart: '02:45' })
     expect(unwrap(await getStoredDataset('synthetic-a'))?.dataset.provider).toMatchObject({ timeZone: 'Asia/Almaty' })
     expect(unwrap(await getStoredDataset('synthetic-b'))?.dataset.provider).toMatchObject({ timeZone: 'Europe/Istanbul' })
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toMatchObject({ fajrStart: '02:21', fajrJamaat: '03:17', zenith: '11:44' })
+    expect(unwrap(await readDay('kazan', '2026-09-01'))).toMatchObject({ fajrStart: '02:21', fajrJamaat: '03:17', zenith: '11:44' })
 
     const firstProvider = first.provider
     const firstDay = first.days[0]
@@ -194,8 +202,8 @@ describe('database', () => {
     unwrap(await replaceDataset(replacement, { ...identity, version: '3-bbbbbbbbbbbbbbbb', sequence: 2 }, {
       revision: getDatasetRevision(firstMeta), isCurrent: () => true, provider: 'synthetic-a',
     }))
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-a'))?.fajrStart).toBe('02:22')
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-b'))?.fajrStart).toBe('02:45')
+    expect(unwrap(await readDay('kazan', '2026-09-01', 'synthetic-a'))?.fajrStart).toBe('02:22')
+    expect(unwrap(await readDay('kazan', '2026-09-01', 'synthetic-b'))?.fajrStart).toBe('02:45')
 
     const currentMeta = unwrap(await getDatasetMeta('synthetic-a'))
     if (!currentMeta) throw new Error('Ожидались обновлённые метаданные synthetic-a')
@@ -203,13 +211,13 @@ describe('database', () => {
       revision: getDatasetRevision(currentMeta), isCurrent: () => true, provider: 'synthetic-a',
     })
     expect(stale).toMatchObject({ ok: false, error: { kind: 'data', reason: 'superseded' } })
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01', 'synthetic-a'))?.fajrStart).toBe('02:22')
+    expect(unwrap(await readDay('kazan', '2026-09-01', 'synthetic-a'))?.fajrStart).toBe('02:22')
   })
 
   it('атомарно сохраняет набор данных и читает день по городу и дате', async () => {
     unwrap(await replaceDataset(dataset, identity))
 
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
+    expect(unwrap(await readDay('kazan', '2026-09-01'))).toEqual(
       dataset.days[0],
     )
     expect(unwrap(await getDatasetMeta())).toEqual({
@@ -247,7 +255,7 @@ describe('database', () => {
       ],
     })
 
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
+    expect(unwrap(await readDay('kazan', '2026-09-01'))).toEqual(
       dataset.days[0],
     )
     expect(unwrap(await getDatasetMeta())).toEqual(legacyMeta)
@@ -279,7 +287,7 @@ describe('database', () => {
       meta: { schemaVersion, source: dataset.source, locations: dataset.locations },
     })
 
-    expect(unwrap(await getPrayerDay('kazan', canonical.date))).toEqual(canonical)
+    expect(unwrap(await readDay('kazan', canonical.date))).toEqual(canonical)
     expect(await getDatabaseVersion()).toBe(12)
   })
 
@@ -290,7 +298,7 @@ describe('database', () => {
       day: { ...canonical, suhurEnd: canonical.fajrStart },
       meta: { schemaVersion: 2, source: dataset.source, locations: dataset.locations },
     })
-    expect(await getPrayerDay('kazan', canonical.date)).toEqual({ ok: false, error: { kind: 'data', reason: 'invalid' } })
+    expect(await readDay('kazan', canonical.date)).toEqual({ ok: false, error: { kind: 'data', reason: 'invalid' } })
   })
 
   it('при сбое транзакции не показывает частично заменённые meta и дни', async () => {
@@ -327,10 +335,10 @@ describe('database', () => {
       locations: dataset.locations,
       identity,
     })
-    expect(unwrap(await getPrayerDay('kazan', '2026-09-01'))).toEqual(
+    expect(unwrap(await readDay('kazan', '2026-09-01'))).toEqual(
       dataset.days[0],
     )
-    expect(unwrap(await getPrayerDay('aksubaevo', '2026-09-02'))).toBeUndefined()
+    expect(unwrap(await readDay('aksubaevo', '2026-09-02'))).toBeUndefined()
   })
 
   it('сохраняет полный выбор локации одной записью', async () => {

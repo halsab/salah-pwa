@@ -1,4 +1,4 @@
-import { findNearestCity, getCountryGroups, searchCities, validNearestQuery, type CompactCityRecord } from '../domain/cities'
+import { findNearestCity, searchCities, validNearestQuery, type CompactCityRecord } from '../domain/cities'
 import { citySearchCandidates, decodeSearchFilter, nearestCityCandidates, searchTrigrams, type CityIndex, type CityShard, type CityShardDescriptor } from '../domain/cityIndex'
 import { normalizeCitySearch } from '../domain/cities'
 import type { DataFailure } from '../domain/errors'
@@ -95,10 +95,7 @@ export function createCityCatalogEngine(repository: CatalogRepository = {
     load: async () => {
       const result = await getIndex()
       if (!result.ok) return result
-      const index = result.value
-      const groups = getCountryGroups({ source: index.source, cities: index.overview })
-      for (const group of groups) group.totalCount = index.shards.filter(s => s.country === group.code).reduce((n, s) => n + s.count, 0)
-      return success({ source: index.source, countryGroups: groups })
+      return success(undefined)
     },
     search: (query) => {
       const revision = ++searchRevision

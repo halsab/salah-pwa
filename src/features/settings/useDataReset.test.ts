@@ -18,7 +18,6 @@ describe('useDataReset', () => {
       invalidateSaves: () => Promise.resolve(),
       invalidateRepository: () => Promise.resolve(),
       clear,
-      getGeneration: () => Promise.resolve(0),
     }))
 
     let reset!: Promise<boolean>

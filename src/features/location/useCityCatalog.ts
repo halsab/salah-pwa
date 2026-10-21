@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 
-import type { CityCatalog, CityCatalogService } from '../../data/cityCatalog'
+import type { CityCatalogService } from '../../data/cityCatalog'
 
 export type CityCatalogStatus = 'idle' | 'loading' | 'ready' | 'offline' | 'error'
 
@@ -9,28 +9,32 @@ interface CityCatalogServices {
 }
 
 export function useCityCatalog(services: CityCatalogServices) {
-  const [cityCatalog, setCityCatalog] = useState<CityCatalog | null>(null)
   const [cityCatalogStatus, setCityCatalogStatus] = useState<CityCatalogStatus>('idle')
+  const status = useRef(cityCatalogStatus)
   const cityCatalogLoad = useRef<Promise<void> | null>(null)
 
-  const loadCities = useCallback(() => {
-    if (cityCatalog || cityCatalogLoad.current) return
+  const updateStatus = useCallback((next: CityCatalogStatus) => {
+    status.current = next
+    setCityCatalogStatus(next)
+  }, [])
 
-    setCityCatalogStatus('loading')
+  const loadCities = useCallback(() => {
+    if (status.current === 'ready' || cityCatalogLoad.current) return
+
+    updateStatus('loading')
     const load = services.cities.load().then((result) => {
       if (result.ok) {
-        setCityCatalog(result.value)
-        setCityCatalogStatus('ready')
+        updateStatus('ready')
         return
       }
-      setCityCatalogStatus(result.error.reason === 'offline' ? 'offline' : 'error')
+      updateStatus(result.error.reason === 'offline' ? 'offline' : 'error')
     }).catch(() => {
-      setCityCatalogStatus('error')
+      updateStatus('error')
     }).finally(() => {
       cityCatalogLoad.current = null
     })
     cityCatalogLoad.current = load
-  }, [cityCatalog, services])
+  }, [services, updateStatus])
 
-  return { cityCatalog, cityCatalogStatus, loadCities }
+  return { cityCatalogStatus, loadCities }
 }
