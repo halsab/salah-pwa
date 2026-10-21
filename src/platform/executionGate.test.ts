@@ -153,6 +153,26 @@ describe('execution gate', () => {
     expect(await createExecutionGate().start()).toBe(false)
   })
 
+  it('marks quiescence failure as coordination error and allows a safe retry', async () => {
+    setup()
+    const owner = createExecutionGate()
+    const requester = createExecutionGate()
+    let fail = true
+    owner.onTakeover(() => {
+      if (fail) return Promise.reject(new Error('drain failed'))
+      return Promise.resolve()
+    })
+    expect(await owner.start()).toBe(true)
+
+    expect(await requester.requestOwnership()).toBe(false)
+    expect(owner.hasError()).toBe(true)
+    expect(await createExecutionGate().start()).toBe(false)
+
+    fail = false
+    expect(await requester.requestOwnership()).toBe(true)
+    requester.close()
+  })
+
   it('does not reject duplicate messages for the same slow takeover request', async () => {
     setup()
     const owner = createExecutionGate()

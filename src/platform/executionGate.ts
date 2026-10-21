@@ -44,6 +44,7 @@ export function createExecutionGate(): ExecutionGate {
   let held = false
   let serving = false
   let releaseLock: (() => void) | null = null
+  let lockTask: Promise<void> | null = null
   let acquisition: Promise<boolean> | null = null
   let request: Promise<boolean> | null = null
   let takeover: Promise<void> | null = null
@@ -81,7 +82,7 @@ export function createExecutionGate(): ExecutionGate {
     }
 
     try {
-      void locks.request(LOCK_NAME, { mode: 'exclusive', ifAvailable: true }, async lock => {
+      const task = locks.request(LOCK_NAME, { mode: 'exclusive', ifAvailable: true }, async lock => {
         if (!lock || stopped || !isCurrent()) {
           settle(false)
           return
@@ -95,7 +96,8 @@ export function createExecutionGate(): ExecutionGate {
         await heldLock
         held = false
         releaseLock = null
-      }).catch(() => { coordinationError = true; settle(false) })
+      })
+      lockTask = task.then(() => undefined, () => { coordinationError = true; settle(false) })
     } catch {
       coordinationError = true
       settle(false)
@@ -155,6 +157,7 @@ export function createExecutionGate(): ExecutionGate {
           if (shouldClose()) { stopped = true; channel.close() }
         } catch {
           closing = false
+          coordinationError = true
           channel.postMessage({ version: 1, type: 'refused', requestId, ownerId: contextId } satisfies Message)
         }
       })().finally(() => { takeover = null; takeoverRequestId = null })
@@ -173,6 +176,7 @@ export function createExecutionGate(): ExecutionGate {
       if (held) return serving
       const acquired = await acquire(() => !stopped && !isSuspended())
       if (!acquired || stopped || isSuspended()) return false
+      coordinationError = false
       serving = true
       return true
     },
@@ -186,10 +190,17 @@ export function createExecutionGate(): ExecutionGate {
             await deactivate()
             if (isStopped() || isSuspended()) return false
             release()
-            await Promise.resolve()
+            await lockTask
             const acquired = await acquire(() => !isStopped() && !isSuspended())
-            if (acquired && isHeld() && !isStopped() && !isSuspended()) { serving = true; return true }
-          } catch { /* Ошибка quiescence оставляет владение у этого контекста. */ }
+            if (acquired && isHeld() && !isStopped() && !isSuspended()) {
+              coordinationError = false
+              serving = true
+              return true
+            }
+          } catch {
+            // Ошибка quiescence оставляет lock у текущего контекста до успешного повтора.
+            coordinationError = true
+          }
           return false
         })()
         request = recovery.finally(() => { request = null })
@@ -225,6 +236,7 @@ export function createExecutionGate(): ExecutionGate {
           return
         }
         if (acquired && held) {
+          coordinationError = false
           serving = true
           finish(true)
           return
@@ -268,8 +280,15 @@ export function createExecutionGate(): ExecutionGate {
       cancelRequest?.()
       if (!held) return
       serving = false
-      await deactivate()
-      release()
+      try {
+        await deactivate()
+        release()
+        await lockTask
+        coordinationError = false
+      } catch (error) {
+        coordinationError = true
+        throw error
+      }
     },
     onTakeover: callback => { deactivate = callback },
   }

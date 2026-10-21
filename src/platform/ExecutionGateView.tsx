@@ -23,6 +23,7 @@ export function ExecutionGateView() {
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const gate = useRef<ReturnType<typeof createExecutionGate> | null>(null)
+  const lifecycle = useRef(0)
   const { t } = useLocalization()
   const systemTone = useSystemAppearance()
   const [themeFamily, setThemeFamily] = useState(readThemePreferenceCache)
@@ -60,67 +61,117 @@ export function ExecutionGateView() {
   }, [civilDate, phase, systemTone, themeFamily])
 
   useEffect(() => {
-    const owner = createExecutionGate()
-    gate.current = owner
-    owner.onTakeover(async () => {
-      flushSync(() => { setPhase('blocked'); setBusy(true) })
-      try { await waitForExecutionQuiescence() }
-      catch (error) { setFailureKind('coordination'); setPhase('error'); setFailed(true); setBusy(false); throw error }
-      setBusy(false)
-    })
+    let disposed = false
+    let generation = 0
+    const controllers = new Set<ReturnType<typeof createExecutionGate>>()
     let relinquishTask: Promise<void> = Promise.resolve()
+    let relinquishFailed = false
+    const isCurrent = (controller: ReturnType<typeof createExecutionGate>, token: number) =>
+      !disposed && generation === token && gate.current === controller
+    const showControllerResult = (controller: ReturnType<typeof createExecutionGate>, token: number, ok: boolean) => {
+      if (!isCurrent(controller, token)) return
+      setPhase(ok ? 'owned' : controller.supported && !controller.hasError() ? 'blocked' : 'error')
+      if (!ok) setFailureKind(controller.supported ? 'coordination' : 'unsupported')
+      else setFailureKind(null)
+    }
+    const configure = (controller: ReturnType<typeof createExecutionGate>) => {
+      controllers.add(controller)
+      controller.onTakeover(async () => {
+        const token = generation
+        if (!isCurrent(controller, token)) throw new Error('Execution controller was superseded')
+        flushSync(() => { setPhase('blocked'); setBusy(true) })
+        try {
+          await waitForExecutionQuiescence()
+          if (!isCurrent(controller, token)) throw new Error('Execution controller was superseded')
+          setBusy(false)
+        } catch (error) {
+          if (isCurrent(controller, token)) {
+            setFailureKind('coordination')
+            setPhase('error')
+            setFailed(true)
+            setBusy(false)
+          }
+          throw error
+        }
+      })
+    }
+    const initial = createExecutionGate()
+    configure(initial)
+    gate.current = initial
+    const initialToken = generation
+    void initial.start().then(ok => showControllerResult(initial, initialToken, ok)).catch(() => {
+      if (isCurrent(initial, initialToken)) { setFailureKind('coordination'); setPhase('error') }
+    })
     const pagehide = () => {
+      const controller = gate.current
+      const token = ++generation
+      lifecycle.current = token
+      relinquishFailed = false
       flushSync(() => setPhase('resolving'))
-      relinquishTask = owner.relinquish().catch(() => { setFailureKind('coordination'); setFailed(true) })
+      if (!controller) return
+      relinquishTask = controller.relinquish().catch(() => {
+        relinquishFailed = true
+        if (isCurrent(controller, token)) {
+          setFailureKind('coordination')
+          setPhase('error')
+          setFailed(true)
+          setBusy(false)
+        }
+      })
     }
     const pageshow = (event: PageTransitionEvent) => {
-      if (!event.persisted || gate.current !== owner) return
+      if (!event.persisted) return
+      const token = ++generation
+      lifecycle.current = token
+      const previous = gate.current
+      flushSync(() => setPhase('resolving'))
       void relinquishTask.then(() => {
-        owner.close()
-        const restoredOwner = createExecutionGate()
-        gate.current = restoredOwner
-        restoredOwner.onTakeover(async () => {
-          flushSync(() => { setPhase('blocked'); setBusy(true) })
-          try { await waitForExecutionQuiescence() }
-          catch (error) { setFailureKind('coordination'); setPhase('error'); setFailed(true); setBusy(false); throw error }
-          setBusy(false)
-        })
-        return restoredOwner.start().then(ok => {
-          if (gate.current !== restoredOwner) return
-          setPhase(ok ? 'owned' : restoredOwner.supported && !restoredOwner.hasError() ? 'blocked' : 'error')
-          if (!ok) setFailureKind(restoredOwner.supported ? 'coordination' : 'unsupported')
+        if (disposed || generation !== token || relinquishFailed) return
+        previous?.close()
+        if (previous && gate.current === previous) gate.current = null
+        const restored = createExecutionGate()
+        configure(restored)
+        gate.current = restored
+        return restored.start().then(ok => showControllerResult(restored, token, ok), () => {
+          if (isCurrent(restored, token)) { setFailureKind('coordination'); setPhase('error') }
         })
       })
     }
     window.addEventListener('pagehide', pagehide)
     window.addEventListener('pageshow', pageshow)
-    void owner.start().then(ok => {
-      if (gate.current !== owner) return
-      setPhase(ok ? 'owned' : owner.supported && !owner.hasError() ? 'blocked' : 'error')
-      if (!ok && (!owner.supported || owner.hasError())) setFailureKind(owner.supported ? 'coordination' : 'unsupported')
-    })
     return () => {
       window.removeEventListener('pagehide', pagehide)
       window.removeEventListener('pageshow', pageshow)
-      owner.close()
+      disposed = true
+      generation += 1
+      for (const controller of controllers) controller.close()
+      controllers.clear()
       gate.current = null
     }
   }, [])
 
   const request = async () => {
-    if (busy || !gate.current) return
+    const controller = gate.current
+    const token = lifecycle.current
+    if (busy || !controller) return
     setBusy(true)
     setFailed(false)
     try {
-      const ok = await gate.current.requestOwnership()
+      const ok = await controller.requestOwnership()
+      if (gate.current !== controller || lifecycle.current !== token) return
       if (ok) setPhase('owned')
       else {
-        setPhase(gate.current.supported && !gate.current.hasError() ? 'blocked' : 'error')
-        if (!gate.current.supported || gate.current.hasError()) setFailureKind(gate.current.supported ? 'coordination' : 'unsupported')
+        setPhase(controller.supported && !controller.hasError() ? 'blocked' : 'error')
+        if (!controller.supported || controller.hasError()) setFailureKind(controller.supported ? 'coordination' : 'unsupported')
         setFailed(true)
       }
-    } catch { setFailureKind('coordination'); setFailed(true) }
-    finally { setBusy(false) }
+    } catch {
+      if (gate.current === controller && lifecycle.current === token) {
+        setFailureKind('coordination')
+        setPhase('error')
+        setFailed(true)
+      }
+    } finally { if (gate.current === controller && lifecycle.current === token) setBusy(false) }
   }
 
   if (phase === 'resolving') return null

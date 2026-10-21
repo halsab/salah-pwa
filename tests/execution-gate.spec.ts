@@ -65,6 +65,28 @@ test('simultaneous takeover requests never authorize two apps', async ({ context
     .filter(count => count === 1)).toHaveLength(1)
 })
 
+test('rapid ownership switching across three tabs keeps exactly one active app', async ({ context }) => {
+  const pages = await Promise.all([context.newPage(), context.newPage(), context.newPage()])
+  await Promise.all(pages.map(page => page.goto('/')))
+  await expect.poll(async () => (await Promise.all(pages.map(page => page.locator('[data-execution-owner]').count())))
+    .reduce((sum, count) => sum + count, 0)).toBe(1)
+
+  let ownerIndex = (await Promise.all(pages.map(page => page.locator('[data-execution-owner]').count()))).findIndex(count => count === 1)
+  for (let step = 0; step < 6; step += 1) {
+    const nextIndex = (ownerIndex + 1) % pages.length
+    const next = pages[nextIndex]
+    const previous = pages[ownerIndex]
+    if (!next || !previous) throw new Error('Expected tabs for the ownership transfer')
+    await next.getByRole('button', { name: 'Продолжить здесь' }).click()
+    await expect(next.locator('[data-execution-owner]')).toBeVisible()
+    await expect(previous.locator('[data-execution-owner]')).toHaveCount(0)
+    const count = (await Promise.all(pages.map(page => page.locator('[data-execution-owner]').count())))
+      .reduce((sum, active) => sum + active, 0)
+    expect(count).toBe(1)
+    ownerIndex = nextIndex
+  }
+})
+
 test('the blocked gate applies seasonal dark tokens without mounting the App', async ({ context }) => {
   const owner = await context.newPage()
   await owner.goto('/')
@@ -184,19 +206,19 @@ test('pagehide/pageshow lifecycle events quiesce and reacquire before rendering 
   await requester.goto('/')
   await expect(requester.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
 
-  await owner.evaluate(() => {
-    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
-    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
-  })
+  await owner.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })))
+  await expect(owner.locator('[data-execution-owner]')).toHaveCount(0)
+  await owner.waitForTimeout(100)
+  await owner.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })))
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
   await expect(requester.locator('[data-execution-owner]')).toHaveCount(0)
 })
 
-test('browser back navigation restores execution without duplicating the owner', async ({ context }) => {
+test('repeated real back and forward navigation restores execution without duplicating the owner', async ({ context }) => {
   const owner = await context.newPage()
   await owner.addInitScript(() => {
     window.addEventListener('pageshow', event => {
-      window.name = `${window.name},${event.persisted}`
+      window.name = `${window.name},${String(event.persisted)}`
     })
   })
   await owner.goto('/')
@@ -217,6 +239,21 @@ test('browser back navigation restores execution without duplicating the owner',
   await owner.getByRole('button', { name: 'Продолжить здесь' }).click()
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
   await expect(currentOwner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await owner.goForward()
+    await expect(owner).toHaveURL(/manifest\.webmanifest$/)
+    await currentOwner.getByRole('button', { name: 'Продолжить здесь' }).click()
+    await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
+    await owner.goBack()
+    await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+    await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
+    await owner.getByRole('button', { name: 'Продолжить здесь' }).click()
+    await expect(owner.locator('[data-execution-owner]')).toBeVisible()
+    await expect(currentOwner.locator('[data-execution-owner]')).toHaveCount(0)
+    const activeCount = await Promise.all([owner, currentOwner].map(page => page.locator('[data-execution-owner]').count()))
+    expect(activeCount.reduce((sum, count) => sum + count, 0)).toBe(1)
+  }
 })
 
 test('classic light blocked styling reads cached state without mutating it', async ({ context }) => {
