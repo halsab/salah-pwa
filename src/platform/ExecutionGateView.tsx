@@ -106,7 +106,11 @@ export function ExecutionGateView() {
     configure(initial)
     gate.current = initial
     const initialToken = generation
-    void initial.start().then(ok => showControllerResult(initial, initialToken, ok)).catch(() => {
+    // Повтор эффектов StrictMode не должен оставлять запрос блокировки перед настоящим запуском.
+    void Promise.resolve().then(() => {
+      if (!isCurrent(initial, initialToken)) return
+      return initial.start().then(ok => showControllerResult(initial, initialToken, ok))
+    }).catch(() => {
       if (isCurrent(initial, initialToken)) { setFailureKind('coordination'); setPhase('error') }
     })
     const pagehide = () => {

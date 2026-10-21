@@ -53,6 +53,39 @@ afterEach(() => {
 })
 
 describe('execution gate presentation', () => {
+  it('starts the only tab under StrictMode while cancelled lock requests are still queued', async () => {
+    const actual = await vi.importActual<typeof import('./executionGate')>('./executionGate')
+    let reserved = false
+    const locks = {
+      request: vi.fn(async (_name: string, _options: LockOptions, callback: (lock: Lock | null) => Promise<void>) => {
+        const available = !reserved
+        if (available) reserved = true
+        await Promise.resolve()
+        try { await callback(available ? { name: _name, mode: 'exclusive' } : null) }
+        finally { if (available) reserved = false }
+      }),
+    }
+    const previousLocks = Object.getOwnPropertyDescriptor(navigator, 'locks')
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: locks })
+    vi.stubGlobal('BroadcastChannel', class {
+      onmessage = null
+      close() {}
+      postMessage() {}
+    })
+    mocks.createGate.mockImplementation(actual.createExecutionGate)
+    const view = render(<StrictMode><ExecutionGateView /></StrictMode>)
+
+    try {
+      expect(await screen.findByTestId('app')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Приложение уже открыто' })).not.toBeInTheDocument()
+    } finally {
+      view.unmount()
+      if (previousLocks) Object.defineProperty(navigator, 'locks', previousLocks)
+      else Reflect.deleteProperty(navigator, 'locks')
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('uses a fresh controller across consecutive BFCache lifecycle cycles', async () => {
     const first = createGate(Promise.resolve(true))
     const second = createGate(Promise.resolve(true))
