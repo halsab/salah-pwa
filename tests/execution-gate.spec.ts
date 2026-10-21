@@ -65,6 +65,51 @@ test('simultaneous takeover requests never authorize two apps', async ({ context
     .filter(count => count === 1)).toHaveLength(1)
 })
 
+test('a granted but delayed Web Lock keeps requesters blocked until ownership is confirmed', async ({ context }) => {
+  const owner = await context.newPage()
+  await owner.goto('./')
+  await expect(owner.locator('[data-execution-owner]')).toBeVisible()
+
+  const requester = await context.newPage()
+  await requester.addInitScript(() => {
+    const manager = navigator.locks
+    const request = manager.request.bind(manager)
+    let delayNextGrant = true
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: {
+        request: (name: string, options: LockOptions, callback: (lock: Lock | null) => Promise<void>) =>
+          request(name, options, async lock => {
+            if (!lock || !delayNextGrant) return callback(lock)
+            delayNextGrant = false
+            ;(window as Window & { delayedExecutionLockGranted?: boolean }).delayedExecutionLockGranted = true
+            await new Promise<void>(resolve => window.setTimeout(resolve, 1_200))
+            return callback(lock)
+          }),
+      },
+    })
+  })
+  await requester.goto('./')
+  const takeover = requester.getByRole('button', { name: 'Продолжить здесь' })
+  await expect(takeover).toBeVisible()
+  await takeover.click()
+  await expect(requester.getByRole('button', { name: 'Переключаем…' })).toBeDisabled()
+  await expect.poll(() => requester.evaluate(() =>
+    (window as Window & { delayedExecutionLockGranted?: boolean }).delayedExecutionLockGranted)).toBe(true)
+  await expect(requester.locator('[data-execution-owner]')).toHaveCount(0)
+
+  const competitor = await context.newPage()
+  await competitor.goto('./')
+  await expect(competitor.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+  await expect(competitor.locator('[data-execution-owner]')).toHaveCount(0)
+
+  await expect(requester.locator('[data-execution-owner]')).toBeVisible()
+  await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+  const ownerCount = await Promise.all([owner, requester, competitor]
+    .map(page => page.locator('[data-execution-owner]').count()))
+  expect(ownerCount.reduce((sum, count) => sum + count, 0)).toBe(1)
+})
+
 test('rapid ownership switching across three tabs keeps exactly one active app', async ({ context }) => {
   const pages = await Promise.all([context.newPage(), context.newPage(), context.newPage()])
   await Promise.all(pages.map(page => page.goto('./')))

@@ -221,14 +221,15 @@ export function createExecutionGate(): ExecutionGate {
         return request
       }
 
-      let resolveRequest!: (value: boolean) => void
-      const currentRequest = new Promise<boolean>(resolve => { resolveRequest = resolve })
-      request = currentRequest
       const uniqueRequestId = createEphemeralId()
       if (!uniqueRequestId) {
         coordinationError = true
         return Promise.resolve(false)
       }
+
+      let resolveRequest!: (value: boolean) => void
+      const currentRequest = new Promise<boolean>(resolve => { resolveRequest = resolve })
+      request = currentRequest
       const requestId = `${contextId}:${uniqueRequestId}`
       activeRequestId = requestId
       targetOwnerId = null

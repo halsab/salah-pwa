@@ -72,6 +72,54 @@ describe('execution gate', () => {
     expect(await gate.requestOwnership()).toBe(false)
   })
 
+  it('settles ID generation failures without retaining a request and recovers on retry', async () => {
+    setup()
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce('context-id')
+      .mockImplementationOnce(() => { throw new Error('temporary crypto failure') })
+      .mockImplementationOnce(() => { throw new Error('temporary crypto failure') })
+      .mockReturnValueOnce('request-id')
+    vi.stubGlobal('crypto', { randomUUID })
+    const gate = createExecutionGate()
+
+    expect(gate.supported).toBe(true)
+    await expect(gate.requestOwnership()).resolves.toBe(false)
+    expect(gate.hasError()).toBe(true)
+    await expect(gate.requestOwnership()).resolves.toBe(false)
+    expect(randomUUID).toHaveBeenCalledTimes(3)
+
+    await expect(gate.requestOwnership()).resolves.toBe(true)
+    expect(randomUUID).toHaveBeenCalledTimes(4)
+    expect(gate.hasError()).toBe(false)
+    await gate.relinquish()
+  })
+
+  it('allows cancellation and disposal after request ID generation fails', async () => {
+    const locks = setup()
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce('cancelled-context')
+      .mockImplementationOnce(() => { throw new Error('temporary crypto failure') })
+      .mockReturnValueOnce('cancelled-request')
+      .mockReturnValueOnce('disposed-context')
+      .mockImplementationOnce(() => { throw new Error('temporary crypto failure') })
+      .mockReturnValueOnce('next-owner-context')
+    vi.stubGlobal('crypto', { randomUUID })
+    const cancelled = createExecutionGate()
+    await expect(cancelled.requestOwnership()).resolves.toBe(false)
+    await expect(cancelled.relinquish()).resolves.toBeUndefined()
+    expect(await cancelled.start()).toBe(false)
+    await expect(cancelled.requestOwnership()).resolves.toBe(true)
+    await cancelled.relinquish()
+
+    const disposed = createExecutionGate()
+    await expect(disposed.requestOwnership()).resolves.toBe(false)
+    disposed.close()
+    const nextOwner = createExecutionGate()
+    expect(await nextOwner.start()).toBe(true)
+    expect(locks.held).toBe(true)
+    await nextOwner.relinquish()
+  })
+
   it('keeps a delayed exclusive acquisition owned once despite overlapping polls', async () => {
     const lockManager = setup()
     const baseRequest = lockManager.request.bind(lockManager)
@@ -96,23 +144,29 @@ describe('execution gate', () => {
     delayNext = true
     const drain = deferred()
     owner.onTakeover(() => drain.promise)
-    const requestOwner = requester.requestOwnership()
-    await new Promise(resolve => setTimeout(resolve, 300))
-    drain.resolve()
-    await new Promise(resolve => setTimeout(resolve, 300))
-    expect(request.mock.calls.length).toBeGreaterThanOrEqual(2)
-    void grant({ name: 'test-lock', mode: 'exclusive', pending: false } as Lock)
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(await requestOwner).toBe(true)
-    expect(lockManager.held).toBe(true)
-    const competitor = createExecutionGate()
-    expect(await competitor.start()).toBe(false)
+    vi.useFakeTimers()
+    try {
+      const requestOwner = requester.requestOwnership()
+      await vi.advanceTimersByTimeAsync(250)
+      drain.resolve()
+      await vi.advanceTimersByTimeAsync(250)
+      expect(grant).toBeTypeOf('function')
+      const acquisitionsBeforeOverlappingPolls = request.mock.calls.length
+      await vi.advanceTimersByTimeAsync(750)
+      expect(request.mock.calls.length).toBe(acquisitionsBeforeOverlappingPolls)
 
-    await requester.relinquish()
-    expect(lockManager.held).toBe(false)
-    competitor.close()
-    owner.close()
-    requester.close()
+      void grant({ name: 'test-lock', mode: 'exclusive', pending: false } as Lock)
+      expect(await requestOwner).toBe(true)
+      expect(lockManager.held).toBe(true)
+      const competitor = createExecutionGate()
+      expect(await competitor.start()).toBe(false)
+
+      await requester.relinquish()
+      expect(lockManager.held).toBe(false)
+      competitor.close()
+      owner.close()
+      requester.close()
+    } finally { vi.useRealTimers() }
   })
 
   it('distinguishes a lock API failure from another active owner', async () => {
@@ -244,10 +298,14 @@ describe('execution gate', () => {
     const drain = deferred()
     owner.onTakeover(() => drain.promise)
     expect(await owner.start()).toBe(true)
-    const request = requester.requestOwnership()
-    await new Promise(resolve => setTimeout(resolve, 300))
-    drain.resolve()
-    expect(await request).toBe(true)
+    vi.useFakeTimers()
+    try {
+      const request = requester.requestOwnership()
+      await vi.advanceTimersByTimeAsync(250)
+      drain.resolve()
+      await vi.advanceTimersByTimeAsync(250)
+      expect(await request).toBe(true)
+    } finally { vi.useRealTimers() }
   })
 
   it('ignores a takeover addressed to an owner that no longer holds the lock', async () => {

@@ -299,6 +299,39 @@ describe('execution gate presentation', () => {
     expect(mocks.app).toHaveBeenCalledOnce()
   })
 
+  it('keeps App unmounted and actions retryable after ownership request failures', async () => {
+    const gate = createGate(Promise.resolve(false))
+    gate.requestOwnership = vi.fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true)
+    mocks.gate = gate
+    render(<ExecutionGateView />)
+
+    const action = await screen.findByRole('button', { name: 'Продолжить здесь' })
+    expect(screen.queryByTestId('app')).not.toBeInTheDocument()
+    fireEvent.click(action)
+    expect(await screen.findByRole('alert')).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Попробовать снова' })).toBeEnabled()
+    expect(screen.queryByTestId('app')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }))
+    expect(await screen.findByTestId('app')).toBeInTheDocument()
+    expect(gate.requestOwnership).toHaveBeenCalledTimes(2)
+  })
+
+  it('never mounts App when coordination APIs are unsupported', async () => {
+    const gate = createGate(Promise.resolve(false))
+    gate.supported = false
+    gate.hasError = () => true
+    gate.requestOwnership = vi.fn().mockResolvedValue(false)
+    mocks.gate = gate
+    render(<ExecutionGateView />)
+
+    expect(await screen.findByText('Для безопасной работы требуется поддержка блокировки вкладок. Повторите попытку.')).toBeVisible()
+    expect(screen.queryByTestId('app')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Попробовать снова' })).toBeEnabled()
+  })
+
   it('shows a recoverable coordination error instead of claiming another tab owns the lock', async () => {
     const gate = createGate(Promise.resolve(false))
     gate.hasError = () => true
