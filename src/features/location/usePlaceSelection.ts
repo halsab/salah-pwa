@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppServices } from '../../App'
+import type { CityCatalogService } from '../../data/cityCatalog'
+import type { CoverageGeometry } from '../../domain/localGeography'
 import type { LocationChoice } from '../../storage/database'
 import type { LocationSelectionSource } from '../../domain/locationSelection'
 import { shouldStartAutomaticLocation } from '../../domain/locationSelection'
@@ -8,13 +9,24 @@ import { placeFromChoice } from '../../domain/placeMigration'
 import { validPosition } from '../../domain/localGeography'
 import type { City } from '../../domain/cities'
 import type { GeolocationFailure } from '../../domain/errors'
+import type { Result } from '../../domain/result'
 import type { PrayerLocation } from '../../domain/types'
 import { translate } from '../../localization'
+import type { Coordinates, GeolocationPermission, PositionAccuracy } from '../../platform/browser'
 import { geolocationFailureMessage, isLowAccuracy, preferredGeolocationFailure, type GpsUiState, type NameLookupState } from './locationState'
 
 export type PlacePersistenceChange = 'automatic' | 'selection' | 'refinement'
 
-export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void,
+interface PlaceSelectionServices {
+  cities: Pick<CityCatalogService, 'findNearest'>
+  getDeviceTimeZone: () => string
+  getPermission: () => Promise<GeolocationPermission>
+  getPosition: (accuracy: PositionAccuracy) => Promise<Result<Coordinates, GeolocationFailure>>
+  loadGeography: () => Promise<CoverageGeometry | null>
+  now: () => Date
+}
+
+export function usePlaceSelection(services: PlaceSelectionServices, locations: PrayerLocation[], onChosen: () => void,
   persist: (choice: LocationChoice, change?: PlacePersistenceChange) => void,
   initial?: { place: Place; source: LocationSelectionSource }) {
   const [place, setPlace] = useState<Place | null>(() => initial?.place ?? null)
@@ -61,30 +73,14 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     saveChoice(next, selectionSource, change)
   }, [saveChoice])
 
-  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[], mode: 'startup' | 'external' = 'startup') => {
-    if (mode === 'startup' && current.current && current.current !== initialPlace.current) {
+  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[]) => {
+    if (current.current && current.current !== initialPlace.current) {
       restored.current = true
       return
     }
-    if (mode === 'startup' && restored.current) return
-    if (mode === 'external') {
-      epoch.current += 1
-      activeInteractive.current = null
-      gpsPreviewRef.current = null
-      setGpsPreview(null)
-      setGpsState({ status: 'idle' })
-      setNameLookupState('idle')
-    }
+    if (restored.current) return
     restored.current = true
     if (!choice) {
-      if (mode === 'external') {
-        current.current = null
-        currentSource.current = 'default'
-        confirmed.current = null
-        confirmedSource.current = 'default'
-        setPlace(null)
-        setSource('default')
-      }
       started.current = true
       return
     }
@@ -97,7 +93,6 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     confirmedSource.current = choice.source
     setPlace(saved)
     setSource(choice.source)
-    if (mode === 'external') started.current = false
   }, [])
 
   const finishInteractive = useCallback((operation: number) => {

@@ -234,13 +234,13 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place).toMatchObject({ latitude: farFix.latitude, longitude: farFix.longitude })
   })
 
-  it('invalidates GPS and name callbacks when an external selection is restored', async () => {
+  it('invalidates GPS and name callbacks after a manual place selection', async () => {
     const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
-    const beforeExternal = h.persist.mock.calls.length
-    act(() => h.result.current.restore({ mode: 'official', locationId: 'kazan', source: 'manual' }, locations, 'external'))
+    act(() => h.result.current.selectOfficial('kazan'))
+    const afterSelection = h.persist.mock.calls.length
     await act(async () => {
       h.precise.resolve(success(preciseFix))
       h.lookup.resolve(success(city))
@@ -248,8 +248,7 @@ describe('one-shot GPS operations', () => {
       await Promise.resolve()
     })
     expect(h.result.current.place).toMatchObject({ selection: 'official', id: 'locality:kazan' })
-    expect(h.persist.mock.calls).toHaveLength(beforeExternal)
-    expect(h.persist.mock.calls.slice(beforeExternal).some(([, change]) => change === 'selection' || change === 'refinement')).toBe(false)
+    expect(h.persist.mock.calls).toHaveLength(afterSelection)
   })
   it('accepts provisional coarse once and still applies a late useful precise point', async () => {
     const h = setup()

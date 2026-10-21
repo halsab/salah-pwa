@@ -78,7 +78,7 @@ it('завершает ожидающие операции после ошибк
   const next = TestWorker.instances[1]
   if (!next) throw new Error('Повторный Worker не создан')
   old.error()
-  next.reply({countryGroups:[]})
+  next.reply(undefined)
   expect(await retry).toMatchObject({ok:true})
   expect(old.terminate).toHaveBeenCalledOnce()
   expect(next.terminate).not.toHaveBeenCalled()

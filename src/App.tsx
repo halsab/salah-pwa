@@ -44,8 +44,8 @@ import { useCityCatalog } from './features/location/useCityCatalog'
 import { ScheduleContent } from './features/schedule/ScheduleContent'
 import { ReligiousEventsScreen } from './features/religiousEvents/ReligiousEventsScreen'
 import { usePrayerSchedules } from './features/schedule/usePrayerSchedules'
-import { activateFastScheduleContext, currentFastScheduleGeneration, FAST_SCHEDULE_STORAGE_KEYS, invalidateFastScheduleSnapshot,
-  notifyFastScheduleSelectionChanged, readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
+import { activateFastScheduleContext, currentFastScheduleGeneration, invalidateFastScheduleSnapshot,
+  readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
 import { useScheduleDate } from './features/schedule/useScheduleDate'
 import { ShareDialog } from './features/share/ShareDialog'
 import {
@@ -65,7 +65,7 @@ import { BackButton, Screen } from './ui/Screen'
 import { useAppNavigation, type AppScreen } from './ui/useAppNavigation'
 import { restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
-import { clearThemePreferenceCache, isThemeFamily, isThemePreferenceCacheEvent, themeFamilyFromCacheEvent, readThemePreferenceCache, writeThemePreferenceCache } from './ui/themePreferenceCache'
+import { clearThemePreferenceCache, readThemePreferenceCache, writeThemePreferenceCache } from './ui/themePreferenceCache'
 import { useSystemAppearance } from './ui/useSystemAppearance'
 import { setExecutionQuiescence } from './platform/executionGate'
 import { setLanguagePreference, useLocalization } from './localization'
@@ -85,9 +85,8 @@ const loadSecondaryScreens = () => import('./features/SecondaryScreens')
 const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-choice', 'profiles', 'parameters', 'source-info', 'methodology', 'privacy', 'reset', 'about']
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
-  'clearAppData' | 'getDataGeneration' | 'initializeStartup' | 'loadOptionalSettings'>>,
-  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'reservePlaceSelectionOrder'
-    | 'getCommittedPlaceSelectionOrder' | 'invalidateAndDrain'> {
+  'clearAppData' | 'initializeStartup' | 'loadOptionalSettings'>>,
+  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
   getDays: (locationId: string, dates: readonly string[], revision: string, provider: string) => ReturnType<typeof prayerRepository.getDays>
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
@@ -140,14 +139,10 @@ export function App({
   const pendingFastIdentityWrite = useRef(false)
   const fastGenerationRef = useRef(fastGeneration)
   const activeFastContext = useRef(startupSnapshot ? scheduleContextKey(startupSnapshot.context) : null)
-  const selectionSyncToken = useRef(0)
   const optionalSettingsToken = useRef(0)
   const pendingPlaceWrite = useRef(false)
   const retryOptionalSettings = useRef<() => void>(() => {})
   const themePreferenceRevision = useRef(0)
-  const lastRemoteThemeFamily = useRef<ThemeFamily | null>(null)
-  const [remoteSelectionPending, setRemoteSelectionPending] = useState(false)
-  const retrySelectionSync = useRef<() => void>(() => {})
   const invalidateFastCache = useCallback(() => {
     activeFastContext.current = null
     const generation = invalidateFastScheduleSnapshot()
@@ -174,33 +169,17 @@ export function App({
   const [error, setError] = useState(false)
   const [startupRecoveryError, setStartupRecoveryError] = useState(false)
   const [optionalSettingsError, setOptionalSettingsError] = useState(false)
-  const [selectionSyncError, setSelectionSyncError] = useState(false)
   const [startupInitialized, setStartupInitialized] = useState(false)
   const initialRefreshStarted = useRef(false)
   const persistSettings = useCallback(async (
     patch: Parameters<AppServices['saveSettings']>[0],
     isGenerationCurrent?: Parameters<AppServices['saveSettings']>[1],
-    isLatest?: () => boolean,
     isLocationCurrent?: () => boolean,
   ) => {
-    const placeResult: { accepted: boolean } = { accepted: true }
-    const result = await services.saveSettings(patch, isGenerationCurrent, outcome => {
-      placeResult.accepted = outcome.locationAccepted
-    })
+    const result = await services.saveSettings(patch, isGenerationCurrent)
     const generationIsCurrent = isGenerationCurrent?.() ?? true
-    const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
-    if (patch.placeEvents?.length && !placeResult.accepted
-      && generationIsCurrent && locationIsCurrent) {
-      pendingPlaceWrite.current = false
-      pendingFastIdentityWrite.current = false
-      setFastCacheReady(false)
-      setRemoteSelectionPending(true)
-      retrySelectionSync.current()
-      return result.ok ? failure({ kind: 'data', reason: 'superseded' }) : result
-    }
+    const locationIsCurrent = isLocationCurrent?.() ?? true
     if (result.ok) {
-      const currentIdentityCommitted = Boolean((patch.locationChoice || patch.sourcePreferences)
-        && generationIsCurrent && locationIsCurrent)
       if (patch.placeEvents?.length && generationIsCurrent && locationIsCurrent) {
         pendingPlaceWrite.current = false
         retryOptionalSettings.current()
@@ -209,32 +188,13 @@ export function App({
         invalidateFastCache()
         pendingFastIdentityWrite.current = false
         setFastCacheReady(true)
-        selectionSyncToken.current += 1
-        setRemoteSelectionPending(false)
-        setSelectionSyncError(false)
-      }
-      if (currentIdentityCommitted || isLatest?.() && !(patch.themeFamily !== undefined && Object.keys(patch).length === 1)) {
-        notifyFastScheduleSelectionChanged()
       }
     }
     return result
   }, [invalidateFastCache, services])
-  const persistence = useSettingsPersistence(persistSettings, services.reservePlaceSelectionOrder, services.getCommittedPlaceSelectionOrder)
+  const persistence = useSettingsPersistence(persistSettings)
   const saveSettings = persistence.save
-  const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain
-  const acceptRemoteTheme = useCallback((nextThemeFamily: ThemeFamily) => {
-    if (lastRemoteThemeFamily.current === nextThemeFamily) return
-    lastRemoteThemeFamily.current = nextThemeFamily
-    if (!editedTheme.current && persistedThemeFamily.current === nextThemeFamily) return
-    themePreferenceRevision.current += 1
-    editedTheme.current = false
-    setThemeEditedLocally(false)
-    persistedThemeFamily.current = nextThemeFamily
-    setThemeFamily(nextThemeFamily)
-    writeThemePreferenceCache(nextThemeFamily)
-    saveSettings({ themeFamily: nextThemeFamily })
-  }, [saveSettings])
   const themeChannel = useRef<BroadcastChannel | null>(null)
   useEffect(() => {
     if (persistence.status !== 'saved' || !themeEditedLocally) return
@@ -246,9 +206,8 @@ export function App({
     if (typeof BroadcastChannel === 'undefined') return
     const channel = new BroadcastChannel('salah-theme-preference-v1')
     themeChannel.current = channel
-    channel.onmessage = event => { if (isThemeFamily(event.data)) acceptRemoteTheme(event.data) }
     return () => { themeChannel.current = null; channel.close() }
-  }, [acceptRemoteTheme])
+  }, [])
   const [recentPlaces, setRecentPlaces] = useState<Place[]>([])
   const editedPreferences = useRef(false)
   const editedCalendar = useRef(false)
@@ -265,15 +224,6 @@ export function App({
   const persistPlace = useCallback((choice: LocationChoice, change: PlacePersistenceChange = 'automatic') => {
     const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
     if (!next || change === 'refinement' && acceptedGpsHistory.current?.runtimeId !== next.id) return
-    const generation = currentFastScheduleGeneration()
-    if (change !== 'selection' && generation && generation !== fastGenerationRef.current) {
-      setRemoteSelectionPending(true)
-      retrySelectionSync.current()
-      return
-    }
-    selectionSyncToken.current += 1
-    setRemoteSelectionPending(false)
-    setSelectionSyncError(false)
     pendingFastIdentityWrite.current = true
     setFastCacheReady(false)
     invalidateFastCache()
@@ -348,8 +298,7 @@ export function App({
     backScreen()
   }, [backScreen, cancelInteractiveGps])
   const { reset, resetting, drain: drainReset, hasPendingReset } = useDataReset({ invalidateLocation, invalidateSaves,
-    invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
-    getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
+    invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData })
   const quiescenceOperation = useRef<() => Promise<void>>(async () => {})
   const quiescenceInFlight = useRef<Promise<void> | null>(null)
   const initializationDrain = useRef<Promise<void> | null>(null)
@@ -397,16 +346,13 @@ export function App({
     clearThemePreferenceCache()
     setThemeEditedLocally(false)
     return reset(cleared => {
-      if (cleared) {
-        lastRemoteThemeFamily.current = null
-      } else {
+      if (!cleared) {
         pendingFastIdentityWrite.current = false
         setFastCacheReady(true)
         themePreferenceRevision.current += 1
         editedTheme.current = false
         setThemeEditedLocally(false)
         setThemeFamily(persistedThemeFamily.current)
-        lastRemoteThemeFamily.current = persistedThemeFamily.current
         writeThemePreferenceCache(persistedThemeFamily.current)
         retryOptionalSettings.current()
       }
@@ -420,19 +366,17 @@ export function App({
 
   useEffect(() => {
     let active = true
-    const acceptState = (state: PrayerRepositoryState, announceRevision = true, selectionMode: 'startup' | 'external' = 'startup') => {
+    const acceptState = (state: PrayerRepositoryState) => {
       if (!active) return
-      if (selectionMode === 'external') rebaseSettings()
       const nextRevision = state.meta ? getDatasetRevision(state.meta) : null
-      if (announceRevision && nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
+      if (nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
         invalidateFastCache()
-        notifyFastScheduleSelectionChanged()
       }
       repositoryRevision.current = nextRevision
       setRepositoryState(state)
       setFastCacheReady(!pendingFastIdentityWrite.current)
-      restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, selectionMode)
-      if (selectionMode === 'external' || !editedRecentPlaces.current) recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
+      restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
+      if (!editedRecentPlaces.current) recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
       previousPlace.current = state.locationChoice
         ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
         : null
@@ -444,17 +388,6 @@ export function App({
         legacyHistoryAnchorCaptured.current = true
       }
       setActiveHistoryId(undefined)
-      if (selectionMode === 'external') {
-        editedPreferences.current = false
-        editedRecentPlaces.current = false
-        recentPlacesLoaded.current = false
-        pendingPlaceWrite.current = false
-        acceptedGpsHistory.current = null
-        editedCalendar.current = false
-        editedTheme.current = false
-        setThemeEditedLocally(false)
-        editedFasting.current = false
-      }
       if (!editedRecentPlaces.current && state.recentPlaces !== undefined) {
         const recent = state.recentPlacesMigrated
           ? restoreRecentPlaces(state.recentPlaces)
@@ -474,7 +407,6 @@ export function App({
       if (!editedTheme.current && state.themeFamily !== undefined) {
         const nextThemeFamily = restoreThemeFamily(state.themeFamily)
         themePreferenceRevision.current += 1
-        lastRemoteThemeFamily.current = nextThemeFamily
         persistedThemeFamily.current = nextThemeFamily
         setThemeFamily(nextThemeFamily)
         writeThemePreferenceCache(nextThemeFamily)
@@ -486,7 +418,6 @@ export function App({
       setStartupRecoveryError(false)
       setOptionalSettingsError(false)
       setStartupInitialized(true)
-      setRemoteSelectionPending(false)
     }
     const hydrateOptionalSettings = () => {
       if (!services.loadOptionalSettings) return
@@ -522,7 +453,6 @@ export function App({
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))
         if (!editedTheme.current && themeRevision === themePreferenceRevision.current) {
           const nextThemeFamily = restoreThemeFamily(value.themeFamily)
-          lastRemoteThemeFamily.current = nextThemeFamily
           persistedThemeFamily.current = nextThemeFamily
           setThemeFamily(nextThemeFamily)
           writeThemePreferenceCache(nextThemeFamily)
@@ -545,7 +475,6 @@ export function App({
         if (nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
           repositoryRevision.current = nextRevision
           invalidateFastCache()
-          notifyFastScheduleSelectionChanged()
         }
         setRepositoryState(snapshot)
       })
@@ -557,7 +486,7 @@ export function App({
       if (!result) return
       if (!active) return
       setStartupInitialized(true)
-      if (startupGeneration !== fastGenerationRef.current || currentFastScheduleGeneration() !== startupGeneration) {
+      if (startupGeneration !== fastGenerationRef.current) {
         hydrateOptionalSettings()
         return
       }
@@ -572,7 +501,7 @@ export function App({
     const failInitialization = () => {
       if (!active) return
       setStartupInitialized(true)
-      if (startupGeneration !== fastGenerationRef.current || currentFastScheduleGeneration() !== startupGeneration) return
+      if (startupGeneration !== fastGenerationRef.current) return
       if (startupSnapshot) setStartupRecoveryError(true)
       else setError(true)
     }
@@ -584,93 +513,18 @@ export function App({
     }
     if (startupBarrier) void startupBarrier.then(initializeCurrent).catch(failInitialization)
     else void initializeCurrent()
-    let remoteSyncInProgress = false
-    let remoteSyncRequested = false
-    const reconcileSelection = () => {
-      if (!ready) return
-      if (remoteSyncInProgress) {
-        remoteSyncRequested = true
-        return
-      }
-      remoteSyncInProgress = true
-      setSelectionSyncError(false)
-      const generation = currentFastScheduleGeneration() ?? fastGenerationRef.current
-      if (generation !== fastGenerationRef.current) {
-        fastGenerationRef.current = generation
-        setFastGeneration(generation)
-        activeFastContext.current = null
-        setRemoteSelectionPending(true)
-      }
-      const token = ++selectionSyncToken.current
-      const initializeLatest = services.initializeStartup ?? services.initialize
-      void initializeLatest().then(result => {
-        if (!active || token !== selectionSyncToken.current || generation !== fastGenerationRef.current
-          || currentFastScheduleGeneration() !== generation) return
-        if (!result.ok) {
-          setSelectionSyncError(true)
-          setRemoteSelectionPending(true)
-          return
-        }
-        acceptState(result.value, false, 'external')
-        setSelectionSyncError(false)
-        hydrateOptionalSettings()
-      }).catch(() => {
-        if (active && token === selectionSyncToken.current) {
-          setSelectionSyncError(true)
-          setRemoteSelectionPending(true)
-        }
-      }).finally(() => {
-        remoteSyncInProgress = false
-        if (active && remoteSyncRequested) {
-          remoteSyncRequested = false
-          if (selectionSyncToken.current === token) reconcileSelection()
-        }
-      })
-    }
-    retrySelectionSync.current = reconcileSelection
-    const handleStorage = (event: StorageEvent) => {
-      if (!ready) return
-      if (isThemePreferenceCacheEvent(event)) {
-        const nextThemeFamily = themeFamilyFromCacheEvent(event)
-        if (nextThemeFamily) acceptRemoteTheme(nextThemeFamily)
-        return
-      }
-      if (event.key === FAST_SCHEDULE_STORAGE_KEYS.activeContext) {
-        const generation = currentFastScheduleGeneration()
-        if (generation && generation !== fastGenerationRef.current) {
-          setRemoteSelectionPending(true)
-          activeFastContext.current = null
-          fastGenerationRef.current = generation
-          setFastGeneration(generation)
-          reconcileSelection()
-        }
-        return
-      }
-      if (event.key !== FAST_SCHEDULE_STORAGE_KEYS.changeSignal) return
-      const generation = currentFastScheduleGeneration()
-      if (generation && generation !== fastGenerationRef.current) {
-        setRemoteSelectionPending(true)
-        activeFastContext.current = null
-        fastGenerationRef.current = generation
-        setFastGeneration(generation)
-      }
-      reconcileSelection()
-    }
     window.addEventListener('online', refresh)
     window.addEventListener('pageshow', refresh)
-    window.addEventListener('storage', handleStorage)
     return () => {
       active = false
       const drain = quiescenceOperation.current()
       initializationDrain.current = drain
-      retrySelectionSync.current = () => {}
       retryOptionalSettings.current = () => {}
       unsubscribe()
       window.removeEventListener('online', refresh)
       window.removeEventListener('pageshow', refresh)
-      window.removeEventListener('storage', handleStorage)
     }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings])
+  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, saveSettings])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -726,10 +580,10 @@ export function App({
     initialSnapshot: selectedDate === today ? startupSnapshot : null,
   })
   useEffect(() => {
-    if (!startupInitialized || !place || scheduleLoading || remoteSelectionPending || resetting.current || initialRefreshStarted.current) return
+    if (!startupInitialized || !place || scheduleLoading || resetting.current || initialRefreshStarted.current) return
     initialRefreshStarted.current = true
     void services.refresh()
-  }, [place, remoteSelectionPending, resetting, scheduleLoading, services, startupInitialized])
+  }, [place, resetting, scheduleLoading, services, startupInitialized])
   const fastingEvents = useMemo(() => buildFastingScheduleEvents(schedules, context?.timeZone), [schedules, context?.timeZone])
   // Не используем расписания выбранной даты для вычисления режима текущего дня.
   const currentSchedules = usePrayerSchedules({
@@ -748,13 +602,13 @@ export function App({
     ? selectedDate === today ? selectedContextKey : currentSchedules.contextKey
     : null
   useLayoutEffect(() => {
-    if (remoteSelectionPending || pendingFastIdentityWrite.current || !todayContextKey || !fastGeneration) return
+    if (pendingFastIdentityWrite.current || !todayContextKey || !fastGeneration) return
     if (activeFastContext.current && activeFastContext.current !== todayContextKey) {
       invalidateFastCache()
       return
     }
     if (activateFastScheduleContext(todayContextKey, fastGeneration)) activeFastContext.current = todayContextKey
-  }, [fastCacheReady, fastGeneration, invalidateFastCache, remoteSelectionPending, todayContextKey])
+  }, [fastCacheReady, fastGeneration, invalidateFastCache, todayContextKey])
   useEffect(() => {
     if (!fastCacheReady || !place || !todaySchedule || !todayContext || todayContext.date !== today) return
     writeFastScheduleSnapshot({
@@ -807,9 +661,6 @@ export function App({
   }
 
   const updatePreferences = (next: SourcePreferences) => {
-    selectionSyncToken.current += 1
-    setRemoteSelectionPending(false)
-    setSelectionSyncError(false)
     pendingFastIdentityWrite.current = true
     setFastCacheReady(false)
     invalidateFastCache()
@@ -824,7 +675,6 @@ export function App({
   }
   const updateThemeFamily = (next: ThemeFamily) => {
     themePreferenceRevision.current += 1
-    lastRemoteThemeFamily.current = null
     editedTheme.current = true
     setThemeFamily(next)
     setThemeEditedLocally(true)
@@ -870,10 +720,6 @@ export function App({
       <span>{t('optionalSettingsRecoveryError')}</span>
       <ActionButton onClick={() => setRetryCount(count => count + 1)}>{t('retry')}</ActionButton>
     </div> : null}
-    {selectionSyncError ? <div className="screen-status" role="alert">
-      <span>{t('selectionSyncFailed')}</span>
-      <ActionButton onClick={() => retrySelectionSync.current()}>{t('retry')}</ActionButton>
-    </div> : null}
   </>
 
   return (
@@ -885,12 +731,12 @@ export function App({
             onBack={backScreen} onSearch={() => { cancelInteractiveGps(); flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
             gpsState={gpsState} nameLookupState={nameLookupState} onAcceptGps={acceptGps}
             notice={<>{persistenceNotice}{recoveryNotices}</>} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="home-settings" onClick={openSettingsDialog}>{t('settings')}</ActionButton></ScreenFooter>} /> : <ScheduleContent
-            schedule={remoteSelectionPending ? null : schedule}
-            schedules={remoteSelectionPending ? [] : schedules}
-            scheduleLoading={scheduleLoading || (remoteSelectionPending && !selectionSyncError)}
-            scheduleError={remoteSelectionPending ? null : scheduleError}
-            contextReady={contextReady && !remoteSelectionPending} officialHorizon={officialHorizon}
-            enrichmentError={enrichmentError && !remoteSelectionPending}
+            schedule={schedule}
+            schedules={schedules}
+            scheduleLoading={scheduleLoading}
+            scheduleError={scheduleError}
+            contextReady={contextReady} officialHorizon={officialHorizon}
+            enrichmentError={enrichmentError}
             onRetryEnrichment={() => { retryEnrichment(); if (officialMode) void services.refresh() }}
             selectedDate={selectedDate}
             calendarPreferences={calendarPreferences}
