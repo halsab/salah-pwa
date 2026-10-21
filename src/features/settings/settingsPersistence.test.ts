@@ -39,6 +39,27 @@ it('retries the accepted location and its recent history as one settings snapsho
   expect(save.mock.calls[1]?.[0]).toEqual(selected)
   expect(writer.getStatus()).toBe('saved')
 })
+it('keeps every explicit selection in order when writes are superseded while storage is pending', async () => {
+  const first = deferred<ReturnType<typeof success<void>>>()
+  const second = deferred<ReturnType<typeof success<void>>>()
+  const selectedA = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 123 }, 'America/New_York', null, 'gps:operation:a')
+  const selectedB = createGpsPlace({ latitude: 41, longitude: -74, accuracy: 20, timestamp: 456 }, 'America/New_York', null, 'gps:operation:b')
+  const save = vi.fn<SaveSettings>().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+  const writer = createSettingsPersistence(save)
+
+  writer.save({ locationChoice: a.locationChoice, placeSelectionEvents: [selectedA] })
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+  writer.save({ locationChoice: b.locationChoice, placeSelectionEvents: [selectedB] })
+  first.resolve(success(undefined))
+  await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+
+  expect(save.mock.calls[1]?.[0]).toMatchObject({
+    locationChoice: b.locationChoice,
+    placeSelectionEvents: [selectedA, selectedB],
+  })
+  second.resolve(success(undefined))
+  await writer.drain()
+})
 it('serializes rapid changes and ignores stale failure without losing earlier unsaved fields', async () => {
   const first = deferred<ReturnType<typeof success<void>> | ReturnType<typeof failure<{ kind: 'storage'; reason: 'unavailable' }>>>()
   const last = deferred<ReturnType<typeof success<void>>>()

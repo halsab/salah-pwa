@@ -496,8 +496,22 @@ export async function deleteSalahDatabase(): Promise<void> {
 }
 
 export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'recentPlacesMigrated' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
+  // События выбора — команды очереди, не отдельная persisted-настройка.
+  & { placeSelectionEvents?: Place[] }
 
-export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
+export interface StoredPlaceHistorySnapshot {
+  locationChoice: unknown
+  recentPlaces: unknown
+  recentPlacesMigrated: unknown
+}
+
+export type ReconcilePlaceHistory = (stored: StoredPlaceHistorySnapshot, patch: SettingsPatch) => {
+  recentPlaces: Place[]
+  recentPlacesMigrated: true
+}
+
+export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number,
+  reconcilePlaceHistory?: ReconcilePlaceHistory): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     if (!isCurrent()) return
@@ -505,11 +519,30 @@ export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = ()
     try {
       if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) throw new Error('Сессия завершена')
       if (!isCurrent()) { await transaction.done; return }
+      let reconciledHistory: ReturnType<ReconcilePlaceHistory> | undefined
+      if (reconcilePlaceHistory && (patch.locationChoice || patch.placeSelectionEvents?.length)) {
+        const settings = transaction.objectStore('settings')
+        const [locationChoice, recentPlaces, recentPlacesMigrated] = await Promise.all([
+          settings.get('locationChoice'), settings.get('recentPlaces'), settings.get('recentPlacesMigrated'),
+        ])
+        if (!isCurrent()) { await transaction.done; return }
+        reconciledHistory = reconcilePlaceHistory({
+          locationChoice: locationChoice?.value,
+          recentPlaces: recentPlaces?.value,
+          recentPlacesMigrated: recentPlacesMigrated?.value,
+        }, patch)
+      }
+      if (!isCurrent()) { await transaction.done; return }
       if (patch.appearance) await transaction.objectStore('settings').put({ key: 'appearance', value: patch.appearance })
       if (patch.themeFamily) await transaction.objectStore('settings').put({ key: 'themeFamily', value: patch.themeFamily })
       if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
-      if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
-      if (patch.recentPlacesMigrated !== undefined) await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: patch.recentPlacesMigrated })
+      if (reconciledHistory) {
+        await transaction.objectStore('settings').put({ key: 'recentPlaces', value: reconciledHistory.recentPlaces })
+        await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: true })
+      } else {
+        if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
+        if (patch.recentPlacesMigrated !== undefined) await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: patch.recentPlacesMigrated })
+      }
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
       if (patch.languagePreference) await transaction.objectStore('settings').put({ key: 'languagePreference', value: patch.languagePreference })

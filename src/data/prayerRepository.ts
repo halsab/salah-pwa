@@ -1,8 +1,8 @@
 import { isLocationSelectionSource } from '../domain/locationSelection'
 import { isCalendarPreferences, restoreCalendarPreferences, type CalendarPreferences } from '../domain/calendar'
-import { restoreRecentPlaces } from '../domain/recentPlaces'
+import { migrateRecentPlaces, rememberPlace, restoreRecentPlaces } from '../domain/recentPlaces'
 import type { Place } from '../domain/place'
-import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
+import { isPlace, migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
 import { getDatasetRevision } from '../domain/scheduleContext'
 import { isValidTimeZone, DUM_RT_TIME_ZONE } from '../domain/locationTime'
 import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
@@ -45,6 +45,26 @@ export interface PrayerRepositoryOptionalSettings {
   languagePreference: LanguagePreference
   fastingMode: FastingModePreferences
 }
+
+function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: unknown; recentPlacesMigrated: unknown },
+  patch: SettingsPatch) {
+  const activeChoice = stored.locationChoice && typeof stored.locationChoice === 'object'
+    ? stored.locationChoice as LocationChoice
+    : null
+  const originalActive = activeChoice ? placeFromChoice(activeChoice, DEFAULT_OFFICIAL_LOCATIONS) : null
+  const migrated = stored.recentPlacesMigrated === true
+    ? restoreRecentPlaces(stored.recentPlaces)
+    : migrateRecentPlaces(stored.recentPlaces, originalActive)
+  let recentPlaces = migrated
+  if (patch.placeSelectionEvents?.length) {
+    recentPlaces = patch.placeSelectionEvents.reduce((history, place) => rememberPlace(history, place), migrated)
+  } else if (patch.recentPlaces) {
+    const incoming = restoreRecentPlaces(patch.recentPlaces)
+    recentPlaces = stored.recentPlacesMigrated === true ? incoming : restoreRecentPlaces([...incoming, ...migrated])
+  }
+  return { recentPlaces, recentPlacesMigrated: true as const }
+}
+
 interface StoredOptionalSettings {
   recentPlaces: unknown
   recentPlacesMigrated: unknown
@@ -335,12 +355,16 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.calendarPreferences && !isCalendarPreferences(patch.calendarPreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      if (patch.placeSelectionEvents && (!Array.isArray(patch.placeSelectionEvents) || patch.placeSelectionEvents.some(place => !isPlace(place)))) {
+        return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      }
+      if (patch.placeSelectionEvents?.length && !patch.locationChoice) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.appearance && !['system', 'light', 'dark'].includes(patch.appearance)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.themeFamily && restoreThemeFamily(patch.themeFamily) !== patch.themeFamily) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.languagePreference && restoreLanguagePreference(patch.languagePreference) !== patch.languagePreference) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.fastingMode && !isFastingModePreferences(patch.fastingMode)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
-      return saveSettings(patch, isCurrent, generation)
+      return saveSettings(patch, isCurrent, generation, reconcilePlaceHistory)
     },
   }
 }

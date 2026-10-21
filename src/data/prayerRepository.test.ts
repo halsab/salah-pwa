@@ -144,6 +144,48 @@ describe('local initialization and persistence', () => {
     await clearAppData()
     expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [], recentPlacesMigrated: false } })
   })
+  it('atomically persists an early explicit selection with the migrated full legacy history', async () => {
+    const previousCurrent = createOfficialPlace(required(dataset.locations[0]), 10)
+    const legacyHistory = Array.from({ length: 10 }, (_, index) => index === 2
+      ? previousCurrent
+      : createOfficialPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 35 + index, longitude: 20 + index }, index))
+    const selected = createCityPlace({ id: 524901, name: 'Москва', countryCode: 'RU', admin1Code: '48', admin1Name: 'Москва', latitude: 55.7522,
+      longitude: 37.6156, population: 1000, timeZone: 'Europe/Moscow' }, 20)
+    const selectedEarlier = createCityPlace({ id: 1, name: 'Берлин', countryCode: 'DE', admin1Code: '16', admin1Name: 'Берлин', latitude: 52.5,
+      longitude: 13.4, population: 1000, timeZone: 'Europe/Berlin' }, 15)
+    const choice: LocationChoice = { mode: 'calculated', coordinates: selected, place: selected, source: 'manual' }
+    await saveLocationChoice({ mode: 'official', locationId: 'kazan', source: 'manual' })
+    await setSetting('recentPlaces', legacyHistory)
+
+    expect(await repo.saveSettings({ locationChoice: choice, placeSelectionEvents: [selectedEarlier, selected] })).toEqual(success(undefined))
+    expect(await initializePrayerRepositoryStartup()).toMatchObject({ value: { locationChoice: { mode: 'calculated', place: { id: selected.id } } } })
+    const optional = await loadPrayerRepositoryOptionalSettings()
+    if (!optional.ok) throw new Error('History read after selection failed')
+    const expectedIds = [
+      'geonames:524901', 'geonames:1', 'locality:kazan', 'locality:legacy-0', 'locality:legacy-1',
+      'locality:legacy-3', 'locality:legacy-4', 'locality:legacy-5', 'locality:legacy-6', 'locality:legacy-7',
+    ]
+    expect(optional.value.recentPlaces.map(place => place.id)).toEqual(expectedIds)
+    expect(optional.value.recentPlacesMigrated).toBe(true)
+
+    // Повторный старт читает уже согласованные choice/history и не повторяет миграцию.
+    expect(await initializePrayerRepositoryStartup()).toMatchObject({ value: { locationChoice: { mode: 'calculated', place: { id: selected.id } } } })
+    const restartedHistory = await loadPrayerRepositoryOptionalSettings()
+    expect(restartedHistory).toMatchObject({ value: { recentPlaces: optional.value.recentPlaces, recentPlacesMigrated: true } })
+  })
+  it('migrates the original active place before a passive refresh without recording that refresh', async () => {
+    const previous = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 80, timestamp: 10 }, 'Europe/Moscow', null, 'gps:legacy-current')
+    const passive = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 30, timestamp: 20 }, 'America/New_York', null, 'gps:passive:20')
+    await saveLocationChoice({ mode: 'calculated', coordinates: previous, place: previous, source: 'automatic' })
+    await repo.saveSettings({ locationChoice: { mode: 'calculated', coordinates: passive, place: passive, source: 'automatic' } })
+
+    const optional = await loadPrayerRepositoryOptionalSettings()
+    expect(optional).toMatchObject({ ok: true, value: { recentPlacesMigrated: true,
+      recentPlaces: [expect.objectContaining({ selection: 'gps', timestamp: previous.timestamp, accuracy: previous.accuracy,
+        latitude: previous.latitude, longitude: previous.longitude })] } })
+    if (!optional.ok) throw new Error('History read after passive refresh failed')
+    expect(optional.value.recentPlaces.some(place => place.timestamp === passive.timestamp || place.latitude === passive.latitude)).toBe(false)
+  })
   it('restores legacy coordinates with a missing timezone without loading meta', async () => {
     const coordinates = { latitude: 55.75, longitude: 37.62, accuracy: 18, timestamp: 100, name: 'Сохранённое место', source: 'gps' }
     await saveLocationChoice({ mode: 'calculated', source: 'automatic', coordinates } as LocationChoice)
@@ -179,5 +221,18 @@ describe('local initialization and persistence', () => {
     vi.stubGlobal('indexedDB', { open: () => { throw new Error('disabled') } })
     expect(await initializePrayerRepository()).toMatchObject({ ok: false, error: { kind: 'storage' } })
     expect(await repo.saveSettings({ sourcePreferences: automaticPreferences() })).toMatchObject({ ok: false, error: { kind: 'storage' } })
+  })
+  it('keeps an explicit selection write failure retryable as one consistent settings snapshot', async () => {
+    const selected = createOfficialPlace(required(dataset.locations[0]), 100)
+    const choice: LocationChoice = { mode: 'official', locationId: selected.id.replace('locality:', ''), source: 'manual', place: selected }
+    const patch = { locationChoice: choice, placeSelectionEvents: [selected] }
+    vi.stubGlobal('indexedDB', { open: () => { throw new Error('disabled') } })
+    expect(await repo.saveSettings(patch)).toMatchObject({ ok: false, error: { kind: 'storage' } })
+    vi.unstubAllGlobals()
+    await deleteSalahDatabase()
+
+    expect(await repo.saveSettings(patch)).toEqual(success(undefined))
+    expect(await initializePrayerRepositoryStartup()).toMatchObject({ value: { locationChoice: { place: { id: selected.id } } } })
+    expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [expect.objectContaining({ id: selected.id })], recentPlacesMigrated: true } })
   })
 })

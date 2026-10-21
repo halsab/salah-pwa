@@ -14,7 +14,11 @@ export function createSettingsPersistence(write: SaveSettings) {
   const notify = (next: PersistenceStatus) => { status = next; for (const listener of listeners) listener() }
   const discardPending = () => { epoch += 1; revision += 1; latest = {} }
   const save = (patch: SettingsPatch) => {
+    const previousSelections = latest.placeSelectionEvents ?? []
     latest = { ...latest, ...patch }
+    if (patch.placeSelectionEvents?.length) {
+      latest.placeSelectionEvents = [...previousSelections, ...patch.placeSelectionEvents]
+    }
     const snapshot = latest
     const operation = ++revision
     const generation = epoch
