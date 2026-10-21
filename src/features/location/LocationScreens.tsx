@@ -13,6 +13,7 @@ import type { Translator } from '../../localization/messages'
 import type { SupportedLocale } from '../../localization/locale'
 import { localizedCityLabel, localizedCityRegion } from '../../localization/place'
 import { getUtcOffset } from '../../domain/locationTime'
+import { isSameRecentPlace } from '../../domain/recentPlaces'
 
 const idleGpsState: GpsUiState = { status: 'idle' }
 
@@ -24,15 +25,16 @@ function locationStatus(gpsState: GpsUiState, nameLookupState: NameLookupState, 
   return nameLookupMessage(nameLookupState, locale)
 }
 
-export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
-  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom, currentTime = new Date() }: {
-  place: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
+export function LocationScreen({ place, activePlace, recentPlaces, onBack, onSearch, onSelectRecent, onLocate, onAcceptGps = () => undefined,
+  gpsState = idleGpsState, nameLookupState = 'idle', notice, initial = false, bottom, currentTime = new Date(), activeHistoryId }: {
+  place: Place | null; activePlace?: Place | null; recentPlaces: Place[]; onBack: () => void; onSearch: () => void
   onSelectRecent: (place: Place) => void; onLocate: () => void | Promise<void>; onAcceptGps?: () => void
   gpsState?: GpsUiState; nameLookupState?: NameLookupState; notice?: ReactNode; initial?: boolean; bottom?: ReactNode
-  currentTime?: Date
+  currentTime?: Date; activeHistoryId?: string
 }) {
   const { locale, t } = useLocalization()
-  const recent = recentPlaces.filter(item => item.id !== place?.id).slice(0, 3)
+  const selected = activePlace === undefined ? place : activePlace
+  const recent = recentPlaces.filter(item => item.id !== activeHistoryId && (!selected || !isSameRecentPlace(item, selected)))
   const gpsPlace = place?.selection === 'gps'
   const busy = gpsState.status === 'locating' || gpsState.status === 'refining'
   const lowAccuracy = gpsState.status === 'ready' && gpsState.lowAccuracy
@@ -57,8 +59,11 @@ export function LocationScreen({ place, recentPlaces, onBack, onSearch, onSelect
       {status ? <p className="note" role="status" aria-live="polite">{status}</p> : null}
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
-    {recent.length ? <section className="screen-space" aria-label={t('recentCities')}><p className="screen-heading">{t('recent')}</p><div className="screen-stack screen-space">
-      {recent.map(item => <ActionRow key={item.id} title={compactPlaceLabel(item.name, locale)} onClick={() => onSelectRecent(item)} />)}
+    {recent.length ? <section className="screen-space" aria-label={t('recentPlaces')}><p className="screen-heading">{t('recent')}</p><div className="screen-stack screen-space">
+      {recent.map(item => item.selection === 'gps'
+        ? <ActionRow key={item.id} title={t('savedPoint')} secondary={<span className="note">{formatCoordinates(item.latitude, item.longitude)}</span>}
+            aria-label={`${t('savedPoint')}, ${formatCoordinates(item.latitude, item.longitude)}`} onClick={() => onSelectRecent(item)} />
+        : <ActionRow key={item.id} title={compactPlaceLabel(item.name, locale)} onClick={() => onSelectRecent(item)} />)}
     </div></section> : null}
     {notice}
   </Screen>

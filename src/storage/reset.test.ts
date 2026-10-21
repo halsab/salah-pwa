@@ -65,10 +65,10 @@ it('rolls back a failed clear, keeps the generation and allows retry without par
   expect(await getSetting('appearance')).toEqual({ ok: true, value: undefined })
 })
 
-it('does not persist a patch invalidated while opening storage or waiting for the generation read', async () => {
+it('does not acknowledge or persist a patch invalidated while opening storage or waiting for the generation read', async () => {
   const generation = await getDataGeneration()
-  expect((await saveSettings({ appearance: 'dark' }, () => false, generation)).ok).toBe(true)
+  expect((await saveSettings({ appearance: 'dark' }, () => false, generation)).ok).toBe(false)
   const current = vi.fn().mockReturnValueOnce(true).mockReturnValue(false)
-  expect((await saveSettings({ appearance: 'dark' }, current, generation)).ok).toBe(true)
+  expect((await saveSettings({ appearance: 'dark' }, current, generation)).ok).toBe(false)
   expect(await getSetting('appearance')).toEqual({ ok: true, value: 'system' })
 })

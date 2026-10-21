@@ -1,6 +1,6 @@
 import { isLocationSelectionSource } from '../domain/locationSelection'
 import { isCalendarPreferences, restoreCalendarPreferences, type CalendarPreferences } from '../domain/calendar'
-import { restoreRecentPlaces } from '../domain/recentPlaces'
+import { findRecentPlace, migrateRecentPlaces, rememberPlace, restoreRecentPlaces, updateRecentPlace } from '../domain/recentPlaces'
 import type { Place } from '../domain/place'
 import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
 import { getDatasetRevision } from '../domain/scheduleContext'
@@ -9,8 +9,9 @@ import { restoreSourcePreferences, isSourcePreferences, type SourcePreferences }
 import type { DataFailure, StorageFailure } from '../domain/errors'
 import { failure, success, type Result } from '../domain/result'
 import {
-  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset,
-  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance,
+  clearAppData, getDataGeneration, getDatasetMeta, getLocationChoice, getPrayerDays, getSetting, getSettings, getStartupData, getStoredDataset, getPlaceSelectionBaseline,
+  reservePlaceSelectionOrder as reserveStoredPlaceSelectionOrder,
+  replaceDataset, saveSettings, type DatasetMeta, type LocationChoice, type SettingsPatch, type Appearance, type PlacePersistenceEvent,
 } from '../storage/database'
 import { DEFAULT_OFFICIAL_LOCATIONS, PRAYER_PROVIDERS, dumRtProvider, type PrayerProvider } from './prayerProviders'
 import { resolvePrayerDatasetUrl, validatePrayerDatasetManifest, verifyPrayerDatasetBytes, type PrayerDatasetByteOperations } from './prayerDatasetManifest'
@@ -29,6 +30,7 @@ export interface PrayerRepositorySnapshot {
 export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
   calendarPreferences?: CalendarPreferences
   recentPlaces?: Place[]
+  recentPlacesMigrated?: boolean
   locationChoice: LocationChoice | null
   appearance?: Appearance
   themeFamily?: ThemeFamily
@@ -38,13 +40,79 @@ export interface PrayerRepositoryState extends PrayerRepositorySnapshot {
 }
 export interface PrayerRepositoryOptionalSettings {
   recentPlaces: Place[]
+  recentPlacesMigrated: boolean
   calendarPreferences: CalendarPreferences
   themeFamily: ThemeFamily
   languagePreference: LanguagePreference
   fastingMode: FastingModePreferences
 }
+
+function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: unknown; recentPlacesMigrated: unknown; committedPlaceSelectionOrder?: unknown },
+  patch: SettingsPatch) {
+  const activeChoice = stored.locationChoice && typeof stored.locationChoice === 'object'
+    ? stored.locationChoice as LocationChoice
+    : null
+  const originalActive = activeChoice ? placeFromChoice(activeChoice, DEFAULT_OFFICIAL_LOCATIONS) : null
+  const migrated = stored.recentPlacesMigrated === true
+    ? restoreRecentPlaces(stored.recentPlaces)
+    : migrateRecentPlaces(stored.recentPlaces, originalActive)
+  let recentPlaces = migrated
+  let locationChoice = patch.placeEvents?.length ? undefined : patch.locationChoice
+  let locationAccepted = true
+  let committedPlaceSelectionOrder = typeof stored.committedPlaceSelectionOrder === 'number' && Number.isSafeInteger(stored.committedPlaceSelectionOrder)
+    ? stored.committedPlaceSelectionOrder : undefined
+  let active = originalActive
+  let authoritativeChoice = activeChoice
+  if (patch.placeEvents?.length) {
+    for (const event of patch.placeEvents) {
+      const next = placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
+      locationAccepted = false
+      if (!next) continue
+      if (event.change === 'selection') {
+        // Повтор уже зафиксированного выбора не должен менять recency или GPS snapshot.
+        const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
+        if (alreadyApplied && event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
+          && event.selectionOrder <= committedPlaceSelectionOrder) {
+          locationAccepted = true
+          continue
+        }
+        // Резервирование задаёт порядок намерений, но защищает от старых записей только committed-маркер.
+        if (event.selectionOrder !== undefined && committedPlaceSelectionOrder !== undefined
+          && event.selectionOrder <= committedPlaceSelectionOrder) continue
+        const baseline = event.selectionReservationBaseline
+        // Чужой commit после намерения побеждает даже при задержке первой резервации.
+        // Собственный предшественник разрешает последовательные выборы одной вкладки.
+        if (baseline === 'unavailable' || baseline !== undefined
+          && baseline !== (committedPlaceSelectionOrder ?? null)
+          && (event.selectionPredecessorOrder === undefined || event.selectionPredecessorOrder !== committedPlaceSelectionOrder)) continue
+        recentPlaces = rememberPlace(recentPlaces, next)
+        if (event.selectionOrder !== undefined) committedPlaceSelectionOrder = Math.max(committedPlaceSelectionOrder ?? 0, event.selectionOrder)
+      } else {
+        if ((active?.id ?? null) !== event.expectedPlaceId) continue
+        if (event.change === 'refinement') {
+          if (active?.selection !== 'gps' || next.selection !== 'gps' || active.id !== next.id) continue
+          const target = findRecentPlace(recentPlaces, active)
+          if (!target) continue
+          recentPlaces = updateRecentPlace(recentPlaces, next, target.id)
+        }
+      }
+      locationAccepted = true
+      active = next
+      authoritativeChoice = event.choice
+      locationChoice = event.choice
+    }
+  } else if (patch.recentPlaces && !patch.normalizeRecentPlaces) {
+    const incoming = restoreRecentPlaces(patch.recentPlaces)
+    recentPlaces = stored.recentPlacesMigrated === true ? incoming : restoreRecentPlaces([...incoming, ...migrated])
+  }
+  return { recentPlaces, recentPlacesMigrated: true as const, locationChoice, locationAccepted,
+    committedPlaceSelectionOrder: patch.placeEvents?.some(event => event.change === 'selection') ? committedPlaceSelectionOrder : undefined,
+    activeLocationChoice: patch.placeEvents?.length ? authoritativeChoice : null }
+}
+
 interface StoredOptionalSettings {
   recentPlaces: unknown
+  recentPlacesMigrated: unknown
   calendarPreferences: unknown
   themeFamily: unknown
   languagePreference: unknown
@@ -141,13 +209,14 @@ function storedMetadataState(value: DatasetMeta | undefined, provider: PrayerPro
 async function readStartup(provider: PrayerProvider) {
   const stored = await getStartupData(provider.id)
   if (!stored.ok) return stored
-  const { meta, choice, preferences, legacy, generation } = stored.value
+  const { meta, choice, preferences, legacy, generation, recentPlacesMigrated } = stored.value
   const validMeta = meta && isStoredMeta(meta, provider) ? meta : null
   const state: PrayerRepositoryState = {
     meta: validMeta,
     dataState: meta ? validMeta ? 'ready' : 'invalid' : 'not-loaded',
     update: { status: 'idle' }, checkedAt: null,
     locationChoice: choice === undefined ? null : restoreLocationChoice(choice, validMeta ?? provider.bundled),
+    recentPlacesMigrated: recentPlacesMigrated === true,
     preferences: restoreSourcePreferences(preferences, legacy, choice),
   }
   return success({ state, generation })
@@ -158,9 +227,10 @@ export async function initializePrayerRepositoryStartup(provider: PrayerProvider
   return result.ok ? success(result.value.state) : result
 }
 
-function restoreOptionalSettings(values: StoredOptionalSettings, currentLocationId?: string): PrayerRepositoryOptionalSettings {
+function restoreOptionalSettings(values: StoredOptionalSettings): PrayerRepositoryOptionalSettings {
   return {
-    recentPlaces: restoreRecentPlaces(values.recentPlaces, currentLocationId),
+    recentPlaces: restoreRecentPlaces(values.recentPlaces),
+    recentPlacesMigrated: values.recentPlacesMigrated === true,
     calendarPreferences: restoreCalendarPreferences(values.calendarPreferences),
     themeFamily: restoreThemeFamily(values.themeFamily),
     languagePreference: restoreLanguagePreference(values.languagePreference),
@@ -168,9 +238,9 @@ function restoreOptionalSettings(values: StoredOptionalSettings, currentLocation
   }
 }
 
-export async function loadPrayerRepositoryOptionalSettings(currentLocationId?: string): Promise<Result<PrayerRepositoryOptionalSettings, StorageFailure>> {
-  const stored = await getSettings(['recentPlaces', 'calendarPreferences', 'themeFamily', 'languagePreference', 'fastingMode'])
-  return stored.ok ? success(restoreOptionalSettings(stored.value, currentLocationId)) : stored
+export async function loadPrayerRepositoryOptionalSettings(): Promise<Result<PrayerRepositoryOptionalSettings, StorageFailure>> {
+  const stored = await getSettings(['recentPlaces', 'recentPlacesMigrated', 'calendarPreferences', 'themeFamily', 'languagePreference', 'fastingMode'])
+  return stored.ok ? success(restoreOptionalSettings(stored.value)) : stored
 }
 function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): LocationChoice {
   const locations = meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS
@@ -185,9 +255,9 @@ function restoreLocationChoice(value: unknown, meta: DatasetMeta | null): Locati
   return migratePlaceChoice({ mode: 'official', locationId: location.id, source: 'default' }, locations)
 }
 export async function initializePrayerRepository(provider: PrayerProvider = dumRtProvider): Promise<Result<PrayerRepositoryState, StorageFailure>> {
-  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, calendarPreferences, languagePreference, fastingMode] = await Promise.all([
+  const [snapshot, choice, preferences, legacy, appearance, themeFamily, recentPlaces, recentPlacesMigrated, calendarPreferences, languagePreference, fastingMode] = await Promise.all([
     readLocalSnapshot(provider), getLocationChoice(), getSetting('sourcePreferences'), getSetting('calculationSettings'), getSetting('appearance'), getSetting('themeFamily'),
-    getSetting('recentPlaces'), getSetting('calendarPreferences'), getSetting('languagePreference'), getSetting('fastingMode'),
+    getSetting('recentPlaces'), getSetting('recentPlacesMigrated'), getSetting('calendarPreferences'), getSetting('languagePreference'), getSetting('fastingMode'),
   ])
   if (!snapshot.ok) return snapshot
   if (!choice.ok) return choice
@@ -196,14 +266,16 @@ export async function initializePrayerRepository(provider: PrayerProvider = dumR
   if (!appearance.ok) return appearance
   if (!themeFamily.ok) return themeFamily
   if (!recentPlaces.ok) return recentPlaces
+  if (!recentPlacesMigrated.ok) return recentPlacesMigrated
   if (!calendarPreferences.ok) return calendarPreferences
   if (!languagePreference.ok) return languagePreference
   if (!fastingMode.ok) return fastingMode
   const locationChoice = choice.value === undefined ? null : restoreLocationChoice(choice.value, snapshot.value.meta ?? provider.bundled)
   const optionalSettings = restoreOptionalSettings({
-    recentPlaces: recentPlaces.value, calendarPreferences: calendarPreferences.value,
+    recentPlaces: recentPlaces.value, recentPlacesMigrated: recentPlacesMigrated.value,
+    calendarPreferences: calendarPreferences.value,
     themeFamily: themeFamily.value, languagePreference: languagePreference.value, fastingMode: fastingMode.value,
-  }, locationChoice?.place?.id)
+  })
   return success({ ...snapshot.value, locationChoice,
     ...optionalSettings,
     appearance: appearance.value === 'light' || appearance.value === 'dark' ? appearance.value : 'system',
@@ -217,6 +289,8 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
   let installation: ReturnType<typeof replaceDataset> | null = null
   let epoch = 0
   let generation = 0
+  let generationInitialized = false
+  const hasInitializedGeneration = () => generationInitialized
   let invalidRevision: string | null = null
   let latest: PrayerRepositorySnapshot = { meta: null, dataState: 'not-loaded', update: { status: 'idle' }, checkedAt: null }
   const emit = (snapshot: PrayerRepositorySnapshot) => {
@@ -297,6 +371,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       const meta = result.ok && result.value.dataState === 'invalid' ? await getDatasetMeta(provider.id) : null
       if (operation === epoch && result.ok) {
         generation = dataGeneration
+        generationInitialized = true
         latest = result.value
         if (meta?.ok && meta.value) invalidRevision = getDatasetRevision(meta.value)
       }
@@ -308,6 +383,7 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (!result.ok) return result
       if (operation === epoch) {
         generation = result.value.generation
+        generationInitialized = true
         latest = result.value.state
       }
       return success(result.value.state)
@@ -324,16 +400,54 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (operation === epoch && (!result.ok && result.error.kind === 'data' || result.ok && result.value.some(day => !day))) invalidRevision = revision
       return result
     },
-    saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean): Promise<Result<void, StorageFailure | DataFailure>> => {
+    reservePlaceSelectionOrder: async () => {
+      const operation = epoch
+      if (!generationInitialized) {
+        const currentGeneration = await getDataGeneration()
+        if (operation !== epoch) throw new Error('Сессия завершена')
+        if (!hasInitializedGeneration()) { generation = currentGeneration; generationInitialized = true }
+      }
+      return reserveStoredPlaceSelectionOrder(generation)
+    },
+    getCommittedPlaceSelectionOrder: async () => {
+      const operation = epoch
+      const baseline = await getPlaceSelectionBaseline()
+      if (operation !== epoch) throw new Error('Сессия завершена')
+      if (!generationInitialized) { generation = baseline.generation; generationInitialized = true }
+      if (baseline.generation !== generation) throw new Error('Сессия завершена')
+      return baseline.order
+    },
+    saveSettings: (patch: SettingsPatch, isCurrent?: () => boolean,
+      onPlaceEventsOutcome?: Parameters<typeof saveSettings>[4]): Promise<Result<void, StorageFailure | DataFailure>> => {
       if (patch.calendarPreferences && !isCalendarPreferences(patch.calendarPreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.sourcePreferences && !isSourcePreferences(patch.sourcePreferences)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.locationChoice && !placeFromChoice(patch.locationChoice, DEFAULT_OFFICIAL_LOCATIONS)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      if (patch.placeEvents && (!Array.isArray(patch.placeEvents) || patch.placeEvents.some((raw: unknown) => {
+        if (!raw || typeof raw !== 'object') return true
+        const event = raw as Partial<PlacePersistenceEvent>
+        return !event.change || !['selection', 'refinement', 'automatic'].includes(event.change)
+          || !event.choice || !placeFromChoice(event.choice, DEFAULT_OFFICIAL_LOCATIONS)
+          || event.selectionOrder !== undefined && !Number.isFinite(event.selectionOrder)
+          || event.selectionPredecessorOrder !== undefined && !Number.isSafeInteger(event.selectionPredecessorOrder)
+          || event.selectionReservationBaseline !== undefined && event.selectionReservationBaseline !== null
+            && event.selectionReservationBaseline !== 'unavailable'
+            && (typeof event.selectionReservationBaseline !== 'number' || !Number.isSafeInteger(event.selectionReservationBaseline))
+          || event.change === 'selection' && event.selectionOrder === undefined
+          || event.change !== 'selection' && !(typeof event.expectedPlaceId === 'string' || event.expectedPlaceId === null)
+      }))) {
+        return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      }
       if (patch.appearance && !['system', 'light', 'dark'].includes(patch.appearance)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.themeFamily && restoreThemeFamily(patch.themeFamily) !== patch.themeFamily) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.languagePreference && restoreLanguagePreference(patch.languagePreference) !== patch.languagePreference) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.fastingMode && !isFastingModePreferences(patch.fastingMode)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
-      return saveSettings(patch, isCurrent, generation)
+      let locationAccepted = true
+      return saveSettings(patch, isCurrent, generation, reconcilePlaceHistory, outcome => {
+        locationAccepted = outcome.locationAccepted
+        if (patch.placeEvents?.length) onPlaceEventsOutcome?.(outcome)
+      }).then(result => result.ok && patch.placeEvents?.length && !locationAccepted
+        ? failure({ kind: 'data', reason: 'superseded' }) : result)
     },
   }
 }

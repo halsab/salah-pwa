@@ -12,31 +12,54 @@ import type { PrayerLocation } from '../../domain/types'
 import { translate } from '../../localization'
 import { geolocationFailureMessage, isLowAccuracy, preferredGeolocationFailure, type GpsUiState, type NameLookupState } from './locationState'
 
-export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void, persist: (choice: LocationChoice) => void,
+export type PlacePersistenceChange = 'automatic' | 'selection' | 'refinement'
+
+export function usePlaceSelection(services: AppServices, locations: PrayerLocation[], onChosen: () => void,
+  persist: (choice: LocationChoice, change?: PlacePersistenceChange) => void,
   initial?: { place: Place; source: LocationSelectionSource }) {
   const [place, setPlace] = useState<Place | null>(() => initial?.place ?? null)
   const [source, setSource] = useState<LocationSelectionSource>(() => initial?.source ?? 'default')
   const [notice, setNotice] = useState<string | null>(null)
   const [gpsState, setGpsState] = useState<GpsUiState>({ status: 'idle' })
+  const [gpsPreview, setGpsPreview] = useState<Place | null>(null)
   const [nameLookupState, setNameLookupState] = useState<NameLookupState>('idle')
   const current = useRef<Place | null>(initial?.place ?? null)
+  const gpsPreviewRef = useRef<Place | null>(null)
   const initialPlace = useRef<Place | null>(initial?.place ?? null)
+  const confirmed = useRef<Place | null>(initial?.place ?? null)
+  const confirmedSource = useRef<LocationSelectionSource>(initial?.source ?? 'default')
+  const currentSource = useRef<LocationSelectionSource>(initial?.source ?? 'default')
   const epoch = useRef(0)
-  const activeInteractive = useRef<{ operation: number; navigated: boolean } | null>(null)
+  const activeInteractive = useRef<{ operation: number; navigated: boolean; recorded: boolean } | null>(null)
   const started = useRef(false)
   const restored = useRef(false)
   useEffect(() => () => { epoch.current += 1; activeInteractive.current = null }, [])
 
-  const apply = useCallback((next: Place, selectionSource: LocationSelectionSource, operation: number) => {
-    if (operation !== epoch.current) return
-    current.current = next
-    setPlace(next)
-    setSource(selectionSource)
+  const saveChoice = useCallback((next: Place, selectionSource: LocationSelectionSource, change: PlacePersistenceChange = 'automatic') => {
     const official = officialLocationForPlace(next, locations)
     persist(official
       ? { mode: 'official', locationId: official.id, source: selectionSource, place: next }
-      : { mode: 'calculated', coordinates: next, source: selectionSource, place: next })
+      : { mode: 'calculated', coordinates: next, source: selectionSource, place: next }, change)
   }, [locations, persist])
+
+  const apply = useCallback((next: Place, selectionSource: LocationSelectionSource, operation: number,
+    change: 'automatic' | 'selection' | 'refinement' = 'automatic') => {
+    if (operation !== epoch.current) return
+    const pendingInteractiveGps = next.selection === 'gps'
+      && activeInteractive.current?.operation === operation
+      && !activeInteractive.current.navigated
+      && current.current?.id !== next.id
+    current.current = next
+    currentSource.current = selectionSource
+    setPlace(next)
+    setSource(selectionSource)
+    if (!pendingInteractiveGps || change === 'selection' || change === 'refinement') {
+      confirmed.current = next
+      confirmedSource.current = selectionSource
+    }
+    if (pendingInteractiveGps && change === 'automatic') return
+    saveChoice(next, selectionSource, change)
+  }, [saveChoice])
 
   const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[], mode: 'startup' | 'external' = 'startup') => {
     if (mode === 'startup' && current.current && current.current !== initialPlace.current) {
@@ -44,10 +67,21 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       return
     }
     if (mode === 'startup' && restored.current) return
+    if (mode === 'external') {
+      epoch.current += 1
+      activeInteractive.current = null
+      gpsPreviewRef.current = null
+      setGpsPreview(null)
+      setGpsState({ status: 'idle' })
+      setNameLookupState('idle')
+    }
     restored.current = true
     if (!choice) {
       if (mode === 'external') {
         current.current = null
+        currentSource.current = 'default'
+        confirmed.current = null
+        confirmedSource.current = 'default'
         setPlace(null)
         setSource('default')
       }
@@ -58,16 +92,27 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
       ? { mode: 'calculated', coordinates: choice.place, source: choice.source, place: choice.place }
       : choice, availableLocations)
     current.current = saved
+    currentSource.current = choice.source
+    confirmed.current = saved
+    confirmedSource.current = choice.source
     setPlace(saved)
     setSource(choice.source)
+    if (mode === 'external') started.current = false
   }, [])
 
   const finishInteractive = useCallback((operation: number) => {
     const active = activeInteractive.current
-    if (!active || active.operation !== operation || active.navigated) return
+    if (!active || active.operation !== operation) return
+    if (!active.recorded && current.current?.selection === 'gps') {
+      active.recorded = true
+      confirmed.current = current.current
+      confirmedSource.current = currentSource.current
+      saveChoice(current.current, 'automatic', 'selection')
+    }
+    if (active.navigated) return
     active.navigated = true
     onChosen()
-  }, [onChosen])
+  }, [onChosen, saveChoice])
 
   const locate = useCallback(async (interactive = true, existingEpoch?: number) => {
     const operation = existingEpoch ?? ++epoch.current
@@ -75,14 +120,16 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setNotice(null)
     setNameLookupState('idle')
     if (interactive) {
-      activeInteractive.current = { operation, navigated: false }
+      activeInteractive.current = { operation, navigated: false, recorded: false }
+      gpsPreviewRef.current = null
+      setGpsPreview(null)
       setGpsState({ status: 'locating' })
     } else {
       activeInteractive.current = null
     }
-    const previous = current.current?.selection === 'gps' ? current.current : null
     const geometry = services.loadGeography().catch(() => null)
     const operationResult: { best: Place | null } = { best: null }
+    const runtimeId = `gps:${crypto.randomUUID()}`
     let preciseAccepted = false
     let revision = 0
     const failures: GeolocationFailure[] = []
@@ -101,10 +148,18 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
           setNameLookupState('not-found')
           return
         }
-        const active = current.current
+        const pendingInteractive = activeInteractive.current?.operation === operation && !activeInteractive.current.navigated
+        const active = pendingInteractive ? gpsPreviewRef.current ?? operationResult.best : current.current
         if (!active || active.selection !== 'gps') return
         const named = withNearbyCity(active, result.value)
-        if (named !== active) apply(named, 'automatic', operation)
+        if (named !== active) {
+          if (pendingInteractive) {
+            operationResult.best = named
+            gpsPreviewRef.current = named
+            setGpsPreview(named)
+          } else apply(named, 'automatic', operation,
+            activeInteractive.current?.operation === operation && activeInteractive.current.navigated ? 'refinement' : 'automatic')
+        }
         setNameLookupState('resolved')
       }).catch(() => {
         if (operation === epoch.current && lookupRevision === revision) setNameLookupState('failed')
@@ -123,13 +178,15 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
         const data = await geometry
         if (operation !== epoch.current || (accuracy === 'coarse' && preciseAccepted)) return
         // Lookup обогащает current, а refinement должен брать это обогащение только от текущего GPS operation.
+        const pendingInteractive = interactive && activeInteractive.current?.operation === operation && !activeInteractive.current.navigated
+        const basePreview = pendingInteractive ? gpsPreviewRef.current : null
         const enriched = current.current?.selection === 'gps' && current.current.id === operationResult.best?.id
           ? current.current
           : null
-        const base = enriched ?? operationResult.best ?? previous
+        const base = enriched ?? basePreview ?? operationResult.best
         const next = base
           ? refineGpsPlace(base, result.value, services.getDeviceTimeZone(), data)
-          : createGpsPlace(result.value, services.getDeviceTimeZone(), data, `gps:${operation}:${result.value.timestamp}`)
+          : createGpsPlace(result.value, services.getDeviceTimeZone(), data, runtimeId)
         if (operationResult.best && !isUsefulRefinement(operationResult.best, next)) {
           if (accuracy === 'precise') preciseAccepted = true
           return
@@ -137,7 +194,15 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
         if (accuracy === 'precise') preciseAccepted = true
         operationResult.best = next
         const lookupRevision = ++revision
-        apply(next, 'automatic', operation)
+        if (pendingInteractive && isLowAccuracy(next.accuracy)) {
+          gpsPreviewRef.current = next
+          setGpsPreview(next)
+        } else {
+          gpsPreviewRef.current = null
+          setGpsPreview(null)
+          apply(next, 'automatic', operation,
+            activeInteractive.current?.operation === operation && activeInteractive.current.navigated ? 'refinement' : 'automatic')
+        }
         lookupName(next, lookupRevision)
         if (interactive) {
           const lowAccuracy = isLowAccuracy(next.accuracy)
@@ -187,7 +252,9 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
     activeInteractive.current = null
-    apply(createOfficialPlace(location, services.now().getTime()), 'manual', ++epoch.current)
+    gpsPreviewRef.current = null
+    setGpsPreview(null)
+    apply(createOfficialPlace(location, services.now().getTime()), 'manual', ++epoch.current, 'selection')
     onChosen()
   }, [apply, locations, onChosen, services])
   const selectCity = useCallback((city: City) => {
@@ -195,26 +262,38 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
     activeInteractive.current = null
-    apply(createCityPlace(city, services.now().getTime()), 'manual', ++epoch.current)
+    gpsPreviewRef.current = null
+    setGpsPreview(null)
+    apply(createCityPlace(city, services.now().getTime()), 'manual', ++epoch.current, 'selection')
     onChosen()
   }, [apply, onChosen, services])
   const selectRecent = useCallback((recent: Place) => {
-    if (recent.selection === 'gps') return
     setNotice(null)
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
     activeInteractive.current = null
-    apply({ ...recent, timestamp: services.now().getTime() }, 'manual', ++epoch.current)
+    gpsPreviewRef.current = null
+    setGpsPreview(null)
+    const selected = recent.selection === 'gps'
+      ? { ...recent, timeZone: services.getDeviceTimeZone(), automaticTimeZone: { id: services.getDeviceTimeZone(), source: 'device' as const } }
+      : recent
+    apply(selected, 'manual', ++epoch.current, 'selection')
     onChosen()
   }, [apply, onChosen, services])
   const synchronizeDeviceTimeZone = useCallback(() => {
-    const selected = current.current
-    if (!selected || selected.selection !== 'gps') return
     const timeZone = services.getDeviceTimeZone()
-    if (selected.timeZone === timeZone && selected.automaticTimeZone.id === timeZone) return
-    const { timeZoneOverride: _legacyOverride, ...base } = selected as Place & { timeZoneOverride?: unknown }
-    const operation = ++epoch.current
-    apply({ ...base, timeZone, automaticTimeZone: { id: timeZone, source: 'device' } }, source, operation)
+    const selected = confirmed.current
+    if (selected?.selection === 'gps' && (selected.timeZone !== timeZone || selected.automaticTimeZone.id !== timeZone)) {
+      const { timeZoneOverride: _legacyOverride, ...base } = selected as Place & { timeZoneOverride?: unknown }
+      apply({ ...base, timeZone, automaticTimeZone: { id: timeZone, source: 'device' } }, source, epoch.current)
+    }
+    const preview = gpsPreviewRef.current
+    if (preview && (preview.timeZone !== timeZone || preview.automaticTimeZone.id !== timeZone)) {
+      const { timeZoneOverride: _legacyOverride, ...base } = preview as Place & { timeZoneOverride?: unknown }
+      const synchronized = { ...base, timeZone, automaticTimeZone: { id: timeZone, source: 'device' as const } }
+      gpsPreviewRef.current = synchronized
+      setGpsPreview(synchronized)
+    }
   }, [apply, services, source])
   useEffect(() => {
     window.addEventListener('pageshow', synchronizeDeviceTimeZone)
@@ -227,17 +306,34 @@ export function usePlaceSelection(services: AppServices, locations: PrayerLocati
   }, [synchronizeDeviceTimeZone, place])
   const acceptGps = useCallback(() => {
     const active = activeInteractive.current
-    const selected = current.current
+    const selected = gpsPreviewRef.current
     if (!active || active.operation !== epoch.current || !selected || selected.selection !== 'gps') return
+    gpsPreviewRef.current = null
+    setGpsPreview(null)
+    apply(selected, 'automatic', active.operation)
     setGpsState({ status: 'ready', lowAccuracy: isLowAccuracy(selected.accuracy) })
     finishInteractive(active.operation)
-  }, [finishInteractive])
+  }, [apply, finishInteractive])
+  const cancelInteractive = useCallback(() => {
+    const active = activeInteractive.current
+    if (!active || active.operation !== epoch.current || active.navigated) return
+    epoch.current += 1
+    activeInteractive.current = null
+    started.current = true
+    gpsPreviewRef.current = null
+    setGpsPreview(null)
+    setNotice(null)
+    setGpsState({ status: 'idle' })
+    setNameLookupState('idle')
+  }, [])
   const invalidate = useCallback(() => {
     epoch.current += 1
     started.current = true
     activeInteractive.current = null
+    gpsPreviewRef.current = null
+    setGpsPreview(null)
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
   }, [])
-  return { place, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, selectOfficial, selectCity, selectRecent, invalidate }
+  return { place, gpsPreview, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, cancelInteractive, selectOfficial, selectCity, selectRecent, invalidate }
 }

@@ -47,6 +47,9 @@ export type Appearance = 'system' | 'light' | 'dark'
 interface SettingValueMap {
   calendarPreferences: CalendarPreferences
   recentPlaces: Place[]
+  recentPlacesMigrated: boolean
+  placeSelectionOrder: number
+  committedPlaceSelectionOrder: number
   appearance: Appearance
   themeFamily: ThemeFamily
   locationChoice: LocationChoice
@@ -416,14 +419,16 @@ export function getStartupData(provider = DEFAULT_PROVIDER_ID) {
     // Generation, выбранное место и revision принадлежат одному снимку транзакции.
     const transaction = database.transaction(['control', 'meta', 'settings'], 'readonly')
     const settings = transaction.objectStore('settings')
-    const [generation, meta, choice, preferences, legacy] = await Promise.all([
+    const [generation, meta, choice, preferences, legacy, recentPlacesMigrated] = await Promise.all([
       transaction.objectStore('control').get('generation'),
       transaction.objectStore('meta').get(provider),
       settings.get('locationChoice'), settings.get('sourcePreferences'), settings.get('calculationSettings'),
+      settings.get('recentPlacesMigrated'),
     ])
     await transaction.done
     return { generation: generation ?? 0, meta, choice: choice?.value as SettingValueMap['locationChoice'] | undefined,
-      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined, legacy: legacy?.value as SettingValueMap['calculationSettings'] | undefined }
+      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined, legacy: legacy?.value as SettingValueMap['calculationSettings'] | undefined,
+      recentPlacesMigrated: recentPlacesMigrated?.value as boolean | undefined }
   })
 }
 
@@ -492,25 +497,97 @@ export async function deleteSalahDatabase(): Promise<void> {
   await deleteDB(DATABASE_NAME)
 }
 
-export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
+export interface PlacePersistenceEvent {
+  change: 'selection' | 'refinement' | 'automatic'
+  choice: LocationChoice
+  // Неявные обновления проверяют активное место; явные намерения — committed baseline.
+  expectedPlaceId?: string | null
+  // Межвкладочный порядок явного выбора резервируется в IndexedDB до записи.
+  selectionOrder?: number
+  // Предыдущая резервация той же очереди разрешает быстрый выбор после собственного commit.
+  selectionPredecessorOrder?: number
+  // Снимок committed-order при поступлении намерения; null означает отсутствие выбора.
+  selectionReservationBaseline?: number | null | 'unavailable'
+}
 
-export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number): Promise<Result<void, StorageFailure>> {
+export type SettingsPatch = Partial<Pick<SettingValueMap, 'locationChoice' | 'sourcePreferences' | 'appearance' | 'themeFamily' | 'recentPlaces' | 'recentPlacesMigrated' | 'calendarPreferences' | 'languagePreference' | 'fastingMode'>>
+  // События — упорядоченные команды очереди; они не хранятся в IndexedDB.
+  & { placeEvents?: PlacePersistenceEvent[]; normalizeRecentPlaces?: boolean }
+
+export interface StoredPlaceHistorySnapshot {
+  locationChoice: unknown
+  recentPlaces: unknown
+  recentPlacesMigrated: unknown
+  committedPlaceSelectionOrder?: unknown
+}
+
+export interface PlaceEventsOutcome {
+  locationAccepted: boolean
+  locationChoice: LocationChoice | null
+}
+
+export type ReconcilePlaceHistory = (stored: StoredPlaceHistorySnapshot, patch: SettingsPatch) => {
+  recentPlaces: Place[]
+  recentPlacesMigrated: true
+  locationChoice: LocationChoice | undefined
+  locationAccepted: boolean
+  committedPlaceSelectionOrder: number | undefined
+  activeLocationChoice: LocationChoice | null
+}
+
+export function saveSettings(patch: SettingsPatch, isCurrent: () => boolean = () => true, generation?: number,
+  reconcilePlaceHistory?: ReconcilePlaceHistory,
+  onPlaceEventsOutcome?: (outcome: PlaceEventsOutcome) => void): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
-    if (!isCurrent()) return
+    if (!isCurrent()) throw new Error('Запись отменена')
     const transaction = database.transaction(['settings', 'control'], 'readwrite')
     try {
       if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) throw new Error('Сессия завершена')
-      if (!isCurrent()) { await transaction.done; return }
+      if (!isCurrent()) throw new Error('Запись отменена')
+      let reconciledHistory: ReturnType<ReconcilePlaceHistory> | undefined
+      if (reconcilePlaceHistory && (patch.locationChoice || patch.placeEvents?.length || patch.normalizeRecentPlaces)) {
+        const settings = transaction.objectStore('settings')
+        const [locationChoice, recentPlaces, recentPlacesMigrated, committedPlaceSelectionOrder] = await Promise.all([
+          settings.get('locationChoice'), settings.get('recentPlaces'), settings.get('recentPlacesMigrated'), settings.get('committedPlaceSelectionOrder'),
+        ])
+        if (!isCurrent()) throw new Error('Запись отменена')
+        reconciledHistory = reconcilePlaceHistory({
+          locationChoice: locationChoice?.value,
+          recentPlaces: recentPlaces?.value,
+          recentPlacesMigrated: recentPlacesMigrated?.value,
+          committedPlaceSelectionOrder: committedPlaceSelectionOrder?.value,
+        }, patch)
+      }
+      if (!isCurrent()) throw new Error('Запись отменена')
       if (patch.appearance) await transaction.objectStore('settings').put({ key: 'appearance', value: patch.appearance })
       if (patch.themeFamily) await transaction.objectStore('settings').put({ key: 'themeFamily', value: patch.themeFamily })
-      if (patch.locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: patch.locationChoice })
-      if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
+      const locationChoice = reconciledHistory ? reconciledHistory.locationChoice : patch.locationChoice
+      if (locationChoice) await transaction.objectStore('settings').put({ key: 'locationChoice', value: locationChoice })
+      if (reconciledHistory) {
+        await transaction.objectStore('settings').put({ key: 'recentPlaces', value: reconciledHistory.recentPlaces })
+        await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: true })
+        if (reconciledHistory.committedPlaceSelectionOrder !== undefined) {
+          await transaction.objectStore('settings').put({ key: 'committedPlaceSelectionOrder', value: reconciledHistory.committedPlaceSelectionOrder })
+        }
+      } else {
+        if (patch.recentPlaces) await transaction.objectStore('settings').put({ key: 'recentPlaces', value: patch.recentPlaces })
+        if (patch.recentPlacesMigrated !== undefined) await transaction.objectStore('settings').put({ key: 'recentPlacesMigrated', value: patch.recentPlacesMigrated })
+      }
       if (patch.sourcePreferences) await transaction.objectStore('settings').put({ key: 'sourcePreferences', value: patch.sourcePreferences })
       if (patch.calendarPreferences) await transaction.objectStore('settings').put({ key: 'calendarPreferences', value: patch.calendarPreferences })
       if (patch.languagePreference) await transaction.objectStore('settings').put({ key: 'languagePreference', value: patch.languagePreference })
       if (patch.fastingMode) await transaction.objectStore('settings').put({ key: 'fastingMode', value: patch.fastingMode })
+      if (!isCurrent()) throw new Error('Запись отменена')
       await transaction.done
+      if (patch.placeEvents?.length && reconciledHistory) {
+        try {
+          onPlaceEventsOutcome?.({ locationAccepted: reconciledHistory.locationAccepted,
+            locationChoice: reconciledHistory.activeLocationChoice })
+        } catch {
+          // Ошибка наблюдателя не должна превращать завершённую запись в ложный сбой хранения.
+        }
+      }
     } catch (error) {
       try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }
       await transaction.done.catch(() => undefined)
@@ -541,6 +618,47 @@ export function getStoredDataset(provider = DEFAULT_PROVIDER_ID): Promise<Result
 
 export async function getDataGeneration(): Promise<number> {
   return (await (await getDatabase()).get('control', 'generation')) ?? 0
+}
+
+export async function getPlaceSelectionBaseline() {
+  const database = await getDatabase()
+  // Baseline и generation должны относиться к одному состоянию до возможного reset.
+  const transaction = database.transaction(['settings', 'control'], 'readonly')
+  const [generation, committed] = await Promise.all([
+    transaction.objectStore('control').get('generation'),
+    transaction.objectStore('settings').get('committedPlaceSelectionOrder'),
+  ])
+  await transaction.done
+  const order = committed?.value
+  return { generation: generation ?? 0,
+    order: typeof order === 'number' && Number.isSafeInteger(order) ? order : undefined }
+}
+
+/** Выдаёт межвкладочный логический порядок выбора без системных часов. */
+export async function reservePlaceSelectionOrder(generation?: number): Promise<number> {
+  const database = await getDatabase()
+  const transaction = database.transaction(['settings', 'control'], 'readwrite')
+  try {
+    if (generation !== undefined && await transaction.objectStore('control').get('generation') !== generation) {
+      throw new Error('Сессия завершена')
+    }
+    const settings = transaction.objectStore('settings')
+    const stored = await settings.get('placeSelectionOrder')
+    const committed = await settings.get('committedPlaceSelectionOrder')
+    const current = Math.max(
+      typeof stored?.value === 'number' && Number.isSafeInteger(Math.floor(stored.value)) && stored.value >= 0 ? Math.floor(stored.value) : 0,
+      typeof committed?.value === 'number' && Number.isSafeInteger(Math.floor(committed.value)) && committed.value >= 0 ? Math.floor(committed.value) : 0,
+    )
+    if (current >= Number.MAX_SAFE_INTEGER) throw new Error('Исчерпан порядок выбора места')
+    const next = current + 1
+    await settings.put({ key: 'placeSelectionOrder', value: next })
+    await transaction.done
+    return next
+  } catch (error) {
+    try { transaction.abort() } catch { /* Транзакция уже завершилась. */ }
+    await transaction.done.catch(() => undefined)
+    throw error
+  }
 }
 
 export function clearAppData(): Promise<Result<void, StorageFailure>> {

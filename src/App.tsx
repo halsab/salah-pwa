@@ -20,7 +20,7 @@ import { initialManualCalculation, resolvePrayerTimeSource } from './domain/pray
 import { automaticPreferences, type SourcePreferences } from './domain/sourcePreferences'
 import { effectiveCalculationSettings } from './domain/calculationSettings'
 import { useSettingsPersistence } from './features/settings/useSettingsPersistence'
-import { usePlaceSelection } from './features/location/usePlaceSelection'
+import { usePlaceSelection, type PlacePersistenceChange } from './features/location/usePlaceSelection'
 import { nameLookupMessage } from './features/location/locationState'
 import type { GeolocationFailure } from './domain/errors'
 import {
@@ -37,7 +37,7 @@ import { failure } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
-import { rememberPlace, restoreRecentPlaces } from './domain/recentPlaces'
+import { findRecentPlace, migrateRecentPlaces, rememberPlace, restoreRecentPlaces, updateRecentPlace } from './domain/recentPlaces'
 import { homePlaceLabel, type Place } from './domain/place'
 import { compactPlaceLabel } from './domain/countryLabels'
 import { useCityCatalog } from './features/location/useCityCatalog'
@@ -56,7 +56,7 @@ import {
   type GeolocationPermission,
   type PositionAccuracy,
 } from './platform/browser'
-import type { LocationChoice } from './storage/database'
+import type { LocationChoice, SettingsPatch } from './storage/database'
 import { AppShell } from './ui/AppShell'
 import { AppHeader } from './ui/AppHeader'
 import { ActionButton, IconActionButton, ScreenFooter } from './ui/controls'
@@ -85,7 +85,8 @@ const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-c
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
   'clearAppData' | 'getDataGeneration' | 'initializeStartup' | 'loadOptionalSettings'>>,
-  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
+  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'reservePlaceSelectionOrder'
+    | 'getCommittedPlaceSelectionOrder' | 'invalidateAndDrain'> {
   getDays: (locationId: string, dates: readonly string[], revision: string, provider: string) => ReturnType<typeof prayerRepository.getDays>
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
@@ -140,6 +141,7 @@ export function App({
   const activeFastContext = useRef(startupSnapshot ? scheduleContextKey(startupSnapshot.context) : null)
   const selectionSyncToken = useRef(0)
   const optionalSettingsToken = useRef(0)
+  const pendingPlaceWrite = useRef(false)
   const retryOptionalSettings = useRef<() => void>(() => {})
   const themePreferenceRevision = useRef(0)
   const lastRemoteThemeFamily = useRef<ThemeFamily | null>(null)
@@ -176,11 +178,33 @@ export function App({
   const initialRefreshStarted = useRef(false)
   const persistSettings = useCallback(async (
     patch: Parameters<AppServices['saveSettings']>[0],
-    isCurrent?: Parameters<AppServices['saveSettings']>[1],
+    isGenerationCurrent?: Parameters<AppServices['saveSettings']>[1],
+    isLatest?: () => boolean,
+    isLocationCurrent?: () => boolean,
   ) => {
-    const result = await services.saveSettings(patch, isCurrent)
+    const placeResult: { accepted: boolean } = { accepted: true }
+    const result = await services.saveSettings(patch, isGenerationCurrent, outcome => {
+      placeResult.accepted = outcome.locationAccepted
+    })
+    const generationIsCurrent = isGenerationCurrent?.() ?? true
+    const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
+    if (patch.placeEvents?.length && !placeResult.accepted
+      && generationIsCurrent && locationIsCurrent) {
+      pendingPlaceWrite.current = false
+      pendingFastIdentityWrite.current = false
+      setFastCacheReady(false)
+      setRemoteSelectionPending(true)
+      retrySelectionSync.current()
+      return result.ok ? failure({ kind: 'data', reason: 'superseded' }) : result
+    }
     if (result.ok) {
-      if ((patch.locationChoice || patch.sourcePreferences) && isCurrent?.()) {
+      const currentIdentityCommitted = Boolean((patch.locationChoice || patch.sourcePreferences)
+        && generationIsCurrent && locationIsCurrent)
+      if (patch.placeEvents?.length && generationIsCurrent && locationIsCurrent) {
+        pendingPlaceWrite.current = false
+        retryOptionalSettings.current()
+      }
+      if ((patch.locationChoice || patch.sourcePreferences) && generationIsCurrent && locationIsCurrent) {
         invalidateFastCache()
         pendingFastIdentityWrite.current = false
         setFastCacheReady(true)
@@ -188,13 +212,13 @@ export function App({
         setRemoteSelectionPending(false)
         setSelectionSyncError(false)
       }
-      if (!(patch.themeFamily !== undefined && Object.keys(patch).length === 1)) {
+      if (currentIdentityCommitted || isLatest?.() && !(patch.themeFamily !== undefined && Object.keys(patch).length === 1)) {
         notifyFastScheduleSelectionChanged()
       }
     }
     return result
   }, [invalidateFastCache, services])
-  const persistence = useSettingsPersistence(persistSettings)
+  const persistence = useSettingsPersistence(persistSettings, services.reservePlaceSelectionOrder, services.getCommittedPlaceSelectionOrder)
   const saveSettings = persistence.save
   const rebaseSettings = persistence.rebase
   const invalidateSaves = persistence.invalidateAndDrain
@@ -229,23 +253,58 @@ export function App({
   const editedCalendar = useRef(false)
   const editedFasting = useRef(false)
   const editedRecentPlaces = useRef(false)
+  const recentPlacesLoaded = useRef(false)
+  const recentPlacesMigrationComplete = useRef(false)
+  const [activeHistoryId, setActiveHistoryId] = useState<string | undefined>()
   const recentRef = useRef<Place[]>([])
   const previousPlace = useRef<Place | null>(null)
-  const persistPlace = useCallback((choice: LocationChoice) => {
+  const historyAnchorPlace = useRef<Place | null>(null)
+  const legacyHistoryAnchorCaptured = useRef(false)
+  const acceptedGpsHistory = useRef<{ runtimeId: string; historyId: string } | null>(null)
+  const persistPlace = useCallback((choice: LocationChoice, change: PlacePersistenceChange = 'automatic') => {
+    const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
+    if (!next || change === 'refinement' && acceptedGpsHistory.current?.runtimeId !== next.id) return
+    const generation = currentFastScheduleGeneration()
+    if (change !== 'selection' && generation && generation !== fastGenerationRef.current) {
+      setRemoteSelectionPending(true)
+      retrySelectionSync.current()
+      return
+    }
     selectionSyncToken.current += 1
     setRemoteSelectionPending(false)
     setSelectionSyncError(false)
     pendingFastIdentityWrite.current = true
     setFastCacheReady(false)
     invalidateFastCache()
-    const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
-    if (!next) return
-    const recent = rememberPlace(recentRef.current, previousPlace.current, next)
+    const expectedPlaceId = change === 'refinement' ? next.id
+      : previousPlace.current?.id ?? (change === 'selection' && !legacyHistoryAnchorCaptured.current ? undefined : null)
+    const patch: SettingsPatch = { locationChoice: choice,
+      placeEvents: [{ change, choice, ...(expectedPlaceId !== undefined ? { expectedPlaceId } : {}) }] }
+    pendingPlaceWrite.current = true
+    if (change === 'selection') {
+      const existing = recentPlacesLoaded.current ? recentRef.current
+        : recentPlacesMigrationComplete.current ? restoreRecentPlaces(recentRef.current)
+          : migrateRecentPlaces(recentRef.current, historyAnchorPlace.current)
+      const recent = rememberPlace(existing, next)
+      recentRef.current = recent
+      editedRecentPlaces.current = true
+      recentPlacesMigrationComplete.current = true
+      setRecentPlaces(recent)
+      setActiveHistoryId(next.selection === 'gps' ? recent[0]?.id : undefined)
+      acceptedGpsHistory.current = next.selection === 'gps' && recent[0]
+        ? { runtimeId: next.id, historyId: recent[0].id }
+        : null
+    } else if (change === 'refinement') {
+      const historyId = acceptedGpsHistory.current?.runtimeId === next.id ? acceptedGpsHistory.current.historyId : undefined
+      const recent = updateRecentPlace(recentRef.current, next, historyId)
+      if (recent !== recentRef.current && JSON.stringify(recent) !== JSON.stringify(recentRef.current)) {
+        recentRef.current = recent
+        editedRecentPlaces.current = true
+        setRecentPlaces(recent)
+      }
+    }
     previousPlace.current = next
-    recentRef.current = recent
-    editedRecentPlaces.current = true
-    setRecentPlaces(recent)
-    saveSettings({ locationChoice: choice, recentPlaces: recent })
+    saveSettings(patch)
   }, [invalidateFastCache, saveSettings])
   const navigation = useAppNavigation()
   const { open: openImmediately, openPrepared: openScreenPrepared, back: backScreen, home: homeScreen } = navigation
@@ -275,20 +334,30 @@ export function App({
   const settingsButtonRef = useRef<HTMLButtonElement>(null)
   const LoadedReligiousEventScreen = religiousEventScreen
 
-  const closeLocationDialog = useCallback(() => {
-    backScreen()
-  }, [backScreen])
   const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
   const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
-  const { place, source: placeSelectionSource, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
+  const { place, gpsPreview, source: placeSelectionSource, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
+    cancelInteractive: cancelInteractiveGps,
     selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(
     services, locations, onPlaceChosen, persistPlace,
     startupSnapshot ? { place: startupSnapshot.place, source: startupSnapshot.selectionSource } : undefined,
   )
+  const closeLocationDialog = useCallback(() => {
+    cancelInteractiveGps()
+    backScreen()
+  }, [backScreen, cancelInteractiveGps])
   const { reset, resetting } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
+  const locationSelectionVisible = navigation.screen === 'location' || (navigation.screen === 'home' && !place)
+  const previousLocationSelectionVisible = useRef(locationSelectionVisible)
+  useEffect(() => {
+    const wasVisible = previousLocationSelectionVisible.current
+    previousLocationSelectionVisible.current = locationSelectionVisible
+    if (wasVisible && !locationSelectionVisible && navigation.screen !== 'search') cancelInteractiveGps()
+  }, [cancelInteractiveGps, locationSelectionVisible, navigation.screen])
   const resetWithFastCache = useCallback(async () => {
+    pendingPlaceWrite.current = false
     pendingFastIdentityWrite.current = true
     optionalSettingsToken.current += 1
     themePreferenceRevision.current += 1
@@ -333,21 +402,41 @@ export function App({
       setRepositoryState(state)
       setFastCacheReady(!pendingFastIdentityWrite.current)
       restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, selectionMode)
+      if (selectionMode === 'external' || !editedRecentPlaces.current) recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
       previousPlace.current = state.locationChoice
         ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
         : null
+      if (state.recentPlacesMigrated === true) {
+        historyAnchorPlace.current = previousPlace.current
+        legacyHistoryAnchorCaptured.current = true
+      } else if (!legacyHistoryAnchorCaptured.current) {
+        historyAnchorPlace.current = previousPlace.current
+        legacyHistoryAnchorCaptured.current = true
+      }
+      setActiveHistoryId(undefined)
       if (selectionMode === 'external') {
         editedPreferences.current = false
         editedRecentPlaces.current = false
+        recentPlacesLoaded.current = false
+        pendingPlaceWrite.current = false
+        acceptedGpsHistory.current = null
         editedCalendar.current = false
         editedTheme.current = false
         setThemeEditedLocally(false)
         editedFasting.current = false
       }
       if (!editedRecentPlaces.current && state.recentPlaces !== undefined) {
-        const recent = restoreRecentPlaces(state.recentPlaces, previousPlace.current?.id)
+        const recent = state.recentPlacesMigrated
+          ? restoreRecentPlaces(state.recentPlaces)
+          : migrateRecentPlaces(state.recentPlaces, historyAnchorPlace.current)
+        recentPlacesLoaded.current = true
+        recentPlacesMigrationComplete.current = true
         recentRef.current = recent
         setRecentPlaces(recent)
+        if (state.recentPlacesMigrated !== true || JSON.stringify(recent) !== JSON.stringify(state.recentPlaces)) {
+          editedRecentPlaces.current = true
+          saveSettings({ normalizeRecentPlaces: true })
+        }
       }
       if (!editedPreferences.current) setPreferences(state.preferences)
       if (state.languagePreference !== undefined) setLanguagePreference(state.languagePreference)
@@ -368,18 +457,36 @@ export function App({
       setStartupInitialized(true)
       setRemoteSelectionPending(false)
     }
-    const hydrateOptionalSettings = (locationId?: string) => {
+    const hydrateOptionalSettings = () => {
       if (!services.loadOptionalSettings) return
-      retryOptionalSettings.current = () => hydrateOptionalSettings(locationId)
+      retryOptionalSettings.current = () => hydrateOptionalSettings()
       const token = ++optionalSettingsToken.current
       const themeRevision = themePreferenceRevision.current
-      void services.loadOptionalSettings(locationId).then(result => {
+      void services.loadOptionalSettings().then(result => {
         if (!active || token !== optionalSettingsToken.current) return
         if (!result.ok) { setOptionalSettingsError(true); return }
         const value: PrayerRepositoryOptionalSettings = result.value
-        if (!editedRecentPlaces.current) {
-          recentRef.current = value.recentPlaces
-          setRecentPlaces(value.recentPlaces)
+        if (!pendingPlaceWrite.current) {
+          const migrated = value.recentPlacesMigrated
+            ? restoreRecentPlaces(value.recentPlaces)
+            : migrateRecentPlaces(value.recentPlaces, historyAnchorPlace.current)
+          const recent = migrated
+          recentPlacesLoaded.current = true
+          recentPlacesMigrationComplete.current = true
+          recentRef.current = recent
+          setRecentPlaces(recent)
+          const accepted = acceptedGpsHistory.current
+          if (accepted && previousPlace.current?.id === accepted.runtimeId) {
+            const storedEntry = findRecentPlace(recent, previousPlace.current)
+            if (storedEntry) {
+              accepted.historyId = storedEntry.id
+              setActiveHistoryId(storedEntry.id)
+            }
+          }
+          if (!value.recentPlacesMigrated || JSON.stringify(recent) !== JSON.stringify(value.recentPlaces)) {
+            editedRecentPlaces.current = true
+            saveSettings({ normalizeRecentPlaces: true })
+          }
         }
         if (!editedCalendar.current) setCalendarPreferences(restoreCalendarPreferences(value.calendarPreferences))
         if (!editedTheme.current && themeRevision === themePreferenceRevision.current) {
@@ -412,14 +519,17 @@ export function App({
     void initialize().then((result) => {
       if (!active) return
       setStartupInitialized(true)
-      if (startupGeneration !== fastGenerationRef.current || currentFastScheduleGeneration() !== startupGeneration) return
+      if (startupGeneration !== fastGenerationRef.current || currentFastScheduleGeneration() !== startupGeneration) {
+        hydrateOptionalSettings()
+        return
+      }
       if (!result.ok) {
         if (startupSnapshot) setStartupRecoveryError(true)
         else setError(true)
         return
       }
       acceptState(result.value)
-      hydrateOptionalSettings(result.value.locationChoice?.place?.id)
+      hydrateOptionalSettings()
     }).catch(() => {
       if (!active) return
       setStartupInitialized(true)
@@ -455,7 +565,7 @@ export function App({
         }
         acceptState(result.value, false, 'external')
         setSelectionSyncError(false)
-        hydrateOptionalSettings(result.value.locationChoice?.place?.id)
+        hydrateOptionalSettings()
       }).catch(() => {
         if (active && token === selectionSyncToken.current) {
           setSelectionSyncError(true)
@@ -510,7 +620,7 @@ export function App({
       window.removeEventListener('storage', handleStorage)
       void services.invalidateAndDrain()
     }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme])
+  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -721,8 +831,8 @@ export function App({
       {!dialogOpen ? <div
         className="app-background screen-background"
       >
-          {!place ? <LocationScreen initial place={null} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
-            onBack={backScreen} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+          {!place ? <LocationScreen initial place={gpsPreview} activePlace={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
+            onBack={backScreen} onSearch={() => { cancelInteractiveGps(); flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
             gpsState={gpsState} nameLookupState={nameLookupState} onAcceptGps={acceptGps}
             notice={<>{persistenceNotice}{recoveryNotices}</>} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="home-settings" onClick={openSettingsDialog}>{t('settings')}</ActionButton></ScreenFooter>} /> : <ScheduleContent
             schedule={remoteSelectionPending ? null : schedule}
@@ -769,8 +879,8 @@ export function App({
       {navigation.screen === 'religious-events' ? <ReligiousEventsScreen today={today} correction={calendarPreferences.correction}
         hijriSupported={hijriSupported} onOpenEvent={openReligiousEvent} onBack={backScreen} loadError={religiousEventLoadError} /> : null}
 
-      {navigation.screen === 'location' ? <LocationScreen place={place} recentPlaces={recentPlaces} onSelectRecent={selectRecent}
-        onBack={closeLocationDialog} onSearch={() => { flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
+      {navigation.screen === 'location' ? <LocationScreen place={gpsPreview ?? place} activePlace={place} recentPlaces={recentPlaces} {...(activeHistoryId ? { activeHistoryId } : {})} onSelectRecent={selectRecent}
+        onBack={closeLocationDialog} onSearch={() => { cancelInteractiveGps(); flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
         onAcceptGps={acceptGps} gpsState={gpsState} nameLookupState={nameLookupState} currentTime={currentTime} notice={persistenceNotice} /> : null}
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
         onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
