@@ -48,7 +48,8 @@ export function isThemePreferenceCacheEvent(event: StorageEvent): boolean {
 }
 
 export function themeFamilyFromCacheEvent(event: StorageEvent): ThemeFamily | null {
-  if (!isThemePreferenceCacheEvent(event) || event.newValue === null) return null
+  if (!isThemePreferenceCacheEvent(event)) return null
+  if (event.newValue === null) return DEFAULT_THEME_FAMILY
   try {
     const value: unknown = JSON.parse(event.newValue)
     return typeof value === 'object' && value !== null

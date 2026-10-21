@@ -83,6 +83,28 @@ describe('execution gate presentation', () => {
     expect(mocks.createGate).toHaveBeenCalledTimes(3)
   })
 
+  it('updates a blocked screen to the default family after the owner removes its theme cache', async () => {
+    const values = new Map<string, string>([['salah-theme-preference-v1', JSON.stringify({ version: 1, themeFamily: 'seasonal' })]])
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value) },
+      removeItem: (key: string) => { values.delete(key) },
+    }
+    vi.stubGlobal('localStorage', storage)
+    mocks.gate = createGate(Promise.resolve(false))
+    render(<ExecutionGateView />)
+    expect(await screen.findByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+    expect(document.documentElement.dataset.theme).toBe('seasonal')
+
+    storage.removeItem('salah-theme-preference-v1')
+    act(() => {
+      window.dispatchEvent(new StorageEvent('storage', { key: 'salah-theme-preference-v1', newValue: null }))
+    })
+
+    expect(document.documentElement.dataset.theme).toBe('classic')
+    expect(storage.getItem('salah-theme-preference-v1')).toBeNull()
+  })
+
   it('ignores initial ownership completion after a BFCache controller replacement', async () => {
     const lateStart = deferred<boolean>()
     const first = createGate(lateStart.promise)

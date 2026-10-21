@@ -51,6 +51,70 @@ afterEach(() => {
 })
 
 describe('execution gate', () => {
+  it('fails closed when crypto cannot provide an ephemeral context ID', async () => {
+    setup()
+    vi.stubGlobal('crypto', {})
+    const gate = createExecutionGate()
+
+    expect(gate.supported).toBe(false)
+    expect(await gate.start()).toBe(false)
+    expect(gate.hasError()).toBe(true)
+    expect(await gate.requestOwnership()).toBe(false)
+  })
+
+  it('does not treat missing coordination APIs as an available gate', async () => {
+    vi.stubGlobal('BroadcastChannel', undefined)
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined })
+    const gate = createExecutionGate()
+
+    expect(gate.supported).toBe(false)
+    expect(await gate.start()).toBe(false)
+    expect(await gate.requestOwnership()).toBe(false)
+  })
+
+  it('keeps a delayed exclusive acquisition owned once despite overlapping polls', async () => {
+    const lockManager = setup()
+    const baseRequest = lockManager.request.bind(lockManager)
+    let grant!: (lock: Lock | null) => Promise<void>
+    let delayNext = false
+    const request = vi.fn((_name: string, options: LockOptions, callback: (lock: Lock | null) => Promise<void>) => {
+      if (!delayNext || lockManager.held) return baseRequest(_name, options, callback)
+      delayNext = false
+      return new Promise<void>(resolve => {
+        grant = async lock => {
+          lockManager.held = true
+          try { await callback(lock) }
+          finally { lockManager.held = false; resolve() }
+        }
+      })
+    })
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: { request } })
+    const owner = createExecutionGate()
+    const requester = createExecutionGate()
+    expect(await owner.start()).toBe(true)
+
+    delayNext = true
+    const drain = deferred()
+    owner.onTakeover(() => drain.promise)
+    const requestOwner = requester.requestOwnership()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    drain.resolve()
+    await new Promise(resolve => setTimeout(resolve, 300))
+    expect(request.mock.calls.length).toBeGreaterThanOrEqual(2)
+    void grant({ name: 'test-lock', mode: 'exclusive', pending: false } as Lock)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(await requestOwner).toBe(true)
+    expect(lockManager.held).toBe(true)
+    const competitor = createExecutionGate()
+    expect(await competitor.start()).toBe(false)
+
+    await requester.relinquish()
+    expect(lockManager.held).toBe(false)
+    competitor.close()
+    owner.close()
+    requester.close()
+  })
+
   it('distinguishes a lock API failure from another active owner', async () => {
     setup()
     Object.defineProperty(navigator, 'locks', { configurable: true, value: {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_THEME_FAMILY } from '../domain/theme'
-import { clearThemePreferenceCache, readThemePreferenceCache, writeThemePreferenceCache } from './themePreferenceCache'
+import { clearThemePreferenceCache, readThemePreferenceCache, themeFamilyFromCacheEvent, writeThemePreferenceCache } from './themePreferenceCache'
 
 function memoryStorage(): Storage {
   const values = new Map<string, string>()
@@ -51,5 +51,15 @@ describe('synchronous theme preference cache', () => {
     clearThemePreferenceCache()
     expect(readThemePreferenceCache()).toBe(DEFAULT_THEME_FAMILY)
     expect(storage.getItem('other-setting')).toBe('keep')
+  })
+
+  it('maps a preference removal event to the default family without writing storage', () => {
+    const storage = memoryStorage()
+    storage.setItem('salah-theme-preference-v1', JSON.stringify({ version: 1, themeFamily: 'seasonal' }))
+    vi.stubGlobal('localStorage', storage)
+    const event = new StorageEvent('storage', { key: 'salah-theme-preference-v1', oldValue: storage.getItem('salah-theme-preference-v1'), newValue: null })
+
+    expect(themeFamilyFromCacheEvent(event)).toBe(DEFAULT_THEME_FAMILY)
+    expect(storage.getItem('salah-theme-preference-v1')).not.toBeNull()
   })
 })

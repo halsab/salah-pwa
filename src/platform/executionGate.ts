@@ -10,6 +10,12 @@ export function setExecutionQuiescence(operation: Promise<unknown> | (() => Prom
 
 export function waitForExecutionQuiescence() { return quiescence() }
 
+function createEphemeralId(): string | null {
+  try {
+    return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : null
+  } catch { return null }
+}
+
 type Message =
   | { version: 1; type: 'probe'; requestId: string; requesterId: string }
   | { version: 1; type: 'owner'; requestId: string; ownerId: string }
@@ -38,14 +44,16 @@ export function createExecutionGate(): ExecutionGate {
     // Без канала вкладка не может безопасно запросить явную передачу.
   }
 
-  const contextId = crypto.randomUUID()
+  const contextId = createEphemeralId()
+  if (!contextId) coordinationError = true
   let stopped = false
   let suspended = false
   let held = false
   let serving = false
   let releaseLock: (() => void) | null = null
+  let lockOwner: symbol | null = null
   let lockTask: Promise<void> | null = null
-  let acquisition: Promise<boolean> | null = null
+  let acquisition: Promise<{ acquired: boolean; owner?: symbol }> | null = null
   let request: Promise<boolean> | null = null
   let takeover: Promise<void> | null = null
   let takeoverRequestId: string | null = null
@@ -60,21 +68,22 @@ export function createExecutionGate(): ExecutionGate {
   const isSuspended = () => suspended
   const shouldClose = () => closing
 
-  const release = () => {
+  const release = (owner: symbol | null = lockOwner) => {
+    if (!owner || lockOwner !== owner) return
     serving = false
     releaseLock?.()
   }
 
-  const acquire = (isCurrent: () => boolean = () => !stopped): Promise<boolean> => {
-    if (stopped || !locks || !channel) return Promise.resolve(false)
-    if (held) return Promise.resolve(serving)
+  const acquire = (isCurrent: () => boolean = () => !stopped): Promise<{ acquired: boolean; owner?: symbol }> => {
+    if (stopped || !locks || !channel || !contextId) return Promise.resolve({ acquired: false })
+    if (held) return Promise.resolve(lockOwner ? { acquired: serving, owner: lockOwner } : { acquired: serving })
     if (acquisition) return acquisition
 
-    let finish!: (acquired: boolean) => void
-    const result = new Promise<boolean>(resolve => { finish = resolve })
+    let finish!: (acquired: { acquired: boolean; owner?: symbol }) => void
+    const result = new Promise<{ acquired: boolean; owner?: symbol }>(resolve => { finish = resolve })
     acquisition = result
     let settled = false
-    const settle = (value: boolean) => {
+    const settle = (value: { acquired: boolean; owner?: symbol }) => {
       if (settled) return
       settled = true
       if (acquisition === result) acquisition = null
@@ -84,23 +93,28 @@ export function createExecutionGate(): ExecutionGate {
     try {
       const task = locks.request(LOCK_NAME, { mode: 'exclusive', ifAvailable: true }, async lock => {
         if (!lock || stopped || !isCurrent()) {
-          settle(false)
+          settle({ acquired: false })
           return
         }
 
         let releaseHeld!: () => void
         const heldLock = new Promise<void>(resolve => { releaseHeld = resolve })
+        const owner = Symbol('execution-lock-owner')
         held = true
+        lockOwner = owner
         releaseLock = releaseHeld
-        settle(true)
+        settle({ acquired: true, owner })
         await heldLock
-        held = false
-        releaseLock = null
+        if (lockOwner === owner) {
+          held = false
+          lockOwner = null
+          releaseLock = null
+        }
       })
-      lockTask = task.then(() => undefined, () => { coordinationError = true; settle(false) })
+      lockTask = task.then(() => undefined, () => { coordinationError = true; settle({ acquired: false }) })
     } catch {
       coordinationError = true
-      settle(false)
+      settle({ acquired: false })
     }
     return result
   }
@@ -116,7 +130,7 @@ export function createExecutionGate(): ExecutionGate {
 
   if (channel) channel.onmessage = event => {
     const message = event.data as Partial<Message> | null
-    if (!message || message.version !== 1 || stopped) return
+    if (!message || message.version !== 1 || stopped || !contextId) return
 
     if (message.type === 'probe' && typeof message.requestId === 'string'
       && typeof message.requesterId === 'string' && held) {
@@ -169,20 +183,20 @@ export function createExecutionGate(): ExecutionGate {
   }
 
   return {
-    supported: Boolean(locks && channel),
+    supported: Boolean(locks && channel && contextId),
     hasError: () => coordinationError,
     start: async () => {
       if (suspended) return false
       if (held) return serving
       const acquired = await acquire(() => !stopped && !isSuspended())
-      if (!acquired || stopped || isSuspended()) return false
+      if (!acquired.acquired || stopped || isSuspended()) return false
       coordinationError = false
       serving = true
       return true
     },
     requestOwnership: () => {
       if (request) return request
-      if (stopped || !locks || !channel) return Promise.resolve(false)
+      if (stopped || !locks || !channel || !contextId) return Promise.resolve(false)
       suspended = false
       if (held && !serving) {
         const recovery = (async () => {
@@ -192,7 +206,7 @@ export function createExecutionGate(): ExecutionGate {
             release()
             await lockTask
             const acquired = await acquire(() => !isStopped() && !isSuspended())
-            if (acquired && isHeld() && !isStopped() && !isSuspended()) {
+            if (acquired.acquired && isHeld() && !isStopped() && !isSuspended()) {
               coordinationError = false
               serving = true
               return true
@@ -210,7 +224,12 @@ export function createExecutionGate(): ExecutionGate {
       let resolveRequest!: (value: boolean) => void
       const currentRequest = new Promise<boolean>(resolve => { resolveRequest = resolve })
       request = currentRequest
-      const requestId = `${contextId}:${crypto.randomUUID()}`
+      const uniqueRequestId = createEphemeralId()
+      if (!uniqueRequestId) {
+        coordinationError = true
+        return Promise.resolve(false)
+      }
+      const requestId = `${contextId}:${uniqueRequestId}`
       activeRequestId = requestId
       targetOwnerId = null
       refusedRequestId = null
@@ -232,10 +251,10 @@ export function createExecutionGate(): ExecutionGate {
         if (!isRequestActive()) return
         const acquired = await acquire(isRequestActive)
         if (!isRequestActive()) {
-          if (acquired) release()
+          if (acquired.acquired && !serving) release(acquired.owner ?? null)
           return
         }
-        if (acquired && held) {
+        if (acquired.acquired && held) {
           coordinationError = false
           serving = true
           finish(true)
