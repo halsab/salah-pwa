@@ -33,18 +33,29 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
       if (event.change !== 'selection' || event.selectionOrder !== undefined || scheduledEvents.has(event)) continue
       scheduledEvents.add(event)
       reservationQueue = reservationQueue.then(async () => {
+        let reservingEvent = event
         try {
-          if (!latest.placeEvents?.includes(event)) return
+          if (!latest.placeEvents?.includes(reservingEvent)) return
+          if (reservingEvent.selectionReservationRetried && reservingEvent.selectionReservationBaseline === 'unavailable') {
+            if (!readCommittedSelectionOrder) throw new Error('Committed selection order is unavailable')
+            const baseline = (await readCommittedSelectionOrder()) ?? null
+            const rebasedEvent = { ...reservingEvent, selectionReservationBaseline: baseline }
+            latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === reservingEvent ? rebasedEvent : current) }
+            reservingEvent = rebasedEvent
+          }
+          if (!latest.placeEvents?.includes(reservingEvent)) return
           const order = reserveSelectionOrder ? await reserveSelectionOrder() : ++fallbackSelectionOrder
-          const ordered = { ...event, selectionOrder: order }
-          latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === event ? ordered : current) }
+          const ordered = { ...reservingEvent, selectionOrder: order }
+          latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current => current === reservingEvent ? ordered : current) }
         } catch (error) {
           reservationFailed = true
-          const baseline = readCommittedSelectionOrder
-            ? await readCommittedSelectionOrder().then(value => value ?? null).catch(() => 'unavailable' as const)
-            : undefined
+          let baseline: number | null | 'unavailable' | undefined
+          if (readCommittedSelectionOrder) {
+            try { baseline = (await readCommittedSelectionOrder()) ?? null }
+            catch { baseline = 'unavailable' }
+          }
           scheduledEvents.clear()
-          if (latest.placeEvents?.includes(event)) {
+          if (latest.placeEvents?.includes(reservingEvent)) {
             latest = { ...latest, placeEvents: (latest.placeEvents ?? []).map(current =>
               current.change === 'selection' && current.selectionOrder === undefined
                 ? { ...current, selectionReservationRetried: true,
@@ -77,7 +88,7 @@ export function createSettingsPersistence(write: SaveSettings, reserveSelectionO
     queue = queue.then(async () => {
       await reservationQueue.catch(() => undefined)
       if (!isLatest()) return
-      if (latest.placeEvents?.some(event => event.change === 'selection' && event.selectionOrder === undefined)) {
+      if (reservationFailed || latest.placeEvents?.some(event => event.change === 'selection' && event.selectionOrder === undefined)) {
         notify('failed')
         return
       }

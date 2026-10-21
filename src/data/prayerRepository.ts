@@ -74,7 +74,10 @@ function reconcilePlaceHistory(stored: { locationChoice: unknown; recentPlaces: 
         if (event.selectionReservationRetried && (
           retryBaseline === 'unavailable'
           || retryBaseline !== undefined && retryBaseline !== (initialCommittedPlaceSelectionOrder ?? null)
-          || retryBaseline === undefined && event.expectedPlaceId !== undefined && (active?.id ?? null) !== event.expectedPlaceId
+          || event.expectedPlaceId !== undefined && (active?.id ?? null) !== event.expectedPlaceId
+          // Без исходного predecessor повтор безуспешного резервирования нельзя
+          // отличить от нового намерения после чужого commit.
+          || event.expectedPlaceId === undefined && retryBaseline !== null
         )) continue
         // Повтор уже зафиксированного выбора не должен менять recency или GPS snapshot.
         const alreadyApplied = active?.id === next.id && JSON.stringify(active) === JSON.stringify(next)
@@ -441,9 +444,12 @@ export function createPrayerRepository(operations: PrayerRepositoryOperations = 
       if (patch.recentPlaces && (!Array.isArray(patch.recentPlaces) || restoreRecentPlaces(patch.recentPlaces).length !== patch.recentPlaces.length)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.languagePreference && restoreLanguagePreference(patch.languagePreference) !== patch.languagePreference) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
       if (patch.fastingMode && !isFastingModePreferences(patch.fastingMode)) return Promise.resolve(failure({ kind: 'data', reason: 'invalid' }))
+      let selectionAccepted = true
       return saveSettings(patch, isCurrent, generation, reconcilePlaceHistory, outcome => {
+        selectionAccepted = outcome.selectionAccepted
         if (patch.placeEvents?.length) onPlaceEventsOutcome?.(outcome)
-      })
+      }).then(result => result.ok && patch.placeEvents?.some(event => event.change === 'selection') && !selectionAccepted
+        ? failure({ kind: 'data', reason: 'superseded' }) : result)
     },
   }
 }

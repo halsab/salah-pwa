@@ -1652,6 +1652,8 @@ describe('Salah', () => {
     const tabA = createPrayerRepository()
     const tabB = createPrayerRepository()
     const startup = deferred<Awaited<ReturnType<NonNullable<AppServices['initializeStartup']>>>>()
+    const baselineStarted = deferred<undefined>()
+    const baselineRead = deferred<undefined>()
     const remote = createOfficialPlace(required(initializedState.meta.locations[1]), 2)
     const remoteChoice = { mode: 'official' as const, locationId: required(initializedState.meta.locations[1]).id,
       source: 'manual' as const, place: remote }
@@ -1669,7 +1671,11 @@ describe('Salah', () => {
         if (failReservation) { failReservation = false; throw new Error('temporary reservation failure') }
         return tabA.reservePlaceSelectionOrder()
       },
-      getCommittedPlaceSelectionOrder: tabA.getCommittedPlaceSelectionOrder,
+      getCommittedPlaceSelectionOrder: async () => {
+        baselineStarted.resolve(undefined)
+        await baselineRead.promise
+        return tabA.getCommittedPlaceSelectionOrder()
+      },
       saveSettings: (patch, isGenerationCurrent, onOutcome) => tabA.saveSettings(patch, isGenerationCurrent, onOutcome),
       loadOptionalSettings: loadPrayerRepositoryOptionalSettings,
     })
@@ -1679,11 +1685,13 @@ describe('Salah', () => {
     await userEvent.type(screen.getByRole('searchbox'), 'Москва')
     await userEvent.click(await screen.findByRole('button', { name: /Москва/ }))
     expect(await screen.findByRole('button', { name: 'Москва' })).toBeVisible()
-    await screen.findByRole('button', { name: 'Повторить' })
+    await baselineStarted.promise
 
     const winnerOrder = await tabB.reservePlaceSelectionOrder()
     await tabB.saveSettings({ locationChoice: remoteChoice, placeEvents: [{ change: 'selection', choice: remoteChoice,
       selectionOrder: winnerOrder }] })
+    baselineRead.resolve(undefined)
+    await screen.findByRole('button', { name: 'Повторить' })
     await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
 
     expect(await screen.findByRole('button', { name: 'Набережные Челны' })).toBeVisible()

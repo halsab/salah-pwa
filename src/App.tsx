@@ -186,18 +186,18 @@ export function App({
     const result = await services.saveSettings(patch, isGenerationCurrent, outcome => {
       selectionResult.accepted = outcome.selectionAccepted
     })
+    const generationIsCurrent = isGenerationCurrent?.() ?? true
+    const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
+    if (patch.placeEvents?.some(event => event.change === 'selection') && !selectionResult.accepted
+      && generationIsCurrent && locationIsCurrent) {
+      pendingPlaceWrite.current = false
+      pendingFastIdentityWrite.current = false
+      setFastCacheReady(false)
+      setRemoteSelectionPending(true)
+      retrySelectionSync.current()
+      return result.ok ? failure({ kind: 'data', reason: 'superseded' }) : result
+    }
     if (result.ok) {
-      const generationIsCurrent = isGenerationCurrent?.() ?? true
-      const locationIsCurrent = isLocationCurrent?.() ?? isLatest?.() ?? true
-      if (patch.placeEvents?.some(event => event.change === 'selection') && !selectionResult.accepted
-        && generationIsCurrent && locationIsCurrent) {
-        pendingPlaceWrite.current = false
-        pendingFastIdentityWrite.current = false
-        setFastCacheReady(false)
-        setRemoteSelectionPending(true)
-        retrySelectionSync.current()
-        return result
-      }
       const currentIdentityCommitted = Boolean((patch.locationChoice || patch.sourcePreferences)
         && generationIsCurrent && locationIsCurrent)
       if (patch.placeEvents?.length && generationIsCurrent && locationIsCurrent) {
