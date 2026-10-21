@@ -67,6 +67,7 @@ import { restoreThemeFamily, type ThemeFamily } from './domain/theme'
 import { applyTheme, resolveTheme } from './ui/theme'
 import { clearThemePreferenceCache, isThemeFamily, isThemePreferenceCacheEvent, themeFamilyFromCacheEvent, readThemePreferenceCache, writeThemePreferenceCache } from './ui/themePreferenceCache'
 import { useSystemAppearance } from './ui/useSystemAppearance'
+import { setExecutionQuiescence } from './platform/executionGate'
 import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
 import { getDatasetRevision, scheduleContextKey } from './domain/scheduleContext'
@@ -618,9 +619,10 @@ export function App({
       window.removeEventListener('online', refresh)
       window.removeEventListener('pageshow', refresh)
       window.removeEventListener('storage', handleStorage)
-      void services.invalidateAndDrain()
+      services.cities.cancelPending?.()
+      setExecutionQuiescence(Promise.all([services.invalidateAndDrain(), invalidateSaves()]))
     }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings])
+  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings, invalidateSaves])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()

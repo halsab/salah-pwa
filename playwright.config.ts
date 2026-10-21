@@ -26,6 +26,7 @@ export default defineConfig({
         '**/privacy.spec.ts',
         '**/location-selection.spec.ts',
         '**/security.spec.ts',
+        '**/execution-gate.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'] },
     },

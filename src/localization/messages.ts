@@ -20,6 +20,11 @@ type FastingEndpointsParams = { first: string; second: string }
 export const RU_MESSAGES = Object.freeze({
   screenLoadFailed: 'Не удалось открыть экран. Перезапустите приложение и попробуйте снова.',
   appLoading: 'Открываем расписание…',
+  executionGateTitle: 'Приложение уже открыто',
+  executionGateDescription: 'Salah работает в другой вкладке. Вы можете продолжить здесь.',
+  executionGateContinue: 'Продолжить здесь',
+  executionGateSwitching: 'Переключаем…',
+  executionGateFailure: 'Не удалось переключиться. Попробуйте ещё раз.',
   appLoadError: 'Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.',
   loading: 'Загрузка',
   retry: 'Повторить',
