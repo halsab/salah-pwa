@@ -173,16 +173,20 @@ test('GPS refinement retains its snapshot identity across tab changes and offlin
   const otherTab = await context.newPage()
   await otherTab.clock.setFixedTime(new Date(capturedAt + 1000))
   await otherTab.goto('./')
+  await expect(otherTab.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
+  await otherTab.getByRole('button', { name: 'Продолжить здесь' }).click()
+  await expect(otherTab.locator('[data-execution-owner]')).toBeVisible()
   await choosePlace(otherTab, 'Москва', 'Москва, Москва, Россия')
-  await expect(page.locator('#home-location')).toHaveText('Москва')
+  await expect(page.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   const latestHistory = await readSavedSetting(otherTab, 'recentPlaces')
   await page.evaluate(timestamp => {
     const target = window as Window & { __gpsCallbacks: Array<(position: GeolocationPosition) => void> }
     target.__gpsCallbacks[3]({ coords: { latitude: 42, longitude: 30, accuracy: 10, altitude: null, altitudeAccuracy: null, heading: null, speed: null }, timestamp })
   }, capturedAt + 3)
-  await expect(page.locator('#home-location')).toHaveText('Москва')
-  await expect.poll(() => readSavedSetting(page, 'recentPlaces')).toEqual(latestHistory)
+  await expect.poll(() => readSavedSetting(otherTab, 'recentPlaces')).toEqual(latestHistory)
   await otherTab.close()
+  await page.getByRole('button', { name: 'Продолжить здесь' }).click()
+  await expect(page.locator('[data-execution-owner]')).toBeVisible()
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await context.setOffline(true)
   try {

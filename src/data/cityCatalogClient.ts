@@ -81,6 +81,7 @@ function request<T>(command: CityWorkerCommand): Promise<Result<T, DataFailure>>
 }
 
 export const cityCatalogService: CityCatalogService = {
+  cancelPending: failWorker,
   load: () => {
     if (catalogPromise) return catalogPromise
 

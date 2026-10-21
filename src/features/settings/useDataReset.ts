@@ -11,6 +11,7 @@ export function useDataReset({ invalidateLocation, invalidateSaves, invalidateRe
   getGeneration: () => Promise<number>
 }) {
   const resetting = useRef(false)
+  const pendingReset = useRef<Promise<boolean> | null>(null)
   const channel = useRef<BroadcastChannel | null>(null)
   useEffect(() => {
     let active = true
@@ -35,19 +36,37 @@ export function useDataReset({ invalidateLocation, invalidateSaves, invalidateRe
     document.addEventListener('visibilitychange', check)
     return () => { active = false; connection?.close(); window.removeEventListener('focus', check); window.removeEventListener('pageshow', check); document.removeEventListener('visibilitychange', check) }
   }, [getGeneration, invalidateLocation, invalidateRepository, invalidateSaves])
-  const reset = useCallback(async () => {
+  const reset = useCallback(async (onSettled?: (cleared: boolean) => void) => {
     if (resetting.current) return false
     resetting.current = true
     invalidateLocation()
-    try {
-      await Promise.all([invalidateSaves(), invalidateRepository()])
-      const result = await clear()
+    const operation = (async () => {
+      let result: Awaited<ReturnType<typeof clear>>
+      try {
+        await Promise.all([invalidateSaves(), invalidateRepository()])
+        result = await clear()
+      } catch {
+        resetting.current = false
+        onSettled?.(false)
+        return false
+      }
+      onSettled?.(result.ok)
       if (!result.ok) { resetting.current = false; return false }
-      channel.current?.postMessage('reset')
-      // Перезагрузка освобождает все ссылки React и мемоизированные данные; оболочка уже доступна офлайн.
-      window.location.reload()
-      return true
-    } catch { resetting.current = false; return false }
+      try {
+        channel.current?.postMessage('reset')
+        // Перезагрузка освобождает все ссылки React и мемоизированные данные; оболочка уже доступна офлайн.
+        window.location.reload()
+        return true
+      } catch { resetting.current = false; return false }
+    })()
+    pendingReset.current = operation
+    try { return await operation }
+    finally { if (pendingReset.current === operation) pendingReset.current = null }
   }, [clear, invalidateLocation, invalidateRepository, invalidateSaves])
-  return { reset, resetting }
+  const drain = useCallback(async () => {
+    const operation = pendingReset.current
+    if (operation) await operation
+  }, [])
+  const hasPendingReset = useCallback(() => pendingReset.current !== null, [])
+  return { reset, resetting, drain, hasPendingReset }
 }

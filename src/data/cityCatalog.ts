@@ -24,6 +24,7 @@ export interface CityCatalogService {
     maxDistanceKm: number,
     localOnly?: boolean,
   ) => Promise<Result<City | null, DataFailure>>
+  cancelPending?: () => void
 }
 
 export type CityWorkerCommand =

@@ -1,6 +1,7 @@
 @import './theme.css';
 
 html, body { background: var(--app-shell-background); color: var(--text-primary); }
+.execution-owner { display: contents; }
 .app-bottom-surface { display: none; }
 @media (display-mode: browser) {
   /* Safari продолжает цвет fixed-элемента под нижнюю панель независимо от фона страницы. */

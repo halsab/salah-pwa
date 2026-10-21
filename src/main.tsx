@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 
-import { App } from './App'
+import { ExecutionGateView } from './platform/ExecutionGateView'
 import { createServiceWorkerReloadGuard } from './platform/serviceWorkerUpdate'
 import './styles.css'
 import './ui/screen.css'
@@ -24,6 +24,6 @@ window.addEventListener('pointerdown', () => { inputRoot.dataset.input = 'pointe
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ExecutionGateView />
   </StrictMode>,
 )

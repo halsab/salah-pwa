@@ -320,6 +320,24 @@ describe('Salah', () => {
     expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
   })
 
+  it('waits for in-flight repository work to drain before retry initialization', async () => {
+    const drain = deferred<undefined>()
+    const invalidateAndDrain = vi.fn(() => drain.promise)
+    const initialize = vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' }))
+      .mockResolvedValue(initialized())
+    const user = userEvent.setup()
+    render(<App services={createServices({ initialize, invalidateAndDrain })} />)
+
+    await screen.findByRole('alert')
+    expect(initialize).toHaveBeenCalledOnce()
+    await user.click(screen.getByRole('button', { name: 'Попробовать снова' }))
+    await waitFor(() => expect(invalidateAndDrain).toHaveBeenCalledOnce())
+    expect(initialize).toHaveBeenCalledOnce()
+
+    await act(async () => { drain.resolve(undefined); await drain.promise })
+    await waitFor(() => expect(initialize).toHaveBeenCalledTimes(2))
+  })
+
   it.each([false, true])('сводит внешнее место, активный маркер и расписание вместе (snapshot=%s)', async withSnapshot => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)
