@@ -347,26 +347,35 @@ export function App({
     cancelInteractiveGps()
     backScreen()
   }, [backScreen, cancelInteractiveGps])
-  const { reset, resetting, drain: drainReset } = useDataReset({ invalidateLocation, invalidateSaves,
+  const { reset, resetting, drain: drainReset, hasPendingReset } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData,
     getGeneration: services.getDataGeneration ?? prayerRepository.getDataGeneration })
   const quiescenceOperation = useRef<() => Promise<void>>(async () => {})
+  const quiescenceInFlight = useRef<Promise<void> | null>(null)
+  const initializationDrain = useRef<Promise<void> | null>(null)
   useEffect(() => {
     quiescenceOperation.current = () => {
+      if (quiescenceInFlight.current) return quiescenceInFlight.current
       const failures: unknown[] = []
       try { services.cities.cancelPending?.() }
       catch (error) { failures.push(error) }
-      const drains = [
+      const drains = hasPendingReset() ? [() => drainReset()] : [
         () => services.invalidateAndDrain(),
         () => invalidateSaves(),
         () => drainReset(),
       ]
-      return Promise.allSettled(drains.map(drain => Promise.resolve().then(drain))).then(results => {
+      const operation = Promise.allSettled(drains.map(drain => Promise.resolve().then(drain))).then(results => {
         for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
-        if (failures.length) throw new AggregateError(failures, 'Не удалось безопасно завершить работу вкладки')
+        if (failures.length) throw new AggregateError(failures)
       })
+      quiescenceInFlight.current = operation
+      void operation.then(
+        () => { if (quiescenceInFlight.current === operation) quiescenceInFlight.current = null },
+        () => { if (quiescenceInFlight.current === operation) quiescenceInFlight.current = null },
+      )
+      return operation
     }
-  }, [services, invalidateSaves, drainReset])
+  }, [services, invalidateSaves, drainReset, hasPendingReset])
   useEffect(() => () => { setExecutionQuiescence(() => quiescenceOperation.current()) }, [])
   const locationSelectionVisible = navigation.screen === 'location' || (navigation.screen === 'home' && !place)
   const previousLocationSelectionVisible = useRef(locationSelectionVisible)
@@ -400,7 +409,6 @@ export function App({
       }
     })
   }, [invalidateFastCache, reset])
-  useEffect(() => () => { void invalidateSaves() }, [invalidateSaves])
   useEffect(() => {
     sessionHasPlace.current = Boolean(place)
   }, [place])
@@ -524,20 +532,26 @@ export function App({
         if (active && token === optionalSettingsToken.current) setOptionalSettingsError(true)
       })
     }
-    const unsubscribe = services.subscribe(snapshot => {
-      if (!active) return
-      const nextRevision = snapshot.meta ? getDatasetRevision(snapshot.meta) : null
-      if (nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
-        repositoryRevision.current = nextRevision
-        invalidateFastCache()
-        notifyFastScheduleSelectionChanged()
-      }
-      setRepositoryState(snapshot)
-    })
-    const refresh = () => { if (sessionHasPlace.current && !resetting.current) void services.refresh() }
+    let unsubscribe = () => {}
+    let ready = false
+    const startupBarrier = initializationDrain.current
+    const subscribe = () => {
+      unsubscribe = services.subscribe(snapshot => {
+        if (!active) return
+        const nextRevision = snapshot.meta ? getDatasetRevision(snapshot.meta) : null
+        if (nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
+          repositoryRevision.current = nextRevision
+          invalidateFastCache()
+          notifyFastScheduleSelectionChanged()
+        }
+        setRepositoryState(snapshot)
+      })
+    }
+    const refresh = () => { if (ready && sessionHasPlace.current && !resetting.current) void services.refresh() }
     const initialize = services.initializeStartup ?? services.initialize
     const startupGeneration = fastGenerationRef.current
-    void initialize().then((result) => {
+    const acceptInitialization = (result: Awaited<ReturnType<typeof initialize>> | null) => {
+      if (!result) return
       if (!active) return
       setStartupInitialized(true)
       if (startupGeneration !== fastGenerationRef.current || currentFastScheduleGeneration() !== startupGeneration) {
@@ -551,16 +565,26 @@ export function App({
       }
       acceptState(result.value)
       hydrateOptionalSettings()
-    }).catch(() => {
+    }
+    const failInitialization = () => {
       if (!active) return
       setStartupInitialized(true)
       if (startupGeneration !== fastGenerationRef.current || currentFastScheduleGeneration() !== startupGeneration) return
       if (startupSnapshot) setStartupRecoveryError(true)
       else setError(true)
-    })
+    }
+    const initializeCurrent = () => {
+      if (!active) return
+      ready = true
+      subscribe()
+      return initialize().then(acceptInitialization).catch(failInitialization)
+    }
+    if (startupBarrier) void startupBarrier.then(initializeCurrent).catch(failInitialization)
+    else void initializeCurrent()
     let remoteSyncInProgress = false
     let remoteSyncRequested = false
     const reconcileSelection = () => {
+      if (!ready) return
       if (remoteSyncInProgress) {
         remoteSyncRequested = true
         return
@@ -602,6 +626,7 @@ export function App({
     }
     retrySelectionSync.current = reconcileSelection
     const handleStorage = (event: StorageEvent) => {
+      if (!ready) return
       if (isThemePreferenceCacheEvent(event)) {
         const nextThemeFamily = themeFamilyFromCacheEvent(event)
         if (nextThemeFamily) acceptRemoteTheme(nextThemeFamily)
@@ -633,6 +658,8 @@ export function App({
     window.addEventListener('storage', handleStorage)
     return () => {
       active = false
+      const drain = quiescenceOperation.current()
+      initializationDrain.current = drain
       retrySelectionSync.current = () => {}
       retryOptionalSettings.current = () => {}
       unsubscribe()
@@ -640,7 +667,7 @@ export function App({
       window.removeEventListener('pageshow', refresh)
       window.removeEventListener('storage', handleStorage)
     }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings, invalidateSaves])
+  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, rebaseSettings, acceptRemoteTheme, saveSettings])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()

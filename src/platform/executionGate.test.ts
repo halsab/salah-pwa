@@ -51,6 +51,19 @@ afterEach(() => {
 })
 
 describe('execution gate', () => {
+  it('distinguishes a lock API failure from another active owner', async () => {
+    setup()
+    Object.defineProperty(navigator, 'locks', { configurable: true, value: {
+      request: vi.fn(() => Promise.reject(new Error('lock access denied'))),
+    } })
+    const gate = createExecutionGate()
+
+    expect(await gate.start()).toBe(false)
+    expect(gate.supported).toBe(true)
+    expect(gate.hasError()).toBe(true)
+    gate.close()
+  })
+
   it('releases a lock granted after the gate was disposed', async () => {
     const locks = setup()
     let grant!: (lock: Lock | null) => Promise<void>

@@ -25,6 +25,7 @@ describe('useDataReset', () => {
     let settledCallback = false
     act(() => { reset = result.current.reset(cleared => { settledCallback = cleared }) })
     await vi.waitFor(() => expect(clear).toHaveBeenCalledOnce())
+    expect(result.current.hasPendingReset()).toBe(true)
     let quiesced = false
     const quiescence = result.current.drain().then(() => { quiesced = true })
     await Promise.resolve()
@@ -35,5 +36,6 @@ describe('useDataReset', () => {
     expect(await reset).toBe(true)
     expect(quiesced).toBe(true)
     expect(settledCallback).toBe(true)
+    expect(result.current.hasPendingReset()).toBe(false)
   })
 })

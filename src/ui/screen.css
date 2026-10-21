@@ -1,6 +1,7 @@
 @import './theme.css';
 
 html, body { background: var(--app-shell-background); color: var(--text-primary); }
+.execution-owner { display: contents; }
 .app-bottom-surface { display: none; }
 @media (display-mode: browser) {
   /* Safari продолжает цвет fixed-элемента под нижнюю панель независимо от фона страницы. */
@@ -23,18 +24,6 @@ button, input, select, textarea { font-family: inherit; letter-spacing: 0; }
   overflow: hidden;
   background: var(--app-shell-background);
 }
-.execution-gate {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: var(--app-shell-background);
-  color: var(--text-primary);
-}
-.execution-gate__content { width: min(100%, 420px); display: grid; gap: 24px; text-align: center; }
-.execution-gate__content h1 { margin: 0; font: var(--font-body); font-size: 1.25rem; font-weight: 400; }
-.execution-gate__content p { margin: 0; color: var(--text-secondary); line-height: 1.5; }
 .app-screen {
   --screen-inset-left: max(var(--content-inset), env(safe-area-inset-left));
   --screen-inset-right: max(var(--content-inset), env(safe-area-inset-right));

@@ -67,5 +67,6 @@ export function useDataReset({ invalidateLocation, invalidateSaves, invalidateRe
     const operation = pendingReset.current
     if (operation) await operation
   }, [])
-  return { reset, resetting, drain }
+  const hasPendingReset = useCallback(() => pendingReset.current !== null, [])
+  return { reset, resetting, drain, hasPendingReset }
 }

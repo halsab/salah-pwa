@@ -25,6 +25,8 @@ export const RU_MESSAGES = Object.freeze({
   executionGateContinue: 'Продолжить здесь',
   executionGateSwitching: 'Переключаем…',
   executionGateFailure: 'Не удалось переключиться. Попробуйте ещё раз.',
+  executionGateUnsupported: 'Для безопасной работы требуется поддержка блокировки вкладок. Повторите попытку.',
+  executionGateError: 'Не удалось проверить безопасное владение вкладкой. Повторите попытку.',
   appLoadError: 'Не удалось открыть расписание. Проверьте соединение и попробуйте ещё раз.',
   loading: 'Загрузка',
   retry: 'Повторить',

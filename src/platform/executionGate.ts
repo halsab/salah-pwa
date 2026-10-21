@@ -18,6 +18,7 @@ type Message =
 
 export type ExecutionGate = {
   supported: boolean
+  hasError: () => boolean
   start: () => Promise<boolean>
   requestOwnership: () => Promise<boolean>
   close: () => void
@@ -26,7 +27,10 @@ export type ExecutionGate = {
 }
 
 export function createExecutionGate(): ExecutionGate {
-  const locks = (navigator as Omit<Navigator, 'locks'> & { locks?: LockManager }).locks
+  let coordinationError = false
+  let locks: LockManager | undefined
+  try { locks = (navigator as Omit<Navigator, 'locks'> & { locks?: LockManager }).locks }
+  catch { coordinationError = true }
   let channel: BroadcastChannel | null = null
   try {
     if (typeof BroadcastChannel !== 'undefined') channel = new BroadcastChannel(CHANNEL_NAME)
@@ -91,8 +95,9 @@ export function createExecutionGate(): ExecutionGate {
         await heldLock
         held = false
         releaseLock = null
-      }).catch(() => settle(false))
+      }).catch(() => { coordinationError = true; settle(false) })
     } catch {
+      coordinationError = true
       settle(false)
     }
     return result
@@ -162,6 +167,7 @@ export function createExecutionGate(): ExecutionGate {
 
   return {
     supported: Boolean(locks && channel),
+    hasError: () => coordinationError,
     start: async () => {
       if (suspended) return false
       if (held) return serving

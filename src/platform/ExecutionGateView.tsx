@@ -1,13 +1,16 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
+import { App } from '../App'
 import { useLocalization } from '../localization'
-import { ActionButton } from '../ui/controls'
+import { AppShell } from '../ui/AppShell'
+import { ActionButton, ScreenFooter } from '../ui/controls'
+import { Screen } from '../ui/Screen'
 import { isThemeFamily, readThemePreferenceCache, themeFamilyFromCacheEvent } from '../ui/themePreferenceCache'
 import { applyTheme, resolveTheme } from '../ui/theme'
 import { useSystemAppearance } from '../ui/useSystemAppearance'
 import { createExecutionGate, waitForExecutionQuiescence } from './executionGate'
 
-const App = lazy(() => import('../App').then(module => ({ default: module.App })))
+type GatePhase = 'resolving' | 'owned' | 'blocked' | 'error'
 
 function currentCivilDate() {
   const now = new Date()
@@ -15,7 +18,8 @@ function currentCivilDate() {
 }
 
 export function ExecutionGateView() {
-  const [active, setActive] = useState(false)
+  const [phase, setPhase] = useState<GatePhase>('resolving')
+  const [failureKind, setFailureKind] = useState<'unsupported' | 'coordination' | null>(null)
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const gate = useRef<ReturnType<typeof createExecutionGate> | null>(null)
@@ -51,30 +55,56 @@ export function ExecutionGateView() {
   }, [])
 
   useLayoutEffect(() => {
-    if (active) return
+    if (phase === 'owned') return
     applyTheme(resolveTheme(themeFamily, civilDate, systemTone))
-  }, [active, civilDate, systemTone, themeFamily])
+  }, [civilDate, phase, systemTone, themeFamily])
 
   useEffect(() => {
     const owner = createExecutionGate()
     gate.current = owner
     owner.onTakeover(async () => {
-      flushSync(() => { setActive(false); setBusy(true) })
+      flushSync(() => { setPhase('blocked'); setBusy(true) })
       try { await waitForExecutionQuiescence() }
-      catch (error) { setFailed(true); setBusy(false); throw error }
+      catch (error) { setFailureKind('coordination'); setPhase('error'); setFailed(true); setBusy(false); throw error }
       setBusy(false)
     })
+    let relinquishTask: Promise<void> = Promise.resolve()
     const pagehide = () => {
-      flushSync(() => setActive(false))
-      void owner.relinquish().catch(() => setFailed(true))
+      flushSync(() => setPhase('resolving'))
+      relinquishTask = owner.relinquish().catch(() => { setFailureKind('coordination'); setFailed(true) })
+    }
+    const pageshow = (event: PageTransitionEvent) => {
+      if (!event.persisted || gate.current !== owner) return
+      void relinquishTask.then(() => {
+        owner.close()
+        const restoredOwner = createExecutionGate()
+        gate.current = restoredOwner
+        restoredOwner.onTakeover(async () => {
+          flushSync(() => { setPhase('blocked'); setBusy(true) })
+          try { await waitForExecutionQuiescence() }
+          catch (error) { setFailureKind('coordination'); setPhase('error'); setFailed(true); setBusy(false); throw error }
+          setBusy(false)
+        })
+        return restoredOwner.start().then(ok => {
+          if (gate.current !== restoredOwner) return
+          setPhase(ok ? 'owned' : restoredOwner.supported && !restoredOwner.hasError() ? 'blocked' : 'error')
+          if (!ok) setFailureKind(restoredOwner.supported ? 'coordination' : 'unsupported')
+        })
+      })
     }
     window.addEventListener('pagehide', pagehide)
+    window.addEventListener('pageshow', pageshow)
     void owner.start().then(ok => {
       if (gate.current !== owner) return
-      if (ok) setActive(true)
-      else setFailed(!owner.supported)
+      setPhase(ok ? 'owned' : owner.supported && !owner.hasError() ? 'blocked' : 'error')
+      if (!ok && (!owner.supported || owner.hasError())) setFailureKind(owner.supported ? 'coordination' : 'unsupported')
     })
-    return () => { window.removeEventListener('pagehide', pagehide); owner.close(); gate.current = null }
+    return () => {
+      window.removeEventListener('pagehide', pagehide)
+      window.removeEventListener('pageshow', pageshow)
+      owner.close()
+      gate.current = null
+    }
   }, [])
 
   const request = async () => {
@@ -83,21 +113,31 @@ export function ExecutionGateView() {
     setFailed(false)
     try {
       const ok = await gate.current.requestOwnership()
-      if (ok) setActive(true)
-      else setFailed(true)
-    } catch { setFailed(true) }
+      if (ok) setPhase('owned')
+      else {
+        setPhase(gate.current.supported && !gate.current.hasError() ? 'blocked' : 'error')
+        if (!gate.current.supported || gate.current.hasError()) setFailureKind(gate.current.supported ? 'coordination' : 'unsupported')
+        setFailed(true)
+      }
+    } catch { setFailureKind('coordination'); setFailed(true) }
     finally { setBusy(false) }
   }
 
-  if (active) return <Suspense fallback={<main className="execution-gate" aria-busy="true" />}><App /></Suspense>
-  return <main className="execution-gate" aria-live="polite">
-    <section className="execution-gate__content" aria-labelledby="execution-gate-title">
-      <h1 id="execution-gate-title">{t('executionGateTitle')}</h1>
-      <p>{t('executionGateDescription')}</p>
-      {failed && <p role="alert">{t('executionGateFailure')}</p>}
-      <ActionButton variant="primary" disabled={busy} onClick={() => void request()}>
-        {busy ? t('executionGateSwitching') : failed ? t('retryAgain') : t('executionGateContinue')}
-      </ActionButton>
-    </section>
-  </main>
+  if (phase === 'resolving') return null
+  if (phase === 'owned') return <div className="execution-owner" data-execution-owner="true"><App /></div>
+  return <AppShell>
+    <Screen label={t(phase === 'blocked' ? 'executionGateTitle' : 'executionGateFailure')}
+      contentClassName="screen-center" bottom={
+      <ScreenFooter><ActionButton variant="primary" disabled={busy} onClick={() => void request()}>
+        {busy ? t('executionGateSwitching') : failed || phase === 'error' ? t('retryAgain') : t('executionGateContinue')}
+      </ActionButton></ScreenFooter>
+    }>
+      <h1 className="screen-title">{t(phase === 'blocked' ? 'executionGateTitle' : 'executionGateFailure')}</h1>
+      <p className="screen-copy" role={phase === 'error' ? 'alert' : undefined}>
+        {phase === 'blocked' ? t('executionGateDescription')
+          : t(failureKind === 'unsupported' ? 'executionGateUnsupported' : 'executionGateError')}
+      </p>
+      {failed && phase === 'blocked' && <p className="screen-copy" role="alert">{t('executionGateFailure')}</p>}
+    </Screen>
+  </AppShell>
 }
