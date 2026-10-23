@@ -232,7 +232,7 @@ export function invalidateFastScheduleSnapshot(): string | null {
 function cachePlace(place: Place): Place {
   // Для freshness достаточно времени последнего фикса; country hint нужен автоматическому профилю.
   const { accuracy: _accuracy, nearbyCity: _nearbyCity,
-    source: _source, ...displayPlace } = place
+    cityId: _cityId, source: _source, ...displayPlace } = place
   const countryCode = gpsCountryCode(place)
   const city = place.nearbyCity
   const nearbyCity = countryCode && city && typeof city.latitude === 'number' && typeof city.longitude === 'number' ? {
@@ -243,7 +243,9 @@ function cachePlace(place: Place): Place {
     latitude: city.latitude,
     longitude: city.longitude,
   } : undefined
-  return { ...displayPlace, ...(nearbyCity ? { nearbyCity } : {}), accuracy: null, timestamp: place.timestamp }
+  return { ...displayPlace,
+    ...(place.selection === 'city' && Number.isInteger(place.cityId) ? { cityId: place.cityId } : {}),
+    ...(nearbyCity ? { nearbyCity } : {}), accuracy: null, timestamp: place.timestamp }
 }
 
 export function writeFastScheduleSnapshot(input: {

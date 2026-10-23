@@ -15,7 +15,7 @@ import {
 } from './fastScheduleSnapshot'
 
 const now = new Date('2026-10-19T10:00:00.000Z')
-const city: City = { id: 551487, name: 'Казань', countryCode: 'RU', admin1Code: 'TA', admin1Name: 'Татарстан',
+const city: City = { id: 551487, name: 'Казань', countryCode: 'RU', admin1Code: '73', admin1Name: 'Татарстан',
   latitude: 55.7946, longitude: 49.1115, population: 1, timeZone: 'Europe/Moscow' }
 const place = createCityPlace(city, now.getTime())
 const context: ScheduleContext = {
