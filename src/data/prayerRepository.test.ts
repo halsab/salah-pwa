@@ -55,27 +55,19 @@ describe('calculation settings repository', () => {
     } } })
   })
 
-  it('normalizes old DUM RT and DUM RF identifiers when stored source preferences are read', async () => {
+  it('safely ignores retired profile identifiers and obsolete official source values', async () => {
     await setSetting('sourcePreferences', { mode: 'manual', source: { kind: 'calculated',
-      calculation: { profile: 'dumRt', overrides: { highLatitudeRule: 'dumRt', adjustments: { dhuhr: 2 } } } } } as never)
-    expect(await initializePrayerRepository()).toMatchObject({ value: { preferences: { mode: 'manual', source: {
-      kind: 'calculated', calculation: { profile: 'tatarstan', overrides: { highLatitudeRule: 'tatarstan', adjustments: { dhuhr: 2 } } },
-    } } } })
+      calculation: { profile: 'dumRt', overrides: { highLatitudeRule: 'dumRt' } } } } as never)
+    expect(await initializePrayerRepository()).toMatchObject({ value: { preferences: { mode: 'automatic' } } })
     await setSetting('sourcePreferences', { mode: 'manual', source: { kind: 'calculated',
       calculation: { profile: 'dumRf', overrides: { highLatitudeRule: 'nearestDay' } } } } as never)
-    expect(await initializePrayerRepository()).toMatchObject({ value: { preferences: { source: {
-      kind: 'calculated', calculation: { profile: 'russia', overrides: { highLatitudeRule: 'nearestDay' } },
-    } } } })
-  })
-
-  it('migrates a stored legacy official source and keeps unrelated expert adjustments', async () => {
+    expect(await initializePrayerRepository()).toMatchObject({ value: { preferences: { mode: 'automatic' } } })
     await setSetting('sourcePreferences', { mode: 'manual', source: { kind: 'official', provider: 'dumRt' },
-      calculationDraft: { profile: 'karachi', overrides: { asrMethod: 'hanafi', adjustments: { dhuhr: 3 } } } } as never)
-    expect(await initializePrayerRepository()).toMatchObject({ value: { preferences: { mode: 'manual', source: {
-      kind: 'calculated', calculation: { profile: 'tatarstan', overrides: { asrMethod: 'hanafi', adjustments: { dhuhr: 3 } } },
-    } } } })
-    expect(await repository.saveSettings({ sourcePreferences: { mode: 'manual', source: { kind: 'official', provider: 'dumRt' } } as never }))
-      .toMatchObject({ ok: false, error: { kind: 'data', reason: 'invalid' } })
+      calculationDraft: { profile: 'karachi', overrides: { adjustments: { dhuhr: 3 } } } } as never)
+    expect(await initializePrayerRepository()).toMatchObject({ value: { preferences: { mode: 'automatic' } } })
+    expect(await repository.saveSettings({ sourcePreferences: {
+      mode: 'manual', source: { kind: 'official', provider: 'dumRt' },
+    } as never })).toMatchObject({ ok: false, error: { kind: 'data', reason: 'invalid' } })
   })
 
   it('stores a calculated city and GPS history without passive location side effects', async () => {

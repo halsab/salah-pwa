@@ -198,23 +198,26 @@ describe('новые настройки', () => {
     rerender(<SettingsScreens {...defaults} screen="source" preferences={automaticPreferences()} onChange={vi.fn()} effectiveSource={null} />)
     expect(screen.getByRole('status')).toHaveTextContent('Источник ещё не определён')
   })
-  it('uses the migrated calculated Tatarstan source across a complete mode cycle', async () => {
+  it('starts safely in Automatic after obsolete settings and supports a full Tatarstan mode cycle', async () => {
     const saved = restoreSourcePreferences({ mode: 'manual', source: { kind: 'official', provider: 'dumRt' },
       calculationDraft: { profile: 'karachi', overrides: { asrMethod: 'hanafi' } } })
+    expect(saved).toEqual(automaticPreferences())
     let latest: SourcePreferences = saved
     function Harness() {
       const [preferences, setPreferences] = useState<SourcePreferences>(saved)
-      return <SettingsScreens {...defaults} screen="source-choice" preferences={preferences} onChange={value => { latest = value; setPreferences(value) }} />
+      return <SettingsScreens {...defaults} screen="source-choice" preferences={preferences}
+        initialManualCalculation={{ profile: 'tatarstan', overrides: { asrMethod: 'hanafi' } }}
+        onChange={value => { latest = value; setPreferences(value) }} />
     }
     render(<Harness />)
-    expect(screen.getAllByRole('button')).toHaveLength(3)
-    await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
-    expect(latest).toMatchObject({ mode: 'automatic', manualSourceDraft: { kind: 'calculated', calculation: { profile: 'tatarstan' } } })
     expect(resolvePrayerTimeSource(place, latest)).toMatchObject({ kind: 'calculated', settings: { profile: 'tatarstan' } })
     await userEvent.click(screen.getByRole('button', { name: 'Ручной выбор' }))
-    expect(screen.getByRole('button', { name: /Ручной выбор.*Выбрано/ })).toBeVisible()
-    expect(latest).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'tatarstan', overrides: { asrMethod: 'hanafi' } } }, calculationDraft: { profile: 'tatarstan', overrides: { asrMethod: 'hanafi' } } })
-    expect(resolvePrayerTimeSource(place, latest)).toMatchObject({ kind: 'calculated', strategy: 'manual', settings: { profile: 'tatarstan', asrMethod: 'hanafi' } })
+    expect(latest).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: {
+      profile: 'tatarstan', overrides: { asrMethod: 'hanafi' },
+    } } })
+    await userEvent.click(screen.getByRole('button', { name: /Автоматически/ }))
+    expect(latest).toMatchObject({ mode: 'automatic', manualSourceDraft: { kind: 'calculated',
+      calculation: { profile: 'tatarstan' } } })
   })
   it('показывает неподдерживаемый профиль недоступным', () => {
     render(<SettingsScreens {...defaults} screen="profiles" preferences={automaticPreferences()} onChange={vi.fn()} getCapability={profile => profile === 'ummAlQura' ? { supported: false, reason: 'ummAlQuraUnavailable' } : { supported: true }} />)

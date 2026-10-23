@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { openDB } from 'idb'
 import { deleteVaqtProDatabase, getLocationChoice, getSetting,
   getStartupData, clearAppData, saveLocationChoice, setSetting } from './database'
 import { type Result } from '../domain/result'
