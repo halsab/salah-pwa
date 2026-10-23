@@ -13,6 +13,7 @@ concurrency:
 jobs:
   full-browser-review:
     runs-on: ubuntu-latest
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
     timeout-minutes: 50
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -24,7 +25,6 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium webkit
       - name: Full Chromium and WebKit E2E suite, including v12 upgrade and GPS verification
         id: e2e
         continue-on-error: true
