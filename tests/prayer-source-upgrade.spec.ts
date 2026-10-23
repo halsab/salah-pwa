@@ -22,7 +22,7 @@ test('upgrades the published v12 official IndexedDB without reviving official pr
         db.createObjectStore('meta')
       }
       request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
+      request.onerror = () => reject(request.error ?? new Error('Failed to open IndexedDB'))
     })
     try {
       await new Promise<void>((resolve, reject) => {
@@ -46,8 +46,8 @@ test('upgrades the published v12 official IndexedDB without reviving official pr
         })
         tx.objectStore('meta').put({ provider: 'dumRt', version: 'legacy-official-2026' }, 'current')
         tx.oncomplete = () => resolve()
-        tx.onerror = () => reject(tx.error)
-        tx.onabort = () => reject(tx.error)
+        tx.onerror = () => reject(tx.error ?? new Error('Failed to seed legacy IndexedDB'))
+        tx.onabort = () => reject(tx.error ?? new Error('Failed to seed legacy IndexedDB'))
       })
     } finally {
       database.close()
@@ -62,7 +62,7 @@ test('upgrades the published v12 official IndexedDB without reviving official pr
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open('salah')
       request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
+      request.onerror = () => reject(request.error ?? new Error('Failed to open IndexedDB'))
     })
     try { return { version: db.version, stores: Array.from(db.objectStoreNames).sort() } }
     finally { db.close() }
