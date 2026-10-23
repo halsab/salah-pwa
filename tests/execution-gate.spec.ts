@@ -261,7 +261,7 @@ test('pagehide/pageshow lifecycle events quiesce and reacquire before rendering 
 
 test('repeated real back and forward navigation keeps execution ownership singular', async ({ context }) => {
   const owner = await context.newPage()
-  await owner.route('**/salah-pwa/away.html', route => route.fulfill({
+  await owner.route('**/away.html', route => route.fulfill({
     contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
   }))
   await owner.addInitScript(() => {
@@ -275,7 +275,7 @@ test('repeated real back and forward navigation keeps execution ownership singul
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
   await owner.waitForTimeout(1_000)
   await owner.goto('away.html')
-  await expect(owner).toHaveURL(/\/salah-pwa\/away\.html$/)
+  await expect(owner).toHaveURL(/\/away\.html$/)
   await expect(owner).toHaveTitle('Away')
   await expect(owner.getByText('Outside Salah')).toBeVisible()
   const bfcacheResults: boolean[] = []
@@ -318,7 +318,7 @@ test('repeated real back and forward navigation keeps execution ownership singul
 
 test('Playwright browser restores plain same-origin documents from BFCache', async ({ context }) => {
   const page = await context.newPage()
-  await page.route('**/salah-pwa/plain-*.html', route => route.fulfill({
+  await page.route('**/plain-*.html', route => route.fulfill({
     contentType: 'text/html', body: `<!doctype html><title>${new URL(route.request().url()).pathname.split('/').at(-1)}</title><main>Plain same-origin document</main>`,
   }))
   await page.addInitScript(() => {
@@ -346,7 +346,7 @@ test('Playwright browser restores plain same-origin documents from BFCache', asy
 
 test('repeated back and forward navigation confirms real BFCache restoration', async ({ context }) => {
   const page = await context.newPage()
-  await page.route('**/salah-pwa/away.html', route => route.fulfill({
+  await page.route('**/away.html', route => route.fulfill({
     contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
   }))
   await page.addInitScript(() => {
@@ -366,7 +366,7 @@ test('repeated back and forward navigation confirms real BFCache restoration', a
     await expect(page).toHaveTitle('Away')
     await expect(page.getByText('Outside Salah')).toBeVisible()
     await page.goBack({ waitUntil: 'commit' })
-    await expect(page).toHaveURL(/\/salah-pwa\/$/)
+    await expect(page).toHaveURL(/\/$/)
     const events = await page.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
     restorationResults.push(events.at(-1) ?? 'missing')
     await expect(page.locator('[data-execution-owner]')).toBeVisible()
