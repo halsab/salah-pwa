@@ -1,9 +1,6 @@
-import { restoreSourcePreferences, type SourcePreferences } from '../domain/sourcePreferences'
-import { effectiveCalculationSettings } from '../domain/calculationSettings'
+import type { SourcePreferences } from '../domain/sourcePreferences'
 import { DEFAULT_CALENDAR_PREFERENCES, type CalendarPreferences } from '../domain/calendar'
-import { createLocalityPlace, type Place } from '../domain/place'
-import { migratePlaceChoice, placeFromChoice } from '../domain/placeMigration'
-import { TATARSTAN_LOCALITIES } from '../data/tatarstanLocalities'
+import type { Place } from '../domain/place'
 import { deleteDB, openDB, type DBSchema, type IDBPDatabase } from 'idb'
 
 import type { DataFailure, StorageFailure } from '../domain/errors'
@@ -16,7 +13,7 @@ import { failure, success, type Result } from '../domain/result'
 import type { SavedCoordinates } from '../domain/types'
 
 const DATABASE_NAME = 'salah'
-const DATABASE_VERSION = 14
+const DATABASE_VERSION = 15
 
 export type LocationMode = 'official' | 'calculated'
 
@@ -76,62 +73,6 @@ interface VaqtProDatabase extends DBSchema {
 
 let databasePromise: Promise<IDBPDatabase<VaqtProDatabase>> | undefined
 
-function storedValue(record: StoredSettingRecord | undefined): unknown {
-  return record?.value
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object'
-}
-
-function migrateLegacyLocationChoice(
-  locationId: unknown,
-  locationMode: unknown,
-  calculatedLocation: unknown,
-): LocationChoice | undefined {
-  if (locationMode === 'calculated' && isRecord(calculatedLocation)) {
-    return {
-      mode: 'calculated',
-      // Запись v4 может не содержать timeZone; её по-прежнему дополняет репозиторий при чтении.
-      coordinates: calculatedLocation as unknown as SavedCoordinates,
-      source: calculatedLocation.source === 'gps' ? 'automatic' : 'manual',
-    }
-  }
-
-  if (
-    typeof locationId === 'string'
-    && locationId
-    && (locationMode === 'official' || locationMode === undefined)
-  ) {
-    return { mode: 'official', locationId, source: 'manual' }
-  }
-
-  return undefined
-}
-
-function calculatedChoiceFromLegacyOfficial(value: unknown): LocationChoice | undefined {
-  if (!isRecord(value) || value.mode !== 'official' || typeof value.locationId !== 'string') return undefined
-  const locality = TATARSTAN_LOCALITIES.find(item => item.id === value.locationId)
-  if (!locality) return undefined
-  const place = createLocalityPlace(locality, 0)
-  return {
-    mode: 'calculated',
-    coordinates: { ...place, source: 'preset' },
-    place,
-    source: value.source === 'manual' ? 'manual' : 'automatic',
-  }
-}
-
-function normalizeStoredLocationChoice(value: unknown): LocationChoice | undefined {
-  const migratedOfficial = calculatedChoiceFromLegacyOfficial(value)
-  if (migratedOfficial) return migratedOfficial
-  if (!isRecord(value) || value.mode !== 'calculated') return undefined
-  const choice = value as unknown as LocationChoice
-  return placeFromChoice(choice, TATARSTAN_LOCALITIES)
-    ? migratePlaceChoice(choice, TATARSTAN_LOCALITIES)
-    : undefined
-}
-
 function getDatabase(): Promise<IDBPDatabase<VaqtProDatabase>> {
   if (databasePromise) return databasePromise
 
@@ -139,146 +80,29 @@ function getDatabase(): Promise<IDBPDatabase<VaqtProDatabase>> {
     blocking() { void databasePromise?.then(database => database.close()); databasePromise = undefined },
     terminated() { databasePromise = undefined },
     upgrade(database, oldVersion, _newVersion, transaction) {
-      if (oldVersion < 1) {
-        database.createObjectStore('settings', { keyPath: 'key' })
+      // Approved decision: discard incompatible legacy prayer state on the
+      // one-time schema upgrade. Preserve unrelated user preferences.
+      if (!database.objectStoreNames.contains('settings')) database.createObjectStore('settings', { keyPath: 'key' })
+      if (!database.objectStoreNames.contains('control')) database.createObjectStore('control')
+      if (database.objectStoreNames.contains('days')) database.deleteObjectStore('days')
+      if (database.objectStoreNames.contains('meta')) database.deleteObjectStore('meta')
+      const settings = transaction.objectStore('settings')
+      const control = transaction.objectStore('control')
+      if (oldVersion < DATABASE_VERSION) {
+        for (const key of [
+          'locationChoice', 'sourcePreferences', 'calculationSettings',
+          'locationId', 'locationMode', 'calculatedLocation',
+          'recentPlaces', 'recentPlacesMigrated',
+        ] as const) void settings.delete(key)
       }
-      if (oldVersion < 2) {
-        // Новые типизированные настройки добавляются в существующее schemaless-хранилище.
-      }
-      if (oldVersion < 3) {
-        // Запись координат расширена названием и источником без изменения структуры хранилища.
-      }
-      if (oldVersion < 4) {
-        // Таймзона добавляется при чтении старой записи, поэтому данные v3 не переписываются.
-      }
-      let previousMigration: Promise<unknown> = Promise.resolve()
-      if (oldVersion < 5) {
-        const store = transaction.objectStore('settings')
-        const migration = Promise.all([
-          store.get('locationChoice'),
-          store.get('locationId'),
-          store.get('locationMode'),
-          store.get('calculatedLocation'),
-        ]).then(([current, locationId, locationMode, calculatedLocation]) => {
-          const writes: Promise<unknown>[] = [
-            store.delete('locationId'),
-            store.delete('locationMode'),
-            store.delete('calculatedLocation'),
-          ]
-
-          if (!current) {
-            const choice = migrateLegacyLocationChoice(
-              storedValue(locationId),
-              storedValue(locationMode),
-              storedValue(calculatedLocation),
-            )
-            if (choice) {
-              writes.push(store.put({ key: 'locationChoice', value: choice }))
-            }
-          }
-
-          return Promise.all(writes)
-        })
-
-        previousMigration = migration
-        void migration.catch(() => transaction.abort())
-      }
-      if (oldVersion < 6) {
-        // Идентичность артефакта появится при следующей атомарной замене набора.
-      }
-      if (oldVersion < 7) {
-        const store = transaction.objectStore('settings')
-        const migration = previousMigration.then(async () => {
-          const record = await store.get('locationChoice')
-          if (record?.key !== 'locationChoice') return
-          await store.put({ key: 'locationChoice', value: migratePlaceChoice(record.value, TATARSTAN_LOCALITIES) })
-        })
-        previousMigration = migration
-        void migration.catch(() => transaction.abort())
-      }
-      if (oldVersion < 8) {
-        const store = transaction.objectStore('settings')
-        const migration = previousMigration.then(async () => {
-          const [preferences, settings, choice] = await Promise.all([store.get('sourcePreferences'), store.get('calculationSettings'), store.get('locationChoice')])
-          if (preferences) return
-          await store.put({ key: 'sourcePreferences', value: restoreSourcePreferences(undefined, storedValue(settings), choice?.key === 'locationChoice' ? choice.value : undefined) })
-        })
-        previousMigration = migration
-        void migration.catch(() => transaction.abort())
-      }
-      if (oldVersion < 9) {
-        // Поколение не содержит пользовательских данных; оно запрещает запись из старых сессий.
-        database.createObjectStore('control')
-        void transaction.objectStore('control').put(0, 'generation')
-        void transaction.objectStore('settings').put({ key: 'appearance', value: 'system' })
-      }
-      if (oldVersion < 10) {
-        // Истории координат раньше не было; миграция не создаёт её из сохранённой GPS-позиции.
-        void transaction.objectStore('settings').put({ key: 'recentPlaces', value: [] })
-        if (oldVersion > 0) {
-          const migration = previousMigration.then(async () => {
-            const store = transaction.objectStore('settings')
-            const [choice, generation] = await Promise.all([store.get('locationChoice'), transaction.objectStore('control').get('generation')])
-            // Прежняя версия показывала Казань без записи выбора. После сброса это правило не действует.
-            if (!choice && generation === 0) {
-              const locality = TATARSTAN_LOCALITIES.find(item => item.id === 'kazan') ?? TATARSTAN_LOCALITIES[0]
-              if (locality) {
-                const place = createLocalityPlace(locality, 0)
-                await store.put({ key: 'locationChoice', value: {
-                  mode: 'calculated', coordinates: place, place, source: 'default',
-                } satisfies LocationChoice })
-              }
-            }
-          })
-          previousMigration = migration
-          void migration.catch(() => transaction.abort())
-        }
-      }
-      if (oldVersion < 11) {
-        void transaction.objectStore('settings').put({ key: 'calendarPreferences', value: DEFAULT_CALENDAR_PREFERENCES })
-      }
-      if (oldVersion < 13) {
-        const migration = previousMigration.then(async () => {
-          const settings = transaction.objectStore('settings')
-          const [preferences, calculation, choice] = await Promise.all([
-            settings.get('sourcePreferences'), settings.get('calculationSettings'), settings.get('locationChoice'),
-          ])
-          const rawPreferences = preferences?.value
-          const legacyChoice = choice?.key === 'locationChoice' ? choice.value : undefined
-          const restored = restoreSourcePreferences(rawPreferences, calculation?.value, legacyChoice)
-          await settings.put({ key: 'sourcePreferences', value: restored })
-          const migratedLegacyPreferences = restoreSourcePreferences(undefined, calculation?.value, legacyChoice)
-          if (migratedLegacyPreferences.mode === 'manual') {
-            await settings.put({ key: 'calculationSettings', value: effectiveCalculationSettings(migratedLegacyPreferences.source.calculation) })
-          }
-          const normalizedChoice = normalizeStoredLocationChoice(legacyChoice)
-          if (normalizedChoice) await settings.put({ key: 'locationChoice', value: normalizedChoice })
-        })
-        previousMigration = migration
-        void migration.catch(() => transaction.abort())
-      }
-      if (oldVersion < 14) {
-        const migration = previousMigration.then(async () => {
-          const settings = transaction.objectStore('settings')
-          const [preferences, calculation, choice] = await Promise.all([
-            settings.get('sourcePreferences'), settings.get('calculationSettings'), settings.get('locationChoice'),
-          ])
-          const legacyChoice = choice?.key === 'locationChoice' ? choice.value : undefined
-          const restored = restoreSourcePreferences(preferences?.value, calculation?.value, legacyChoice)
-          await settings.put({ key: 'sourcePreferences', value: restored })
-          const legacyPreferences = restoreSourcePreferences(undefined, calculation?.value, legacyChoice)
-          if (legacyPreferences.mode === 'manual') {
-            await settings.put({ key: 'calculationSettings', value: effectiveCalculationSettings(legacyPreferences.source.calculation) })
-          }
-          const normalizedChoice = normalizeStoredLocationChoice(legacyChoice)
-          if (normalizedChoice) await settings.put({ key: 'locationChoice', value: normalizedChoice })
-        })
-        previousMigration = migration
-        void migration.catch(() => transaction.abort())
-        const legacyDatabase = database as unknown as IDBDatabase
-        if (legacyDatabase.objectStoreNames.contains('days')) legacyDatabase.deleteObjectStore('days')
-        if (legacyDatabase.objectStoreNames.contains('meta')) legacyDatabase.deleteObjectStore('meta')
-      }
+      const defaults = Promise.all([
+        settings.get('appearance'), settings.get('calendarPreferences'), control.get('generation'),
+      ]).then(async ([appearance, calendar, generation]) => {
+        if (!appearance) await settings.put({ key: 'appearance', value: 'system' })
+        if (!calendar) await settings.put({ key: 'calendarPreferences', value: DEFAULT_CALENDAR_PREFERENCES })
+        if (generation === undefined) await control.put(0, 'generation')
+      })
+      void defaults.catch(() => transaction.abort())
     },
   })
   databasePromise = opening
@@ -307,15 +131,14 @@ export function getStartupData() {
     const database = await getDatabase()
     const transaction = database.transaction(['control', 'settings'], 'readonly')
     const settings = transaction.objectStore('settings')
-    const [generation, choice, preferences, legacy, recentPlacesMigrated, appearance] = await Promise.all([
+    const [generation, choice, preferences, recentPlacesMigrated, appearance] = await Promise.all([
       transaction.objectStore('control').get('generation'),
-      settings.get('locationChoice'), settings.get('sourcePreferences'), settings.get('calculationSettings'),
-      settings.get('recentPlacesMigrated'),
+      settings.get('locationChoice'), settings.get('sourcePreferences'), settings.get('recentPlacesMigrated'),
       settings.get('appearance'),
     ])
     await transaction.done
     return { generation: generation ?? 0, choice: choice?.value as SettingValueMap['locationChoice'] | undefined,
-      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined, legacy: legacy?.value as SettingValueMap['calculationSettings'] | undefined,
+      preferences: preferences?.value as SettingValueMap['sourcePreferences'] | undefined,
       recentPlacesMigrated: recentPlacesMigrated?.value as boolean | undefined, appearance: appearance?.value as SettingValueMap['appearance'] | undefined }
   })
 }

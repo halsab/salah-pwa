@@ -82,7 +82,7 @@ export default defineConfig({
       manifest: {
         name: 'VaqtPro — времена намаза',
         short_name: 'VaqtPro',
-        description: 'Время намаза для выбранного места: официальные таблицы и расчёт на устройстве. Сохранённые данные доступны офлайн.',
+        description: 'Время намаза для выбранного места: независимый расчёт на устройстве. Сохранённые данные доступны офлайн.',
         lang: 'ru',
         display: 'standalone',
         background_color: '#000000',

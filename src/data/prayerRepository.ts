@@ -108,7 +108,7 @@ async function restoreRepositoryState(): Promise<Result<{ state: PrayerRepositor
     ...optional.value,
     locationChoice,
     appearance: startup.value.appearance === 'light' || startup.value.appearance === 'dark' ? startup.value.appearance : 'system',
-    preferences: restoreSourcePreferences(startup.value.preferences, startup.value.legacy, choice),
+    preferences: restoreSourcePreferences(startup.value.preferences),
   }
   return success({ state, generation: startup.value.generation })
 }
