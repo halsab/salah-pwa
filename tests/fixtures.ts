@@ -33,7 +33,7 @@ export async function choosePlace(page: import('@playwright/test').Page, query =
   await page.getByRole('searchbox').fill(query)
   await page.getByRole('button', { name, exact: typeof name === 'string' }).click()
   await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
-  await expect(page.getByRole('timer')).toBeVisible()
+  await expect(page.locator('.event-countdown')).toBeVisible()
 }
 
 export async function expectSchedule(page: import('@playwright/test').Page, count = 7) {

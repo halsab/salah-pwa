@@ -26,6 +26,8 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
       - name: Full Chromium and WebKit E2E suite, including v12 upgrade and GPS verification
+        id: e2e
+        continue-on-error: true
         run: npm run test:e2e
       - name: Offline smoke
         run: npm run smoke:offline
@@ -33,3 +35,8 @@ jobs:
         run: npm run smoke:sw-update
       - name: Production CSP gate
         run: npm run security:csp
+      - name: Assert complete E2E suite passed
+        if: always()
+        env:
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+        run: test "$E2E_OUTCOME" = success

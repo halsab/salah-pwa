@@ -87,14 +87,14 @@ test('upgrades the published v12 official IndexedDB without reviving official pr
   const dhuhr = page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem').filter({ hasText: 'Зухр' })
   await expect(dhuhr).toContainText('11:45')
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({
-    mode: 'calculated', place: { id: 'locality:agriz', selection: 'city' },
+    mode: 'calculated', place: { id: 'geonames:583983', selection: 'city' },
   })
 
   await page.reload()
   await expectSchedule(page, 7)
   await expect(dhuhr).toContainText('11:45')
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({
-    mode: 'calculated', place: { id: 'locality:agriz', selection: 'city' },
+    mode: 'calculated', place: { id: 'geonames:583983', selection: 'city' },
   })
   await page.evaluate(async () => navigator.serviceWorker.ready)
   await page.reload()
