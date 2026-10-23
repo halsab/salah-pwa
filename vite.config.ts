@@ -42,7 +42,7 @@ const CONTENT_SECURITY_POLICY = [
 
 export default defineConfig({
   server: { host: '0.0.0.0' },
-  base: '/salah-pwa/',
+  base: '/',
   define: {
     'import.meta.env.VITE_APP_PACKAGE_VERSION': JSON.stringify(LOCAL_APP_VERSION),
   },
