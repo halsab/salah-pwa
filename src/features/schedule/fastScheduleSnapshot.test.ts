@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { scheduleContextKey, type ScheduleContext } from '../../domain/scheduleContext'
+import { verifiedTatarstanLocalityId } from '../../domain/tatarstanDhuhr'
 import { automaticPreferences } from '../../domain/sourcePreferences'
 import { createCityPlace, withNearbyCity } from '../../domain/place'
 import { DEFAULT_CALCULATION_SETTINGS, calculatePrayerSchedule } from '../../domain/prayerCalculation'
@@ -72,6 +73,20 @@ describe('fast prayer schedule snapshot', () => {
     expect(new TextEncoder().encode(raw ?? '').length).toBeLessThanOrEqual(4_096)
     expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' }))
       .toMatchObject({ context, schedule, place: { id: place.id }, preferences: automaticPreferences() })
+  })
+
+  it('keeps verified GeoNames locality identity in a fast startup cache', () => {
+    const fixedContext: ScheduleContext = {
+      ...context,
+      location: { ...context.location, localityId: 'kazan' },
+      settings: { profile: 'tatarstan', asrMethod: 'hanafi', highLatitudeRule: 'tatarstan' },
+    }
+    const fixedSchedule = calculatePrayerSchedule(fixedContext.location, fixedContext.date, fixedContext.timeZone, fixedContext.settings)
+    expect(seed({ context: fixedContext, schedule: fixedSchedule })).toBe(true)
+    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
+    expect(restored?.place.cityId).toBe(551487)
+    expect(restored?.place && verifiedTatarstanLocalityId(restored.place)).toBe('kazan')
+    expect(restored?.context.location.localityId).toBe('kazan')
   })
 
   it('сохраняет свежесть GPS и проверенную страну для автоматического профиля', () => {

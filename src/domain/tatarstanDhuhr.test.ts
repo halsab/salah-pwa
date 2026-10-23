@@ -46,15 +46,21 @@ describe('Tatarstan Dhuhr policy', () => {
     expect(verifiedTatarstanLocalityId({ id: 'geonames:551487', selection: 'city', cityId: 551487,
       region: { code: 'RU-TA' }, coverage: 'inside' })).toBe('kazan')
     expect(verifiedTatarstanLocalityId({ id: 'gps:1', selection: 'gps', latitude: 55.794, longitude: 49.111,
-      accuracy: 20, region: { code: 'RU-TA' }, coverage: 'inside' })).toBe('kazan')
+      accuracy: 20, region: { code: 'RU-TA' }, coverage: 'inside' })).toBeUndefined()
     expect(verifiedTatarstanLocalityId({ id: 'gps:1', selection: 'gps', region: { code: 'RU-TA' }, coverage: 'inside',
       latitude: 55.794, longitude: 49.111, accuracy: 20_001 })).toBeUndefined()
     expect(verifiedTatarstanLocalityId({ id: 'gps:1', selection: 'gps', latitude: 56.2503, longitude: 49.4534,
-      accuracy: 20, region: { code: 'RU-TA' }, coverage: 'inside' })).toBe('bolshaya-atnya')
+      accuracy: 20, region: { code: 'RU-TA' }, coverage: 'inside' })).toBeUndefined()
     expect(verifiedTatarstanLocalityId({ id: 'gps:1', selection: 'gps', latitude: 55.4062, longitude: 48.1936,
       accuracy: 20, region: { code: 'RU-TA' }, coverage: 'inside' })).toBeUndefined()
     expect(verifiedTatarstanLocalityId({ id: 'gps:1', selection: 'gps', latitude: 55.794, longitude: 49.111,
       accuracy: 20, region: { code: 'RU-TA' }, coverage: 'outside' })).toBeUndefined()
+    expect(verifiedTatarstanLocalityId({ id: 'locality:kazan', selection: 'city', latitude: 55.7946485,
+      longitude: 49.1115022, region: { code: 'RU-TA' }, coverage: 'inside' })).toBe('kazan')
+    expect(verifiedTatarstanLocalityId({ id: 'locality:kazan', selection: 'city', latitude: 56.5,
+      longitude: 52, region: { code: 'RU-TA' }, coverage: 'inside' })).toBeUndefined()
+    expect(verifiedTatarstanLocalityId({ id: 'locality:kazan', selection: 'city', latitude: 55.7946485,
+      longitude: 49.1115022, region: { code: 'RU.73' }, coverage: 'inside' })).toBeUndefined()
     expect(verifiedTatarstanLocalityId({ id: 'geonames:551487', selection: 'city', cityId: 551487,
       region: { code: 'RU.73' }, coverage: 'inside' })).toBeUndefined()
   })

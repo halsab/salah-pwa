@@ -72,7 +72,8 @@ describe('calculatePrayerSchedule', () => {
   })
 
   it('применяет сохранённую поправку Зухра после базовой проверки относительно зенита', () => {
-    const agriz = { id: 'locality:agriz', selection: 'city', latitude: 56.525516, longitude: 52.9971643 }
+    const agriz = { id: 'locality:agriz', selection: 'city' as const, latitude: 56.525516, longitude: 52.9971643,
+      region: { code: 'RU-TA' }, coverage: 'inside' }
     const base = calculatePrayerSchedule(agriz, '2026-06-21', 'Europe/Moscow', withSettings({}))
     const adjusted = calculatePrayerSchedule(agriz, '2026-06-21', 'Europe/Moscow', withSettings({ adjustments: { dhuhr: -2 } }))
 

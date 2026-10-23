@@ -79,23 +79,19 @@ describe('calculation source resolver', () => {
     expect(resolvePrayerTimeSource(kazan, { mode: 'manual', source: { kind: 'calculated', calculation: selection } }).settings.asrMethod).toBe('standard')
   })
 
-  it('migrates old official source selections to calculated Tatarstan and preserves overrides', () => {
+  it('resets incompatible official choices rather than importing unrelated calculation drafts', () => {
     const legacy = { mode: 'manual', source: { kind: 'official', provider: 'dumRt' },
-      calculationDraft: { profile: 'karachi', overrides: { asrMethod: 'hanafi', adjustments: { isha: 10 } } } }
-    const restored = restoreSourcePreferences(legacy)
-    expect(restored).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: {
-      profile: 'tatarstan', overrides: { asrMethod: 'hanafi', adjustments: { isha: 10 } },
-    } } })
-    expect(resolvePrayerTimeSource(kazan, restored)).toMatchObject({ settings: { profile: 'tatarstan', asrMethod: 'hanafi' } })
+      calculationDraft: { profile: 'karachi', overrides: { isha: { kind: 'interval', minutes: 100 } } } }
     expect(isSourcePreferences(legacy)).toBe(false)
+    expect(restoreSourcePreferences(legacy)).toEqual(automatic)
+    expect(resolvePrayerTimeSource(kazan, restoreSourcePreferences(legacy)).settings.profile).toBe('tatarstan')
   })
 
-  it.each([
-    ['dumRt', 'dumRt', 'tatarstan', 'tatarstan'],
-    ['dumRf', 'nearestDay', 'russia', 'nearestDay'],
-  ] as const)('renames persisted calculation profile %s without changing its rule', (profile, highLatitudeRule, expectedProfile, expectedRule) => {
-    expect(restoreSourcePreferences(undefined, { profile, asrMethod: 'standard', highLatitudeRule }))
-      .toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: expectedProfile, overrides: { highLatitudeRule: expectedRule } } } })
+  it('retains new calculation profiles and overrides across restore', () => {
+    const preferences = manualCalculation({ profile: 'russia', overrides: { asrMethod: 'standard', adjustments: { dhuhr: 2 } } })
+    expect(restoreSourcePreferences(preferences)).toEqual(preferences)
+    expect(restoreSourcePreferences({ mode: 'manual', source: { kind: 'calculated',
+      calculation: { profile: 'dumRt', overrides: {} } } })).toEqual(automatic)
   })
 
   it('applies automatic Asr settings to calculated prayer instants', () => {
@@ -110,12 +106,12 @@ describe('calculation source resolver', () => {
 })
 
 describe('calculation preference validation', () => {
-  it('starts new users in automatic mode but preserves stored old profile choices', () => {
-    expect(restoreSourcePreferences(undefined, undefined)).toEqual(automatic)
-    expect(restoreSourcePreferences(undefined, { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt' }))
-      .toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'tatarstan' } } })
-    expect(restoreSourcePreferences(undefined, { profile: 'dumRf', asrMethod: 'standard', highLatitudeRule: 'nearestDay' }))
-      .toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: { profile: 'russia', overrides: { highLatitudeRule: 'nearestDay' } } } })
+  it('uses automatic mode for new users and unsupported legacy profiles', () => {
+    expect(restoreSourcePreferences(undefined)).toEqual(automatic)
+    expect(restoreSourcePreferences({ mode: 'manual', source: { kind: 'calculated',
+      calculation: { profile: 'dumRt', overrides: {} } } })).toEqual(automatic)
+    expect(restoreSourcePreferences({ mode: 'manual', source: { kind: 'calculated',
+      calculation: { profile: 'dumRf', overrides: {} } } })).toEqual(automatic)
   })
 
   it.each([

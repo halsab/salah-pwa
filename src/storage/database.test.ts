@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openDB } from 'idb'
-import { getDeviceTimeZone } from '../domain/locationTime'
 import { deleteVaqtProDatabase, getLocationChoice, getSetting,
-  getStartupData, clearAppData, saveLocationChoice } from './database'
+  getStartupData, clearAppData, saveLocationChoice, setSetting } from './database'
 import { type Result } from '../domain/result'
 import type { LocationChoice } from './database'
 
@@ -62,137 +61,73 @@ function unwrap<Value>(result: Result<Value, unknown>): Value {
 afterEach(async () => { vi.unstubAllGlobals(); await deleteVaqtProDatabase() })
 
 describe('calculation-only database', () => {
-  it('creates only user settings and control stores on a fresh install', async () => {
+  it('creates only settings and control stores on a fresh install', async () => {
     expect(unwrap(await getSetting('appearance'))).toBe('system')
-    expect(await databaseDetails()).toEqual({ version: 14, stores: ['control', 'settings'] })
+    expect(unwrap(await getSetting('calendarPreferences'))).toEqual({ calendar: 'gregorian', correction: 0 })
+    expect(await databaseDetails()).toEqual({ version: 15, stores: ['control', 'settings'] })
   })
 
-  it('migrates a legacy official locality using the retained catalog, not cached dataset metadata', async () => {
-    await createLegacyDatabase(5, {
+  it.each([4, 5, 12, 13, 14])('discards incompatible old prayer state on upgrade from v%s', async version => {
+    await createLegacyDatabase(version, {
       day: { locationId: 'kazan', date: '2026-09-01', fajrStart: '02:21' },
-      meta: { source: { name: 'legacy', years: [2026] }, locations: [{ id: 'kazan' }] },
+      meta: { source: { name: 'old', years: [2026] } },
       settings: [
         { key: 'locationChoice', value: { mode: 'official', locationId: 'kazan', source: 'manual' } },
-        { key: 'calculationSettings', value: { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt', adjustments: { dhuhr: 2 } } },
+        { key: 'sourcePreferences', value: { mode: 'manual', source: { kind: 'official', provider: 'dumRt' } } },
+        { key: 'calculationSettings', value: { profile: 'dumRt', highLatitudeRule: 'dumRt' } },
+        { key: 'recentPlaces', value: [{ id: 'locality:kazan', selection: 'official' }] },
+        { key: 'appearance', value: 'dark' },
+        { key: 'calendarPreferences', value: { calendar: 'gregorian', correction: 2 } },
+        { key: 'languagePreference', value: 'ru' },
+        { key: 'fastingMode', value: { manualEnabled: true } },
       ],
     })
-
-    const choice = unwrap(await getLocationChoice())
-    expect(choice).toMatchObject({ mode: 'calculated', source: 'manual',
-      coordinates: { latitude: 55.7946485, longitude: 49.1115022, timeZone: 'Europe/Moscow' },
-      place: { id: 'locality:kazan', name: 'Казань', selection: 'city' } })
-    expect(unwrap(await getSetting('sourcePreferences'))).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: {
-      profile: 'tatarstan', overrides: { highLatitudeRule: 'tatarstan', adjustments: { dhuhr: 2 } },
-    } } })
-    expect(await databaseDetails()).toEqual({ version: 14, stores: ['control', 'settings'] })
+    const startup = unwrap(await getStartupData())
+    expect(startup.choice).toBeUndefined()
+    expect(startup.preferences).toBeUndefined()
+    expect(unwrap(await getSetting('calculationSettings'))).toBeUndefined()
+    expect(unwrap(await getSetting('recentPlaces'))).toBeUndefined()
+    expect(unwrap(await getSetting('appearance'))).toBe('dark')
+    expect(unwrap(await getSetting('calendarPreferences'))).toEqual({ calendar: 'gregorian', correction: 2 })
+    expect(unwrap(await getSetting('languagePreference'))).toBe('ru')
+    expect(unwrap(await getSetting('fastingMode'))).toEqual({ manualEnabled: true })
+    expect(await databaseDetails()).toEqual({ version: 15, stores: ['control', 'settings'] })
   })
 
-  it('migrates a legacy locality without metadata while preserving its canonical coordinates', async () => {
-    await createLegacyDatabase(5, { settings: [{ key: 'locationChoice', value: {
-      mode: 'official', locationId: 'nizhnekamsk', source: 'manual',
-    } }] })
-
-    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', source: 'manual',
-      coordinates: { latitude: 55.6412879, longitude: 51.8160376, timeZone: 'Europe/Moscow' },
-      place: { id: 'locality:nizhnekamsk', name: 'Нижнекамск' } })
-    expect(await databaseDetails()).toEqual({ version: 14, stores: ['control', 'settings'] })
-  })
-
-  it('migrates legacy official source drafts and removes the hidden provider pin', async () => {
-    await createLegacyDatabase(12, { settings: [
-      { key: 'locationChoice', value: { mode: 'calculated', coordinates: { latitude: 55.75, longitude: 37.62,
-        accuracy: null, timestamp: 10, timeZone: 'Europe/Moscow', source: 'preset' }, source: 'manual' } },
-      { key: 'sourcePreferences', value: { mode: 'automatic', calculationDraft: { profile: 'dumRt', overrides: { asrMethod: 'hanafi' } },
-        manualSourceDraft: { kind: 'official', provider: 'dumRt' } } },
-    ] })
-
-    expect(unwrap(await getSetting('sourcePreferences'))).toEqual({ mode: 'automatic', calculationDraft: {
-      profile: 'tatarstan', overrides: { asrMethod: 'hanafi' },
-    }, manualSourceDraft: { kind: 'calculated', calculation: { profile: 'tatarstan', overrides: { asrMethod: 'hanafi' } } } })
-    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', place: { latitude: 55.75, longitude: 37.62 } })
-    expect(await databaseDetails()).toEqual({ version: 14, stores: ['control', 'settings'] })
-  })
-
-  it('migrates version 13 official choices and settings before dropping cached tables', async () => {
-    await createLegacyDatabase(13, {
-      day: { locationId: 'kazan', date: '2026-09-01', fajrStart: '02:21' },
-      meta: { source: { name: 'legacy', years: [2026] } },
-      settings: [
-        { key: 'locationChoice', value: { mode: 'official', locationId: 'nizhnekamsk', source: 'manual' } },
-        { key: 'sourcePreferences', value: { mode: 'manual', source: { kind: 'official', provider: 'dumRt' },
-          calculationDraft: { profile: 'karachi', overrides: { asrMethod: 'hanafi', adjustments: { dhuhr: 3 } } } } },
-      ],
-    })
-
-    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', source: 'manual',
-      coordinates: { latitude: 55.6412879, longitude: 51.8160376, timeZone: 'Europe/Moscow' },
-      place: { id: 'locality:nizhnekamsk', name: 'Нижнекамск', selection: 'city' } })
-    expect(unwrap(await getSetting('sourcePreferences'))).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: {
-      profile: 'tatarstan', overrides: { asrMethod: 'hanafi', adjustments: { dhuhr: 3 } },
-    } } })
-    expect(await databaseDetails()).toEqual({ version: 14, stores: ['control', 'settings'] })
-  })
-
-  it.each([
-    ['dumRt', 'dumRt', 'tatarstan', 'tatarstan'],
-    ['dumRf', 'nearestDay', 'russia', 'nearestDay'],
-  ] as const)('renames persisted profile %s and retains its high-latitude override', async (profile, rule, expected, expectedRule) => {
-    await createLegacyDatabase(7, { settings: [
-      { key: 'locationChoice', value: { mode: 'calculated', source: 'manual', coordinates: {
-        latitude: 55, longitude: 37, accuracy: null, timestamp: 0, timeZone: 'Europe/Moscow',
-      } } },
-      { key: 'calculationSettings', value: { profile, asrMethod: 'standard', highLatitudeRule: rule } },
-    ] })
-
-    expect(unwrap(await getSetting('sourcePreferences'))).toMatchObject({ mode: 'manual', source: { kind: 'calculated', calculation: {
-      profile: expected, overrides: { highLatitudeRule: expectedRule },
-    } } })
-    expect(unwrap(await getSetting('calculationSettings'))).toMatchObject({ profile: expected, highLatitudeRule: expectedRule })
-  })
-
-  it('migrates old flat GPS settings without losing the point or device-timezone fallback', async () => {
-    const coordinates = { latitude: 55.7558, longitude: 37.6173, accuracy: 18, timestamp: 123,
-      name: 'Сохранённое место', source: 'gps' }
+  it('discards previous flat coordinates and profile IDs instead of migrating them', async () => {
     await createLegacyDatabase(4, { settings: [
-      { key: 'calculatedLocation', value: coordinates }, { key: 'locationMode', value: 'calculated' },
+      { key: 'locationId', value: 'naberezhnye-chelny' },
+      { key: 'locationMode', value: 'official' },
+      { key: 'calculatedLocation', value: { latitude: 55, longitude: 49 } },
+      { key: 'calculationSettings', value: { profile: 'dumRf' } },
     ] })
-
-    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', source: 'automatic',
-      coordinates: { ...coordinates, timeZone: getDeviceTimeZone() },
-      place: { latitude: coordinates.latitude, longitude: coordinates.longitude, timeZone: getDeviceTimeZone() } })
-  })
-
-  it('migrates v4 legacy official IDs to the calculated locality and stores a canonical place', async () => {
-    await createLegacyDatabase(4, { settings: [
-      { key: 'locationId', value: 'naberezhnye-chelny' }, { key: 'locationMode', value: 'official' },
-    ] })
-    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', source: 'manual',
-      place: { id: 'locality:naberezhnye-chelny', name: 'Набережные Челны' } })
-  })
-
-  it('adds the historical implicit Kazan default only before a prior reset', async () => {
-    await createLegacyDatabase(9)
-    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', source: 'default', place: { id: 'locality:kazan' } })
-    expect(unwrap(await getSetting('recentPlaces'))).toEqual([])
-    expect(unwrap(await getSetting('calendarPreferences'))).toEqual({ calendar: 'gregorian', correction: 0 })
-
-    await deleteVaqtProDatabase()
-    await createLegacyDatabase(9)
-    const db = await openDB('salah')
-    await db.put('control', 2, 'generation')
-    db.close()
     expect(unwrap(await getLocationChoice())).toBeUndefined()
+    expect(unwrap(await getSetting('calculationSettings'))).toBeUndefined()
+    expect(unwrap(await getSetting('locationId' as 'locationChoice'))).toBeUndefined()
   })
 
-  it('rejects attempts to persist a legacy official source choice', async () => {
+  it('retains new calculated selections across reads without rewriting them', async () => {
+    const choice: LocationChoice = { mode: 'calculated', coordinates: {
+      latitude: 55.79, longitude: 49.12, accuracy: null, timestamp: 1,
+      timeZone: 'Europe/Moscow', name: 'Казань', source: 'preset',
+    }, source: 'manual' }
+    expect(await saveLocationChoice(choice)).toMatchObject({ ok: true })
+    expect(await setSetting('appearance', 'dark')).toMatchObject({ ok: true })
+    expect(unwrap(await getLocationChoice())).toMatchObject({ mode: 'calculated', coordinates: { latitude: 55.79 } })
+    expect(unwrap(await getSetting('appearance'))).toBe('dark')
+    expect(await databaseDetails()).toEqual({ version: 15, stores: ['control', 'settings'] })
+  })
+
+  it('rejects writing an obsolete official source choice', async () => {
     const invalid = { mode: 'official', locationId: 'kazan', source: 'manual' } as unknown as LocationChoice
     expect(await saveLocationChoice(invalid)).toMatchObject({ ok: false, error: { kind: 'data', reason: 'invalid' } })
     expect(unwrap(await getLocationChoice())).toBeUndefined()
   })
 
-  it('clears user settings atomically and increments the session generation', async () => {
+  it('clears user settings atomically and increments generation', async () => {
     const choice: LocationChoice = { mode: 'calculated', coordinates: {
-      latitude: 55.79, longitude: 49.12, accuracy: null, timestamp: 1, timeZone: 'Europe/Moscow', name: 'Казань', source: 'preset',
+      latitude: 55.79, longitude: 49.12, accuracy: null, timestamp: 1,
+      timeZone: 'Europe/Moscow', name: 'Казань', source: 'preset',
     }, source: 'manual' }
     expect(await saveLocationChoice(choice)).toMatchObject({ ok: true })
     const before = unwrap(await getStartupData())
@@ -202,7 +137,7 @@ describe('calculation-only database', () => {
     expect(after).toMatchObject({ generation: before.generation + 1, choice: undefined })
   })
 
-  it('returns typed storage failures when IndexedDB cannot be opened', async () => {
+  it('returns typed storage errors when IndexedDB is unavailable', async () => {
     vi.stubGlobal('indexedDB', { open: () => { throw new Error('IndexedDB disabled') } })
     expect(await getStartupData()).toEqual({ ok: false, error: { kind: 'storage', reason: 'unavailable' } })
   })
