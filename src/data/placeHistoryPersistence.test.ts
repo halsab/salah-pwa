@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createGpsPlace, createOfficialPlace, type Place } from '../domain/place'
+import { createGpsPlace, createLocalityPlace, type Place } from '../domain/place'
 import { success } from '../domain/result'
 import { createSettingsPersistence } from '../features/settings/settingsPersistence'
 import { clearAppData, deleteVaqtProDatabase, getLocationChoice, getSetting, setSetting, type LocationChoice, type SettingsPatch } from '../storage/database'
@@ -24,7 +24,7 @@ afterEach(async () => { vi.restoreAllMocks(); await deleteVaqtProDatabase() })
 describe('transactional place history', () => {
   it('stores a selected place and its recent history atomically, then updates the same GPS identity', async () => {
     const repo = createPrayerRepository()
-    const legacy = Array.from({ length: 9 }, (_, index) => createOfficialPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 30 + index, longitude: 10 }, index))
+    const legacy = Array.from({ length: 9 }, (_, index) => createLocalityPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 30 + index, longitude: 10 }, index))
     await setSetting('recentPlaces', legacy)
     await repo.saveSettings(event('selection', coarse))
     const selected = await history()

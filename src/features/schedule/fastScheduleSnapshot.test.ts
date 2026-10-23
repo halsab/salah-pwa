@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from '../../domain/scheduleContext'
+import { scheduleContextKey, type ScheduleContext } from '../../domain/scheduleContext'
 import { automaticPreferences } from '../../domain/sourcePreferences'
-import type { PrayerDay } from '../../domain/types'
-import type { DatasetMeta } from '../../storage/database'
-import { createGpsPlace, createOfficialPlace, isFreshGpsPlace, withNearbyCity } from '../../domain/place'
+import { createCityPlace, withNearbyCity } from '../../domain/place'
 import { DEFAULT_CALCULATION_SETTINGS, calculatePrayerSchedule } from '../../domain/prayerCalculation'
-import { automaticCalculationRecommendation } from '../../domain/calculationSettings'
 import type { City } from '../../domain/cities'
 import {
   activateFastScheduleContext,
@@ -17,28 +14,14 @@ import {
 } from './fastScheduleSnapshot'
 
 const now = new Date('2026-10-19T10:00:00.000Z')
-const meta: DatasetMeta = {
-  provider: 'dumRt',
-  schemaVersion: 3,
-  source: { name: 'ДУМ Республики Татарстан', url: 'https://dumrt.ru/ru/help-info/prayertime/', updatedAt: '2026-10-01T00:00:00.000Z', years: [2026] },
-  locations: [{ id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 }],
-  providerInfo: { id: 'dumRt', revision: 'r1', timeZone: 'Europe/Moscow', coverage: { geographic: 'RU-TA', startDate: '2026-01-01', endDate: '2026-12-31' } },
-  identity: { version: 'v1', url: 'prayer-times-current.json', sha256: 'a'.repeat(64), sequence: 1 },
-}
-const location = meta.locations.find(item => item.id === 'kazan')
-if (!location) throw new Error('Kazan fixture location is missing')
-const place = createOfficialPlace(location, now.getTime())
+const city: City = { id: 551487, name: 'Казань', countryCode: 'RU', admin1Code: 'TA', admin1Name: 'Татарстан',
+  latitude: 55.7946, longitude: 49.1115, population: 1, timeZone: 'Europe/Moscow' }
+const place = createCityPlace(city, now.getTime())
 const context: ScheduleContext = {
   location: { id: place.id, latitude: place.latitude, longitude: place.longitude },
-  date: '2026-10-19', timeZone: 'Europe/Moscow', mode: 'automatic', source: 'official',
-  provider: 'dumRt', datasetRevision: getDatasetRevision(meta), datasetVersion: 'v1', coverage: 'RU-TA', localityId: 'kazan',
+  date: '2026-10-19', timeZone: 'Europe/Moscow', mode: 'automatic', source: 'calculated', settings: DEFAULT_CALCULATION_SETTINGS,
 }
-const schedule: PrayerDay = {
-  locationId: 'kazan', date: context.date, timeZone: context.timeZone,
-  coordinates: { latitude: place.latitude, longitude: place.longitude },
-  fajrStart: '04:18', fajrJamaat: '04:52', sunrise: '06:23', zenith: '11:29', dhuhr: '12:00',
-  asr: '14:39', maghrib: '16:35', isha: '18:16', provenance: { fajrJamaat: 'published', zenith: 'published' },
-}
+const schedule = calculatePrayerSchedule(context.location, context.date, context.timeZone, context.settings)
 
 function memoryStorage(): Storage {
   const entries = new Map<string, string>()
@@ -52,12 +35,21 @@ function memoryStorage(): Storage {
   }
 }
 
+function checksum(value: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
+}
+
 let store: Storage
 
 function seed(overrides: Partial<Parameters<typeof writeFastScheduleSnapshot>[0]> = {}) {
   const input = {
     appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow', context, schedule, place,
-    selectionSource: 'default' as const, preferences: automaticPreferences(), meta,
+    selectionSource: 'default' as const, preferences: automaticPreferences(),
     ...overrides,
   }
   const generation = invalidateFastScheduleSnapshot()
@@ -73,60 +65,29 @@ describe('fast prayer schedule snapshot', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('writes a bounded checksum-protected cache and restores the exact current official day', () => {
-    expect(seed({ place: { ...place, timestamp: now.getTime(), cityId: 42,
-      nearbyCity: { id: 42, name: 'Казань', distanceKm: 1 } } })).toBe(true)
+  it('writes a bounded checksum-protected calculated schedule cache', () => {
+    expect(seed()).toBe(true)
     const raw = store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)
     expect(raw).not.toBeNull()
     expect(new TextEncoder().encode(raw ?? '').length).toBeLessThanOrEqual(4_096)
-    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
-    expect(restored).toMatchObject({
-      context, schedule, place: { id: place.id, latitude: place.latitude, longitude: place.longitude },
-      preferences: automaticPreferences(), meta: { locations: [{ id: 'kazan' }] },
-    })
-    expect(restored?.place.timestamp).toBe(now.getTime())
-    expect(restored?.place.accuracy).toBeNull()
-    expect(restored?.place.nearbyCity).toBeUndefined()
-    expect(restored?.place.cityId).toBeUndefined()
+    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' }))
+      .toMatchObject({ context, schedule, place: { id: place.id }, preferences: automaticPreferences() })
   })
 
-  it('сохраняет свежесть GPS и проверенную страну, нужную для автоматического профиля', () => {
-    const city: City = { id: 745044, name: 'Стамбул', countryCode: 'TR', admin1Code: '34', admin1Name: 'Стамбул',
-      latitude: 41.0138, longitude: 28.9497, population: 1, timeZone: 'Europe/Istanbul' }
-    const gps = withNearbyCity(createGpsPlace({ ...city, accuracy: 300, timestamp: now.getTime() - 5 * 60_000 },
-      'Europe/Istanbul', null, 'gps:istanbul'), city)
-    const settings = { profile: 'turkey', asrMethod: 'standard', highLatitudeRule: 'twilightAngle' } as const
-    const calculatedContext: ScheduleContext = {
-      location: { id: gps.id, latitude: gps.latitude, longitude: gps.longitude }, date: context.date,
-      timeZone: 'Europe/Istanbul', mode: 'automatic', source: 'calculated', settings,
-    }
-    const calculatedSchedule = calculatePrayerSchedule(calculatedContext.location, context.date, calculatedContext.timeZone, settings)
-    expect(seed({ context: calculatedContext, schedule: calculatedSchedule, place: gps, meta: null,
-      deviceTimeZone: 'Europe/Istanbul' })).toBe(true)
-
-    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Istanbul' })
-    expect(restored?.place.nearbyCity).toMatchObject({ countryCode: 'TR', latitude: city.latitude, longitude: city.longitude })
-    expect(automaticCalculationRecommendation(restored?.place).profile).toBe('turkey')
-    expect(restored?.place.timestamp).toBe(gps.timestamp)
-    expect(isFreshGpsPlace(restored?.place ?? null, now.getTime())).toBe(true)
-  })
-
-  it('валидирует DUM RT по Europe/Moscow, сохраняя timezone GPS-места устройства', () => {
-    const gpsPlace = { ...place, id: 'gps:kazan', selection: 'gps' as const, timeZone: 'Asia/Tokyo',
-      automaticTimeZone: { id: 'Asia/Tokyo', source: 'device' as const }, timestamp: now.getTime(), accuracy: 250 }
-    const officialGpsContext: ScheduleContext = { ...context,
-      location: { id: gpsPlace.id, latitude: gpsPlace.latitude, longitude: gpsPlace.longitude },
-    }
-    const officialGpsSchedule = { ...schedule, coordinates: { latitude: gpsPlace.latitude, longitude: gpsPlace.longitude } }
-    expect(seed({ context: officialGpsContext, schedule: officialGpsSchedule, place: gpsPlace,
-      deviceTimeZone: 'Asia/Tokyo' })).toBe(true)
-    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Asia/Tokyo' }))
-      .toMatchObject({ context: { timeZone: 'Europe/Moscow' }, place: { timeZone: 'Asia/Tokyo' } })
+  it('сохраняет свежесть GPS и проверенную страну для автоматического профиля', () => {
+    const gps = withNearbyCity({ ...place, id: 'gps:kazan', selection: 'gps' as const, timestamp: now.getTime() - 5 * 60_000,
+      accuracy: 250, automaticTimeZone: { id: 'Europe/Moscow', source: 'device' as const } }
+      , city)
+    const gpsContext: ScheduleContext = { ...context, location: { id: gps.id, latitude: gps.latitude, longitude: gps.longitude } }
+    const gpsSchedule = calculatePrayerSchedule(gpsContext.location, gpsContext.date, gpsContext.timeZone, gpsContext.settings)
+    expect(seed({ context: gpsContext, schedule: gpsSchedule, place: gps })).toBe(true)
+    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' }))
+      .toMatchObject({ place: { timestamp: gps.timestamp, nearbyCity: { countryCode: 'RU' } } })
   })
 
   it.each([
     ['другая версия приложения', { appVersion: 'new-build' }],
-    ['следующий день в зоне источника', { now: new Date('2026-10-20T00:30:00.000Z') }],
+    ['следующий день', { now: new Date('2026-10-20T00:30:00.000Z') }],
   ])('отбрасывает кеш при смене %s', (_, input) => {
     expect(seed()).toBe(true)
     expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow', ...input })).toBeNull()
@@ -135,8 +96,21 @@ describe('fast prayer schedule snapshot', () => {
   it('удаляет запись с повреждённой контрольной суммой', () => {
     expect(seed()).toBe(true)
     const raw = store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot) ?? ''
-    store.setItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot, raw.replace('04:18', '04:19'))
+    store.setItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot, raw.replace(schedule.entries.fajr.time, '00:00'))
     expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })).toBeNull()
+    expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
+  })
+
+  it('не восстанавливает снимок предыдущей схемы и удаляет его ключи', () => {
+    const generation = invalidateFastScheduleSnapshot()
+    if (!generation) throw new Error('Missing snapshot generation')
+    expect(activateFastScheduleContext('legacy-context', generation)).toBe(true)
+    const payload = JSON.stringify({ schema: 1, generation, appVersion: 'test-build', savedAt: now.getTime(), context,
+      schedule, place, selectionSource: 'default', preferences: automaticPreferences() })
+    store.setItem('salah:fast-schedule:v1', JSON.stringify({ payload, checksum: checksum(payload) }))
+    store.setItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot, JSON.stringify({ payload, checksum: checksum(payload) }))
+    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })).toBeNull()
+    expect(store.getItem('salah:fast-schedule:v1')).toBeNull()
     expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
   })
 
@@ -146,29 +120,9 @@ describe('fast prayer schedule snapshot', () => {
     store.setItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext,
       JSON.stringify({ generation: staleGeneration, contextKey: JSON.stringify(['other', context.date]) }))
     expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })).toBeNull()
-    expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
-
     expect(seed()).toBe(true)
     invalidateFastScheduleSnapshot()
     expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })).toBeNull()
-  })
-
-  it.each([
-    ['места', { ...context, location: { ...context.location, latitude: context.location.latitude + 0.01 } }],
-    ['часового пояса', { ...context, timeZone: 'Asia/Tokyo' }],
-    ['источника', {
-      location: context.location, date: context.date, timeZone: context.timeZone, mode: 'manual',
-      source: 'calculated', settings: DEFAULT_CALCULATION_SETTINGS,
-    } satisfies ScheduleContext],
-    ['revision набора', { ...context, datasetRevision: 'new-revision', datasetVersion: 'v2' }],
-  ])('отбрасывает снимок после изменения %s в активном контексте', (_, changedContext) => {
-    expect(seed()).toBe(true)
-    const generation = currentFastScheduleGeneration()
-    store.setItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext,
-      JSON.stringify({ generation, contextKey: scheduleContextKey(changedContext) }))
-
-    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })).toBeNull()
-    expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
   })
 
   it('не позволяет старой асинхронной записи вернуть снимок после смены поколения', () => {
@@ -178,90 +132,13 @@ describe('fast prayer schedule snapshot', () => {
     expect(generation).not.toBe(staleGeneration)
     expect(generation && activateFastScheduleContext(scheduleContextKey(context), generation)).toBe(true)
     expect(writeFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow',
-      generation: staleGeneration, context, schedule, place, selectionSource: 'default',
-      preferences: automaticPreferences(), meta })).toBe(false)
-    expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
+      generation: staleGeneration, context, schedule, place, selectionSource: 'default', preferences: automaticPreferences() })).toBe(false)
   })
 
-  it('refuses an oversized or invalid official day without storing it', () => {
-    expect(seed({ place: { ...place, name: 'a'.repeat(5_000) } })).toBe(false)
-    expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
-
-    expect(seed({ schedule: { ...schedule, fajrStart: 'bad' } as unknown as typeof schedule })).toBe(false)
-    expect(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot)).toBeNull()
-  })
-
-  it('fails closed when browser storage is unavailable', () => {
+  it('отклоняет некорректное расписание и отключённое browser storage', () => {
+    expect(seed({ schedule: { ...schedule, entries: { ...schedule.entries, fajr: { ...schedule.entries.fajr, time: 'bad' as never } } } })).toBe(false)
     vi.stubGlobal('localStorage', { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') }, removeItem() { throw new Error('denied') } })
     expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })).toBeNull()
     expect(seed()).toBe(false)
   })
-})
-
-
-it('restores verified official neighbor context within the existing size cap', () => {
-  store = memoryStorage()
-  vi.stubGlobal('localStorage', store)
-  try {
-    const neighbors = [{ ...schedule, date: '2026-10-18' }, { ...schedule, date: '2026-10-20' }]
-    expect(seed({ neighbors })).toBe(true)
-    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
-    expect(restored?.neighbors?.map(row => row.date)).toEqual(['2026-10-18', '2026-10-20'])
-    expect(new TextEncoder().encode(store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot) ?? '').length).toBeLessThanOrEqual(4096)
-    expect(seed({ neighbors: [requiredNeighbor(neighbors)] })).toBe(true)
-    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })?.neighbors).toHaveLength(1)
-    expect(seed({ neighbors: neighbors.map(row => ({ ...row, locationId: 'wrong' })) })).toBe(false)
-  } finally { vi.unstubAllGlobals() }
-})
-
-function requiredNeighbor(neighbors: PrayerDay[]): PrayerDay {
-  const row = neighbors[0]
-  if (!row) throw new Error('Missing neighbor fixture')
-  return row
-}
-
-it('degrades oversized validated neighbor context to a smaller usable snapshot', () => {
-  store = memoryStorage()
-  vi.stubGlobal('localStorage', store)
-  try {
-    const neighbors = [{ ...schedule, date: '2026-10-18' }, { ...schedule, date: '2026-10-20' }]
-    expect(seed({ neighbors, place: { ...place, name: 'x'.repeat(1200) } })).toBe(true)
-    const raw = store.getItem(FAST_SCHEDULE_STORAGE_KEYS.snapshot) ?? ''
-    expect(new TextEncoder().encode(raw).length).toBeLessThanOrEqual(4096)
-    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
-    expect(restored?.schedule).toEqual(schedule)
-    expect(restored?.neighbors?.length).toBe(1)
-    expect(restored?.neighbors?.every(row => ['2026-10-18', '2026-10-20'].includes(row.date))).toBe(true)
-  } finally { vi.unstubAllGlobals() }
-})
-
-it('retains the verified selected day when no neighbor row fits the fast-cache limit', () => {
-  store = memoryStorage()
-  vi.stubGlobal('localStorage', store)
-  try {
-    const neighbors = [{ ...schedule, date: '2026-10-18' }, { ...schedule, date: '2026-10-20' }]
-    expect(seed({ neighbors, place: { ...place, name: 'x'.repeat(1700) } })).toBe(true)
-    const restored = readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })
-    expect(restored?.schedule).toEqual(schedule)
-    expect(restored?.neighbors).toEqual([])
-  } finally { vi.unstubAllGlobals() }
-})
-
-
-it('accepts only the declared schema-v3 partial coverage neighbors, including a single-day dataset', () => {
-  store = memoryStorage()
-  vi.stubGlobal('localStorage', store)
-  try {
-    const coverage = { geographic: 'RU-TA', startDate: context.date, endDate: context.date }
-    if (!meta.providerInfo) throw new Error('Missing provider fixture')
-    const single = { ...meta, providerInfo: { ...meta.providerInfo, coverage } }
-    const singleContext = { ...context, datasetRevision: getDatasetRevision(single) }
-    expect(seed({ meta: single, context: singleContext, neighbors: [] })).toBe(true)
-    expect(readFastScheduleSnapshot({ appVersion: 'test-build', now, deviceTimeZone: 'Europe/Moscow' })?.neighbors).toEqual([])
-    expect(seed({ meta: single, context: singleContext, neighbors: [{ ...schedule, date: '2026-10-20' }] })).toBe(false)
-    const partial = { ...single, providerInfo: { ...single.providerInfo, coverage: { ...coverage, endDate: '2026-10-20' } } }
-    const partialContext = { ...context, datasetRevision: getDatasetRevision(partial) }
-    expect(seed({ meta: partial, context: partialContext, neighbors: [] })).toBe(true)
-    expect(seed({ meta: partial, context: partialContext, neighbors: [{ ...schedule, date: '2026-10-20' }] })).toBe(true)
-  } finally { vi.unstubAllGlobals() }
 })

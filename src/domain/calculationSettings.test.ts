@@ -8,30 +8,30 @@ import {
 } from './calculationSettings'
 
 describe('calculation defaults', () => {
-  it('preserves existing manual defaults, including the legacy DUM RF Hanafi choice', () => {
-    expect(profileDefaults('dumRf')).toMatchObject({ profile: 'dumRf', asrMethod: 'hanafi' })
-    expect(effectiveCalculationSettings({ profile: 'dumRf', overrides: {} }))
-      .toMatchObject({ profile: 'dumRf', asrMethod: 'hanafi' })
+  it('preserves the Russian profile Hanafi default', () => {
+    expect(profileDefaults('russia')).toMatchObject({ profile: 'russia', asrMethod: 'hanafi' })
+    expect(effectiveCalculationSettings({ profile: 'russia', overrides: {} }))
+      .toMatchObject({ profile: 'russia', asrMethod: 'hanafi' })
   })
 
   it('does not treat an ambiguous Russian region code as confirmed Tatarstan coverage', () => {
     expect(automaticCalculationDefaults({
       selection: 'city', region: { code: 'RU.73', name: 'unknown region' }, coverage: 'outside',
-    })).toMatchObject({ profile: 'dumRf', asrMethod: 'standard' })
+    })).toMatchObject({ profile: 'russia', asrMethod: 'standard' })
     expect(automaticCalculationDefaults({
       selection: 'city', region: { code: 'RU-TA', name: 'Tatarstan' }, coverage: 'outside',
-    })).toMatchObject({ profile: 'dumRf', asrMethod: 'standard' })
+    })).toMatchObject({ profile: 'russia', asrMethod: 'standard' })
   })
 
   it('uses the regional recommendation only for a Place with confirmed Tatarstan coverage', () => {
     expect(automaticCalculationDefaults({
       selection: 'gps', region: { code: 'RU-TA', name: 'Tatarstan' }, coverage: 'inside',
-    })).toMatchObject({ profile: 'dumRt', asrMethod: 'hanafi' })
+    })).toMatchObject({ profile: 'tatarstan', asrMethod: 'hanafi' })
   })
 
   it('preserves explicit manual Asr, polar, custom-angle, interval, and adjustment overrides', () => {
     const settings = {
-      profile: 'dumRf' as const,
+      profile: 'russia' as const,
       asrMethod: 'standard' as const,
       highLatitudeRule: 'nearestDay' as const,
       fajrAngle: 17,

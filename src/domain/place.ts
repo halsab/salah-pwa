@@ -1,12 +1,12 @@
 import { formatCityLabel, type City } from './cities'
-import { findNearestLocation, haversineDistanceKm, isConfirmedTatarstan } from './location'
+import { haversineDistanceKm, isConfirmedTatarstan } from './location'
 import { resolveGpsGeography, validPosition, type Coverage, type CoverageGeometry } from './localGeography'
-import { DUM_RT_TIME_ZONE, isValidTimeZone } from './locationTime'
-import type { PrayerLocation, SavedCoordinates } from './types'
+import { MOSCOW_TIME_ZONE, isValidTimeZone } from './locationTime'
+import type { Locality, SavedCoordinates } from './types'
 
 export interface Place extends SavedCoordinates {
   id: string
-  selection: 'gps' | 'city' | 'official'
+  selection: 'gps' | 'city'
   name: string
   region: { code: string; name: string } | null
   coverage: Coverage
@@ -20,6 +20,9 @@ export interface Place extends SavedCoordinates {
     longitude?: number
   }
 }
+
+export type LegacyOfficialPlace = Omit<Place, 'selection'> & { selection: 'official' }
+export type RestorablePlace = Place | LegacyOfficialPlace
 
 type Fix = Pick<SavedCoordinates, 'latitude' | 'longitude' | 'accuracy' | 'timestamp'>
 const TATARSTAN = { code: 'RU-TA', name: 'Татарстан' }
@@ -57,11 +60,12 @@ export function createCityPlace(city: City, timestamp: number): Place {
   }
 }
 
-export function createOfficialPlace(location: PrayerLocation, timestamp: number): Place {
+export function createLocalityPlace(location: Locality, timestamp: number): Place {
   return {
-    ...location, id: `locality:${location.id}`, selection: 'official',
-    accuracy: null, timestamp, timeZone: DUM_RT_TIME_ZONE,
-    automaticTimeZone: { id: DUM_RT_TIME_ZONE, source: 'city' }, region: TATARSTAN, coverage: 'inside',
+    ...location, id: `locality:${location.id}`, selection: 'city',
+    accuracy: null, timestamp, timeZone: location.timeZone ?? MOSCOW_TIME_ZONE,
+    automaticTimeZone: { id: location.timeZone ?? MOSCOW_TIME_ZONE, source: 'city' },
+    region: TATARSTAN, coverage: 'inside',
   }
 }
 
@@ -99,40 +103,43 @@ export function withNearbyCity(place: Place, city: City | null): Place {
   }
 }
 
-export function restorePlaceMetadata(place: Place): Place {
-  const city = place.nearbyCity
-  if (!city) return place
+export function restorePlaceMetadata(place: RestorablePlace): Place {
+  const normalized: Place = place.selection === 'official'
+    ? { ...place, selection: 'city', timeZone: MOSCOW_TIME_ZONE, automaticTimeZone: { id: MOSCOW_TIME_ZONE, source: 'city' } }
+    : place
+  const city = normalized.nearbyCity
+  if (!city) return normalized
   if (city.distanceKm > 25) {
-    const { nearbyCity: _nearbyCity, ...withoutCity } = place
+    const { nearbyCity: _nearbyCity, ...withoutCity } = normalized
     return { ...withoutCity, name: '' }
   }
   if (!Number.isFinite(city.latitude) || !Number.isFinite(city.longitude)) {
     if (city.countryCode) {
       const { countryCode: _countryCode, latitude: _latitude, longitude: _longitude, ...display } = city
-      return { ...place, nearbyCity: display }
+      return { ...normalized, nearbyCity: display }
     }
-    return place
+    return normalized
   }
   const latitude = city.latitude
   const longitude = city.longitude
   if (typeof latitude !== 'number' || !Number.isFinite(latitude) || typeof longitude !== 'number' || !Number.isFinite(longitude)) {
     const { countryCode: _countryCode, latitude: _latitude, longitude: _longitude, ...display } = city
-    return { ...place, nearbyCity: display }
+    return { ...normalized, nearbyCity: display }
   }
   if (!validPosition({ latitude, longitude, accuracy: null })) {
     const { countryCode: _countryCode, latitude: _latitude, longitude: _longitude, ...display } = city
-    return { ...place, nearbyCity: display }
+    return { ...normalized, nearbyCity: display }
   }
-  const distanceKm = haversineDistanceKm(place.latitude, place.longitude, latitude, longitude)
+  const distanceKm = haversineDistanceKm(normalized.latitude, normalized.longitude, latitude, longitude)
   if (distanceKm > 25 || !/^[A-Z]{2}$/.test(city.countryCode ?? '')) {
     const { countryCode: _countryCode, ...display } = city
     if (distanceKm > 25) {
-      const { nearbyCity: _nearbyCity, ...withoutCity } = place
+      const { nearbyCity: _nearbyCity, ...withoutCity } = normalized
       return { ...withoutCity, name: '' }
     }
-    return { ...place, nearbyCity: { ...display, distanceKm } }
+    return { ...normalized, nearbyCity: { ...display, distanceKm } }
   }
-  return { ...place, nearbyCity: { ...city, distanceKm } }
+  return { ...normalized, nearbyCity: { ...city, distanceKm } }
 }
 
 export function gpsCountryCode(place: Pick<Place, 'selection'> & Partial<Pick<Place, 'latitude' | 'longitude' | 'nearbyCity'>>): string | undefined {
@@ -156,13 +163,6 @@ export function homePlaceLabel(place: Place | null, unknownLabel = 'Местоп
   const name = place.name.replace(/^Рядом:\s*/u, '').split(',')[0]?.trim()
   if (name && name !== 'Моё местоположение') return name
   return `${place.latitude.toFixed(4)}, ${place.longitude.toFixed(4)}`
-}
-
-export function officialLocationForPlace(place: Place, locations: PrayerLocation[]): PrayerLocation | null {
-  if (place.coverage !== 'inside') return null
-  if (place.selection === 'official') return locations.find(location => `locality:${location.id}` === place.id) ?? null
-  // В пределах подтверждённой территории используем ближайший опубликованный пункт без радиуса.
-  return findNearestLocation(place.latitude, place.longitude, locations)
 }
 
 export function isFreshGpsPlace(place: Place | null, now: number): boolean {

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DEFAULT_CALENDAR_PREFERENCES, type CalendarPreferences } from '../../domain/calendar'
 import { resolveReligiousBanner, type ReligiousEventId } from '../../domain/religiousEvents'
-import { buildScheduleEvents, selectEventPair, selectOfficialEventPair, type OfficialEventHorizon, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
-import type { CalculatedPrayerKey, SchedulePrayerKey } from '../../domain/types'
+import { buildScheduleEvents, selectEventPair, type ResolvedScheduleEvent } from '../../domain/scheduleEvents'
+import type { CalculatedPrayerKey } from '../../domain/types'
 import { Screen } from '../../ui/Screen'
 import { ActionButton, ScreenFooter } from '../../ui/controls'
 import { ReligiousEventBanner } from '../religiousEvents/ReligiousEventBanner'
@@ -16,42 +16,35 @@ import { FastingCard } from '../fasting/FastingCard'
 import { DEFAULT_FASTING_MODE_PREFERENCES, buildFastingScheduleEvents, type FastingModePreferences, type FastingScheduleEvents } from '../../domain/fasting'
 import { useClockCorrection } from '../../ui/useLiveClock'
 
-const LABELS: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
-  fajrStart: 'prayerFajrStart', fajrJamaat: 'prayerFajrJamaat', dhuhrJamaat: 'prayerDhuhrJamaat',
-  asrJamaat: 'prayerAsrJamaat', maghribJamaat: 'prayerMaghribJamaat', ishaJamaat: 'prayerIshaJamaat',
+const LABELS: Record<CalculatedPrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
   fajr: 'prayerFajr', sunrise: 'prayerSunrise',
   zenith: 'prayerZenith', dhuhr: 'prayerDhuhr', asr: 'prayerAsr', maghrib: 'prayerMaghrib', isha: 'prayerIsha',
 }
-const COUNTDOWN: Record<SchedulePrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
-  fajrStart: 'countdownFajrStart', fajrJamaat: 'countdownFajrJamaat', dhuhrJamaat: 'countdownDhuhrJamaat',
-  asrJamaat: 'countdownAsrJamaat', maghribJamaat: 'countdownMaghribJamaat', ishaJamaat: 'countdownIshaJamaat',
+const COUNTDOWN: Record<CalculatedPrayerKey, Parameters<ReturnType<typeof useLocalization>['t']>[0]> = {
   fajr: 'countdownFajr', sunrise: 'countdownSunrise',
   zenith: 'countdownZenith', dhuhr: 'countdownDhuhr', asr: 'countdownAsr', maghrib: 'countdownMaghrib', isha: 'countdownIsha',
 }
 
 function estimated(event: ResolvedScheduleEvent, schedules: DisplaySchedule[]): boolean {
-  return schedules.some(day => day.date === event.scheduleDate && 'entries' in day && day.estimatedPrayers.includes(event.key as CalculatedPrayerKey))
+  return schedules.some(day => day.date === event.scheduleDate && day.estimatedPrayers.includes(event.key))
 }
 
 function PrayerSchedule({ schedule, current, now, live, calendarPreferences }: {
   schedule: DisplaySchedule; current: ResolvedScheduleEvent | null; now: Date; live: boolean; calendarPreferences: CalendarPreferences
 }) {
   const { locale, t } = useLocalization()
-  const events = buildScheduleEvents(schedule).sort((left, right) =>
-    (left.status === 'resolved' ? left.instant : Number.POSITIVE_INFINITY)
-      - (right.status === 'resolved' ? right.instant : Number.POSITIVE_INFINITY))
+  const events = buildScheduleEvents(schedule).sort((left, right) => left.instant - right.instant)
   return <ol className="event-list" aria-label={t('scheduleListLabel')}>
     {events.map(event => {
-      const active = event.status === 'resolved' && live && event.key === current?.key && event.scheduleDate === current.scheduleDate
-      const past = event.status === 'resolved' && live && !active && event.instant <= now.getTime()
+      const active = live && event.key === current?.key && event.scheduleDate === current.scheduleDate
+      const past = live && !active && event.instant <= now.getTime()
       return <li key={event.key} className={`event-row${past ? ' event-past' : ''}${active ? ' event-current' : ''}`} aria-current={active || undefined}>
         <div className="event-name"><span>{t(LABELS[event.key])}</span>
-          {event.key === 'zenith' && event.provenance === 'calculated' ? <small className="event-provenance">{t('calculatedZenith')}</small> : null}
-          {event.status === 'resolved' && event.dayOffset ? <small className="event-day">{formatLocalizedCalendarFullDate(event.date, calendarPreferences, locale)}</small> : null}
+          {event.key === 'zenith' ? <small className="event-provenance">{t('calculatedZenith')}</small> : null}
+          {event.dayOffset ? <small className="event-day">{formatLocalizedCalendarFullDate(event.date, calendarPreferences, locale)}</small> : null}
         </div>
-        {event.status === 'resolved'
-          ? <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule]) ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>
-          : <span className="event-unavailable" aria-label={t('zenithUnavailable')}>—</span>}
+        <time dateTime={new Date(event.instant).toISOString()}>{estimated(event, [schedule])
+          ? <span aria-label={t('estimatedTime')}>≈ </span> : null}{event.time}</time>
       </li>
     })}
   </ol>
@@ -62,7 +55,6 @@ interface ScheduleContentProps {
   schedules: DisplaySchedule[]
   scheduleLoading: boolean
   scheduleError: ScheduleError | null
-  officialHorizon?: OfficialEventHorizon | undefined
   contextReady?: boolean
   enrichmentError?: boolean
   onRetryEnrichment?: () => void
@@ -71,7 +63,6 @@ interface ScheduleContentProps {
   today: string
   currentTime: Date
   now: () => Date
-  officialMode: boolean
   hijriSupported?: boolean
   fastingMode?: FastingModePreferences
   fastingModeEnabled?: boolean
@@ -87,8 +78,8 @@ interface ScheduleContentProps {
 }
 
 export function ScheduleContent({ schedule, schedules, scheduleLoading, scheduleError, selectedDate, today,
-  contextReady = true, officialHorizon, enrichmentError = false, onRetryEnrichment = () => {},
-  currentTime, now, officialMode, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
+  contextReady = true, enrichmentError = false, onRetryEnrichment = () => {},
+  currentTime, now, hijriSupported = false, fastingMode = DEFAULT_FASTING_MODE_PREFERENCES,
   fastingModeEnabled = false, fastingEvents, timeZone, onOpenReligiousEvent = () => {},
   onChangeDate, onRetrySchedule, onSystemClockChange, top, actions, notice, calendarPreferences = DEFAULT_CALENDAR_PREFERENCES,
 }: ScheduleContentProps) {
@@ -104,7 +95,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   const fastingScheduleEvents = useMemo(() => fastingEvents ?? buildFastingScheduleEvents(schedules, timeZone), [fastingEvents, schedules, timeZone])
   const ready = !scheduleLoading && !scheduleError && schedule !== null
   const live = selectedDate === today && ready && contextReady
-  const { current, next } = live ? officialMode && officialHorizon ? selectOfficialEventPair(effectiveNow, events, selectedDate, schedule.timeZone ?? 'Europe/Moscow', officialHorizon) : selectEventPair(effectiveNow, events) : { current: null, next: null }
+  const { current, next } = live ? selectEventPair(effectiveNow, events) : { current: null, next: null }
   const religiousBanner = resolveReligiousBanner({
     now: effectiveNow,
     today,
@@ -119,9 +110,7 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
   const errorMessage = scheduleError
     ? scheduleError.code === 'unsupported-profile'
       ? t('unsupportedProfile', { profile: t(PROFILE_LABEL_KEYS[scheduleError.profile]) })
-      : t(({ 'load-failed': 'scheduleLoadFailed', 'profile-unavailable': 'calculatedProfileUnavailable',
-        'source-not-covered': 'officialSourceNotCovered', 'official-invalid': 'officialScheduleInvalid',
-        'official-not-loaded': 'officialScheduleNotLoaded' } as const)[scheduleError.code])
+      : t('scheduleLoadFailed')
     : null
   const footer = <ScreenFooter align="between">
     <span className="screen-footer-lead">{selectedDate !== today ? <ActionButton onClick={() => onChangeDate(today)}>{t('today')}</ActionButton> : countdown}</span>
@@ -140,9 +129,9 @@ export function ScheduleContent({ schedule, schedules, scheduleLoading, schedule
             </div> : null}
             {live && fastingModeEnabled && timeZone ? <FastingCard events={fastingScheduleEvents} preferences={fastingMode}
               selectedDate={selectedDate} today={today} timeZone={timeZone} correction={calendarPreferences.correction}
-              hijriSupported={hijriSupported} now={now} officialHorizon={officialHorizon} /> : null}
-            {'entries' in schedule && schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">{t('estimatedByHighLatitude')}</p> : null}
-            {live && !next ? <p className="note screen-space">{t(officialMode ? 'nextOfficialUnavailable' : 'nextEventUnavailable')}</p> : null}
+              hijriSupported={hijriSupported} now={now} /> : null}
+            {schedule.estimatedPrayers.length > 0 ? <p className="note screen-space">{t('estimatedByHighLatitude')}</p> : null}
+            {live && !next ? <p className="note screen-space">{t('nextEventUnavailable')}</p> : null}
           </>}
     {notice}
   </Screen>

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseDumRtCsv } from '../data/parseDumRtCsv'
-import { required } from '../test/required'
 import { addDays } from './date'
 import { calculatePrayerSchedule } from './prayerCalculation'
+import { zonedDateTimeToInstant } from './locationTime'
 import {
   RELIGIOUS_EVENT_IDS,
   RELIGIOUS_EVENTS,
@@ -13,13 +12,16 @@ import {
 } from './religiousEvents'
 import type { PrayerSchedule } from './scheduleEvents'
 
-function official(date: string, fajrStart = '05:00', maghrib = '18:00') {
-  const [year, month, day] = date.split('-')
-  return required(parseDumRtCsv(`${day}.${month}.${year};${fajrStart};05:30;07:00;11:45;12:00;16:00;${maghrib};20:00`, 'kazan')[0])
+function calculated(date: string, fajr = '05:00', maghrib = '18:00'): PrayerSchedule {
+  const schedule = calculatePrayerSchedule({ latitude: 55.79, longitude: 49.12 }, date, 'Europe/Moscow')
+  const fajrDate = fajr >= '20:00' ? addDays(date, -1) : date
+  schedule.entries.fajr = { time: fajr as `${number}:${number}`, instant: zonedDateTimeToInstant(fajrDate, fajr as `${number}:${number}`, 'Europe/Moscow').getTime(), estimated: false }
+  schedule.entries.maghrib = { time: maghrib as `${number}:${number}`, instant: zonedDateTimeToInstant(date, maghrib as `${number}:${number}`, 'Europe/Moscow').getTime(), estimated: false }
+  return schedule
 }
 
-function nightSchedules(anchor: string, fajrStart = '05:00'): PrayerSchedule[] {
-  return [official(anchor), official(addDays(anchor, 1), fajrStart)]
+function nightSchedules(anchor: string, fajr = '05:00'): PrayerSchedule[] {
+  return [calculated(anchor), calculated(addDays(anchor, 1), fajr)]
 }
 
 function resolve(date: string, options: Partial<Parameters<typeof resolveReligiousBanner>[0]> = {}) {
@@ -177,7 +179,7 @@ describe('resolveReligiousBanner', () => {
     expect(resolve(anchor, { schedules: nightSchedules(anchor) })).toMatchObject({ eventId, secondary: null })
   })
 
-  it('держит ночь от anchor day до точного Фаджра и использует official fajrStart', () => {
+  it('держит ночь от anchor day до точного Фаджра следующего расчётного дня', () => {
     const schedules = nightSchedules('2026-01-15')
     expect(resolve('2026-01-15', { now: new Date('2026-01-15T17:00:00+03:00'), schedules })?.eventId).toBe('isra-miraj')
     expect(resolve('2026-01-15', { now: new Date('2026-01-15T19:00:00+03:00'), schedules })?.eventId).toBe('isra-miraj')
@@ -186,7 +188,7 @@ describe('resolveReligiousBanner', () => {
     expect(resolve('2026-01-16', { now: new Date('2026-01-16T05:01:00+03:00'), schedules })).toBeNull()
   })
 
-  it('принимает поздний official fajrStart на anchor evening', () => {
+  it('принимает поздний calculated Fajr накануне', () => {
     const schedules = nightSchedules('2026-01-15', '23:54')
     expect(resolve('2026-01-15', { now: new Date('2026-01-15T23:53:00+03:00'), schedules })?.eventId).toBe('isra-miraj')
     expect(resolve('2026-01-15', { now: new Date('2026-01-15T23:54:00+03:00'), schedules })).toBeNull()
@@ -203,7 +205,7 @@ describe('resolveReligiousBanner', () => {
   it('скрывает night при отсутствующей или неверной границе', () => {
     expect(resolve('2026-01-15')).toBeNull()
     const schedules = nightSchedules('2026-01-15')
-    schedules[1] = official('2026-01-16', '17:00')
+    schedules[1] = calculated('2026-01-16', '17:00')
     expect(resolve('2026-01-15', { schedules })).toBeNull()
   })
 

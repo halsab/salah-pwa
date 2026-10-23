@@ -115,15 +115,9 @@ export default defineConfig({
           '**/data/cities-current.json',
           '**/data/cities/*/*.json',
           'city-cache-cleanup.js',
-          '**/data/prayer-times-current.json',
-          '**/data/prayer-times-manifest.json',
         ],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
-          {
-            urlPattern: /\/data\/prayer-times-(?:current|manifest)\.json$/,
-            handler: 'NetworkOnly',
-          },
           {
             urlPattern: /\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
             // Проверенные пакеты сохраняет Worker в IndexedDB; сырой ответ не кешируем.

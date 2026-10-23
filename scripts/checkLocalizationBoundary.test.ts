@@ -19,7 +19,7 @@ function presentationFiles(): string[] {
     join(repositoryRoot, 'src/App.tsx'),
     ...sourceFiles(join(repositoryRoot, 'src/features')),
     ...sourceFiles(join(repositoryRoot, 'src/ui')),
-    join(repositoryRoot, 'src/data/prayerProviders.ts'),
+    join(repositoryRoot, 'src/data/tatarstanLocalities.ts'),
     join(repositoryRoot, 'src/domain/prayerCalculation.ts'),
     join(repositoryRoot, 'src/domain/religiousEvents.ts'),
     join(repositoryRoot, 'src/domain/scheduleEvents.ts'),

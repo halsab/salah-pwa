@@ -1,6 +1,6 @@
 import type { PrayerTime } from './types'
 
-export const DUM_RT_TIME_ZONE = 'Europe/Moscow'
+export const MOSCOW_TIME_ZONE = 'Europe/Moscow'
 
 export type CivilDate = `${number}-${number}-${number}`
 

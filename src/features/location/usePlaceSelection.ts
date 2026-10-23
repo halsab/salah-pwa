@@ -4,13 +4,13 @@ import type { CoverageGeometry } from '../../domain/localGeography'
 import type { LocationChoice } from '../../storage/database'
 import type { LocationSelectionSource } from '../../domain/locationSelection'
 import { shouldStartAutomaticLocation } from '../../domain/locationSelection'
-import { createCityPlace, createGpsPlace, createOfficialPlace, isFreshGpsPlace, isUsefulRefinement, officialLocationForPlace, refineGpsPlace, withNearbyCity, type Place } from '../../domain/place'
+import { createCityPlace, createGpsPlace, createLocalityPlace, isFreshGpsPlace, isUsefulRefinement, refineGpsPlace, withNearbyCity, type Place } from '../../domain/place'
 import { placeFromChoice } from '../../domain/placeMigration'
 import { validPosition } from '../../domain/localGeography'
 import type { City } from '../../domain/cities'
 import type { GeolocationFailure } from '../../domain/errors'
 import type { Result } from '../../domain/result'
-import type { PrayerLocation } from '../../domain/types'
+import type { Locality } from '../../domain/types'
 import { translate } from '../../localization'
 import type { Coordinates, GeolocationPermission, PositionAccuracy } from '../../platform/browser'
 import { geolocationFailureMessage, isLowAccuracy, preferredGeolocationFailure, type GpsUiState, type NameLookupState } from './locationState'
@@ -26,7 +26,7 @@ interface PlaceSelectionServices {
   now: () => Date
 }
 
-export function usePlaceSelection(services: PlaceSelectionServices, locations: PrayerLocation[], onChosen: () => void,
+export function usePlaceSelection(services: PlaceSelectionServices, locations: Locality[], onChosen: () => void,
   persist: (choice: LocationChoice, change?: PlacePersistenceChange) => void,
   initial?: { place: Place; source: LocationSelectionSource }) {
   const [place, setPlace] = useState<Place | null>(() => initial?.place ?? null)
@@ -48,11 +48,8 @@ export function usePlaceSelection(services: PlaceSelectionServices, locations: P
   useEffect(() => () => { epoch.current += 1; activeInteractive.current = null }, [])
 
   const saveChoice = useCallback((next: Place, selectionSource: LocationSelectionSource, change: PlacePersistenceChange = 'automatic') => {
-    const official = officialLocationForPlace(next, locations)
-    persist(official
-      ? { mode: 'official', locationId: official.id, source: selectionSource, place: next }
-      : { mode: 'calculated', coordinates: next, source: selectionSource, place: next }, change)
-  }, [locations, persist])
+    persist({ mode: 'calculated', coordinates: next, source: selectionSource, place: next }, change)
+  }, [persist])
 
   const apply = useCallback((next: Place, selectionSource: LocationSelectionSource, operation: number,
     change: 'automatic' | 'selection' | 'refinement' = 'automatic') => {
@@ -73,7 +70,7 @@ export function usePlaceSelection(services: PlaceSelectionServices, locations: P
     saveChoice(next, selectionSource, change)
   }, [saveChoice])
 
-  const restore = useCallback((choice: LocationChoice | null, availableLocations: PrayerLocation[]) => {
+  const restore = useCallback((choice: LocationChoice | null, availableLocations: Locality[]) => {
     if (current.current && current.current !== initialPlace.current) {
       restored.current = true
       return
@@ -240,7 +237,7 @@ export function usePlaceSelection(services: PlaceSelectionServices, locations: P
     }).catch(() => undefined)
   }, [locate, place, services, source])
 
-  const selectOfficial = useCallback((id: string) => {
+  const selectLocality = useCallback((id: string) => {
     const location = locations.find(item => item.id === id)
     if (!location) return
     setNotice(null)
@@ -249,7 +246,7 @@ export function usePlaceSelection(services: PlaceSelectionServices, locations: P
     activeInteractive.current = null
     gpsPreviewRef.current = null
     setGpsPreview(null)
-    apply(createOfficialPlace(location, services.now().getTime()), 'manual', ++epoch.current, 'selection')
+    apply(createLocalityPlace(location, services.now().getTime()), 'manual', ++epoch.current, 'selection')
     onChosen()
   }, [apply, locations, onChosen, services])
   const selectCity = useCallback((city: City) => {
@@ -330,5 +327,5 @@ export function usePlaceSelection(services: PlaceSelectionServices, locations: P
     setGpsState({ status: 'idle' })
     setNameLookupState('idle')
   }, [])
-  return { place, gpsPreview, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, cancelInteractive, selectOfficial, selectCity, selectRecent, invalidate }
+  return { place, gpsPreview, source, notice, gpsState, nameLookupState, restore, locate, acceptGps, cancelInteractive, selectLocality, selectCity, selectRecent, invalidate }
 }

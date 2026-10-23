@@ -1,4 +1,4 @@
-import type { PrayerLocation } from './types'
+import type { Locality } from './types'
 
 const EARTH_RADIUS_KM = 6_371
 const TATARSTAN_GEONAMES_ADMIN1_CODE = '73'
@@ -34,9 +34,9 @@ export function haversineDistanceKm(
 export function findNearestLocation(
   latitude: number,
   longitude: number,
-  locations: PrayerLocation[],
-): PrayerLocation | null {
-  let nearest: PrayerLocation | null = null
+  locations: Locality[],
+): Locality | null {
+  let nearest: Locality | null = null
   let nearestDistance = Number.POSITIVE_INFINITY
 
   for (const location of locations) {

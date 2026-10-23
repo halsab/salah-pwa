@@ -11,11 +11,11 @@ import {
 
 import type { CityCatalogService } from './data/cityCatalog'
 import { cityCatalogService } from './data/cityCatalogClient'
-import { prayerRepositories, prayerRepository, type PrayerRepositoryState, type PrayerRepositorySnapshot,
+import { prayerRepository, type PrayerRepositoryState,
   type PrayerRepositoryOptionalSettings } from './data/prayerRepository'
 import { loadLocalGeography } from './data/localGeography'
 import type { CoverageGeometry } from './domain/localGeography'
-import { PRAYER_PROVIDERS, DEFAULT_OFFICIAL_LOCATIONS, officialDatasets } from './data/prayerProviders'
+import { TATARSTAN_LOCALITIES } from './data/tatarstanLocalities'
 import { initialManualCalculation, resolvePrayerTimeSource } from './domain/prayerSource'
 import { automaticPreferences, type SourcePreferences } from './domain/sourcePreferences'
 import { effectiveCalculationSettings } from './domain/calculationSettings'
@@ -33,7 +33,6 @@ import {
 import { getDeviceTimeZone, getUtcOffset, getZonedTime } from './domain/locationTime'
 import { getSystemDate } from './domain/date'
 import type { Result } from './domain/result'
-import { failure } from './domain/result'
 import { LocationScreen, SearchScreen } from './features/location/LocationScreens'
 import { flushSync } from 'react-dom'
 import { placeFromChoice } from './domain/placeMigration'
@@ -70,7 +69,7 @@ import { useSystemAppearance } from './ui/useSystemAppearance'
 import { setExecutionQuiescence } from './platform/executionGate'
 import { setLanguagePreference, useLocalization } from './localization'
 import { PROFILE_LABEL_KEYS } from './ui/calculationLabels'
-import { getDatasetRevision, scheduleContextKey } from './domain/scheduleContext'
+import { scheduleContextKey } from './domain/scheduleContext'
 import {
   DEFAULT_FASTING_MODE_PREFERENCES,
   buildFastingScheduleEvents,
@@ -86,8 +85,7 @@ const SECONDARY_SCREENS: readonly AppScreen[] = ['settings', 'source', 'source-c
 const loadReligiousEventScreen = () => import('./features/religiousEvents/ReligiousEventScreen')
 export interface AppServices extends Partial<Pick<typeof prayerRepository,
   'clearAppData' | 'initializeStartup' | 'loadOptionalSettings'>>,
-  Pick<typeof prayerRepository, 'initialize' | 'refresh' | 'subscribe' | 'saveSettings' | 'invalidateAndDrain'> {
-  getDays: (locationId: string, dates: readonly string[], revision: string, provider: string) => ReturnType<typeof prayerRepository.getDays>
+  Pick<typeof prayerRepository, 'initialize' | 'saveSettings' | 'invalidateAndDrain'> {
   cities: CityCatalogService
   loadGeography: () => Promise<CoverageGeometry | null>
   getPermission: () => Promise<GeolocationPermission>
@@ -103,11 +101,6 @@ export interface AppServices extends Partial<Pick<typeof prayerRepository,
 
 const defaultServices: AppServices = {
   ...prayerRepository,
-  getDays: (locationId, dates, revision, provider) => {
-    const repository = prayerRepositories.get(provider)
-    return repository ? repository.getDays(locationId, dates, revision)
-      : Promise.resolve(failure({ kind: 'data', reason: 'unavailable' }))
-  },
   cities: cityCatalogService,
   loadGeography: loadLocalGeography,
   getPermission: getGeolocationPermission,
@@ -149,13 +142,6 @@ export function App({
     fastGenerationRef.current = generation
     setFastGeneration(generation)
   }, [])
-  const [repositoryState, setRepositoryState] = useState<PrayerRepositorySnapshot>(() => ({
-    meta: startupSnapshot?.meta ?? null,
-    dataState: startupSnapshot?.meta ? 'ready' : 'not-loaded',
-    update: { status: 'idle' }, checkedAt: null,
-  }))
-  const meta = repositoryState.meta
-  const repositoryRevision = useRef(meta ? getDatasetRevision(meta) : null)
   const [preferences, setPreferences] = useState<SourcePreferences>(() => startupSnapshot?.preferences ?? automaticPreferences())
   const [storedCalendarPreferences, setCalendarPreferences] = useState<CalendarPreferences>(DEFAULT_CALENDAR_PREFERENCES)
   const [themeFamily, setThemeFamily] = useState<ThemeFamily>(readThemePreferenceCache)
@@ -169,8 +155,6 @@ export function App({
   const [error, setError] = useState(false)
   const [startupRecoveryError, setStartupRecoveryError] = useState(false)
   const [optionalSettingsError, setOptionalSettingsError] = useState(false)
-  const [startupInitialized, setStartupInitialized] = useState(false)
-  const initialRefreshStarted = useRef(false)
   const persistSettings = useCallback(async (
     patch: Parameters<AppServices['saveSettings']>[0],
     isGenerationCurrent?: Parameters<AppServices['saveSettings']>[1],
@@ -222,7 +206,7 @@ export function App({
   const legacyHistoryAnchorCaptured = useRef(false)
   const acceptedGpsHistory = useRef<{ runtimeId: string; historyId: string } | null>(null)
   const persistPlace = useCallback((choice: LocationChoice, change: PlacePersistenceChange = 'automatic') => {
-    const next = placeFromChoice(choice, DEFAULT_OFFICIAL_LOCATIONS)
+    const next = placeFromChoice(choice, TATARSTAN_LOCALITIES)
     if (!next || change === 'refinement' && acceptedGpsHistory.current?.runtimeId !== next.id) return
     pendingFastIdentityWrite.current = true
     setFastCacheReady(false)
@@ -273,7 +257,6 @@ export function App({
   const SettingsScreens = secondaryScreens?.SettingsScreens
   const SourceInfo = secondaryScreens?.SourceInfo
   const MethodologyDialog = secondaryScreens?.MethodologyDialog
-  const sessionHasPlace = useRef(Boolean(startupSnapshot?.place))
   const [religiousEventScreen, setReligiousEventScreen] = useState<typeof import('./features/religiousEvents/ReligiousEventScreen')['ReligiousEventScreen'] | null>(null)
   const [religiousEventLoadError, setReligiousEventLoadError] = useState<string | null>(null)
   const locationDialogOpen = navigation.screen === 'location' || navigation.screen === 'search'
@@ -286,10 +269,10 @@ export function App({
   const LoadedReligiousEventScreen = religiousEventScreen
 
   const onPlaceChosen = useCallback(() => { homeScreen(); pulseHaptic() }, [homeScreen])
-  const locations = useMemo(() => meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS, [meta])
+  const locations = TATARSTAN_LOCALITIES
   const { place, gpsPreview, source: placeSelectionSource, notice: locationNotice, gpsState, nameLookupState, restore, locate: locateAutomatically, acceptGps,
     cancelInteractive: cancelInteractiveGps,
-    selectOfficial: selectOfficialLocation, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(
+    selectLocality, selectCity: selectPresetCity, selectRecent, invalidate: invalidateLocation } = usePlaceSelection(
     services, locations, onPlaceChosen, persistPlace,
     startupSnapshot ? { place: startupSnapshot.place, source: startupSnapshot.selectionSource } : undefined,
   )
@@ -297,7 +280,7 @@ export function App({
     cancelInteractiveGps()
     backScreen()
   }, [backScreen, cancelInteractiveGps])
-  const { reset, resetting, drain: drainReset, hasPendingReset } = useDataReset({ invalidateLocation, invalidateSaves,
+  const { reset, drain: drainReset, hasPendingReset } = useDataReset({ invalidateLocation, invalidateSaves,
     invalidateRepository: services.invalidateAndDrain, clear: services.clearAppData ?? prayerRepository.clearAppData })
   const quiescenceOperation = useRef<() => Promise<void>>(async () => {})
   const quiescenceInFlight = useRef<Promise<void> | null>(null)
@@ -358,27 +341,17 @@ export function App({
       }
     })
   }, [invalidateFastCache, reset])
-  useEffect(() => {
-    sessionHasPlace.current = Boolean(place)
-  }, [place])
-  const datasets = useMemo(() => officialDatasets(meta, repositoryState.dataState), [meta, repositoryState.dataState])
   const capabilities = useMemo(() => CALCULATION_PROFILES.filter(p => services.getCalculationProfileCapability(p.id).supported).map(p => p.id), [services])
 
   useEffect(() => {
     let active = true
     const acceptState = (state: PrayerRepositoryState) => {
       if (!active) return
-      const nextRevision = state.meta ? getDatasetRevision(state.meta) : null
-      if (nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
-        invalidateFastCache()
-      }
-      repositoryRevision.current = nextRevision
-      setRepositoryState(state)
       setFastCacheReady(!pendingFastIdentityWrite.current)
-      restore(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
+      restore(state.locationChoice, TATARSTAN_LOCALITIES)
       if (!editedRecentPlaces.current) recentPlacesMigrationComplete.current = state.recentPlacesMigrated === true
       previousPlace.current = state.locationChoice
-        ? placeFromChoice(state.locationChoice, state.meta?.locations ?? DEFAULT_OFFICIAL_LOCATIONS)
+        ? placeFromChoice(state.locationChoice, TATARSTAN_LOCALITIES)
         : null
       if (state.recentPlacesMigrated === true) {
         historyAnchorPlace.current = previousPlace.current
@@ -413,11 +386,9 @@ export function App({
         themeChannel.current?.postMessage(nextThemeFamily)
       }
       if (!editedFasting.current && state.fastingMode !== undefined) setFastingMode(restoreFastingModePreferences(state.fastingMode))
-      sessionHasPlace.current = Boolean(state.locationChoice)
       setError(false)
       setStartupRecoveryError(false)
       setOptionalSettingsError(false)
-      setStartupInitialized(true)
     }
     const hydrateOptionalSettings = () => {
       if (!services.loadOptionalSettings) return
@@ -465,27 +436,12 @@ export function App({
         if (active && token === optionalSettingsToken.current) setOptionalSettingsError(true)
       })
     }
-    let unsubscribe = () => {}
-    let ready = false
     const startupBarrier = initializationDrain.current
-    const subscribe = () => {
-      unsubscribe = services.subscribe(snapshot => {
-        if (!active) return
-        const nextRevision = snapshot.meta ? getDatasetRevision(snapshot.meta) : null
-        if (nextRevision && repositoryRevision.current && repositoryRevision.current !== nextRevision) {
-          repositoryRevision.current = nextRevision
-          invalidateFastCache()
-        }
-        setRepositoryState(snapshot)
-      })
-    }
-    const refresh = () => { if (ready && sessionHasPlace.current && !resetting.current) void services.refresh() }
     const initialize = services.initializeStartup ?? services.initialize
     const startupGeneration = fastGenerationRef.current
     const acceptInitialization = (result: Awaited<ReturnType<typeof initialize>> | null) => {
       if (!result) return
       if (!active) return
-      setStartupInitialized(true)
       if (startupGeneration !== fastGenerationRef.current) {
         hydrateOptionalSettings()
         return
@@ -500,31 +456,23 @@ export function App({
     }
     const failInitialization = () => {
       if (!active) return
-      setStartupInitialized(true)
       if (startupGeneration !== fastGenerationRef.current) return
       if (startupSnapshot) setStartupRecoveryError(true)
       else setError(true)
     }
     const initializeCurrent = () => {
       if (!active) return
-      ready = true
-      subscribe()
       return initialize().then(acceptInitialization).catch(failInitialization)
     }
     if (startupBarrier) void startupBarrier.then(initializeCurrent).catch(failInitialization)
     else void initializeCurrent()
-    window.addEventListener('online', refresh)
-    window.addEventListener('pageshow', refresh)
     return () => {
       active = false
       const drain = quiescenceOperation.current()
       initializationDrain.current = drain
       retryOptionalSettings.current = () => {}
-      unsubscribe()
-      window.removeEventListener('online', refresh)
-      window.removeEventListener('pageshow', refresh)
     }
-  }, [retryCount, services, restore, resetting, startupSnapshot, invalidateFastCache, saveSettings])
+  }, [retryCount, services, restore, startupSnapshot, saveSettings])
 
   const { cityCatalogStatus, loadCities } = useCityCatalog(services)
   const deviceTimeZone = services.getDeviceTimeZone()
@@ -535,27 +483,19 @@ export function App({
     syncCurrentTime,
   } = useScheduleDate(services)
   const currentResolution = place
-    ? resolvePrayerTimeSource(place, currentTime, preferences, datasets, capabilities)
+    ? resolvePrayerTimeSource(place, preferences, capabilities)
     : null
   const todayTimeZone = currentResolution?.timeZone ?? place?.timeZone ?? deviceTimeZone
   const today = getSystemDate(currentTime, todayTimeZone)
   const selectedDate = selectedDateOverride ?? today
   const resolution = place
-    ? resolvePrayerTimeSource(place, selectedDate, preferences, datasets, capabilities)
+    ? resolvePrayerTimeSource(place, preferences, capabilities)
     : null
   const changeScheduleDate = useCallback((date: string) => {
     changeDate(date === today ? null : date)
   }, [changeDate, today])
-  const officialMode = resolution?.kind === 'official'
   const calculationSettings = resolution?.kind === 'calculated' ? resolution.settings
     : preferences.calculationDraft ? effectiveCalculationSettings(preferences.calculationDraft) : DEFAULT_CALCULATION_SETTINGS
-  const scheduleServices = useMemo(() => ({
-    getDays: async (nextLocationId: string, dates: readonly string[], datasetRevision: string, provider: string) => {
-      const result = await services.getDays(nextLocationId, dates, datasetRevision, provider)
-      if (!result.ok) throw Object.assign(new Error(result.error.reason), { kind: result.error.kind })
-      return result.value
-    },
-  }), [services])
   const systemTone = useSystemAppearance()
   const theme = useMemo(() => resolveTheme(themeFamily, today, systemTone), [systemTone, themeFamily, today])
   useLayoutEffect(() => { applyTheme(theme) }, [theme])
@@ -567,27 +507,19 @@ export function App({
     scheduleLoading,
     scheduleError,
     contextReady,
-    officialHorizon,
     enrichmentError,
     retrySchedule,
     retryEnrichment,
   } = usePrayerSchedules({
-    services: scheduleServices,
     location: place,
     resolution,
     mode: preferences.mode,
     selectedDate,
     initialSnapshot: selectedDate === today ? startupSnapshot : null,
   })
-  useEffect(() => {
-    if (!startupInitialized || !place || scheduleLoading || resetting.current || initialRefreshStarted.current) return
-    initialRefreshStarted.current = true
-    void services.refresh()
-  }, [place, resetting, scheduleLoading, services, startupInitialized])
   const fastingEvents = useMemo(() => buildFastingScheduleEvents(schedules, context?.timeZone), [schedules, context?.timeZone])
   // Не используем расписания выбранной даты для вычисления режима текущего дня.
   const currentSchedules = usePrayerSchedules({
-    services: scheduleServices,
     location: selectedDate === today ? null : place,
     resolution: selectedDate === today ? null : currentResolution,
     mode: preferences.mode,
@@ -595,8 +527,6 @@ export function App({
     initialSnapshot: selectedDate === today ? null : startupSnapshot,
   })
   const todaySchedule = selectedDate === today ? schedule : currentSchedules.schedule
-  const todaySchedules = selectedDate === today ? schedules : currentSchedules.schedules
-  const todayContextReady = selectedDate === today ? contextReady : currentSchedules.contextReady
   const todayContext = selectedDate === today ? context : currentSchedules.context
   const todayContextKey = todayContext?.date === today
     ? selectedDate === today ? selectedContextKey : currentSchedules.contextKey
@@ -613,13 +543,10 @@ export function App({
     if (!fastCacheReady || !place || !todaySchedule || !todayContext || todayContext.date !== today) return
     writeFastScheduleSnapshot({
       appVersion, now: services.now(), deviceTimeZone, context: todayContext, schedule: todaySchedule, generation: fastGeneration,
-      place, selectionSource: placeSelectionSource, preferences, meta,
-      ...(todayContext.source === 'official' && todayContextReady ? {
-        neighbors: todaySchedules.filter((row): row is import('./domain/types').PrayerDay => !('entries' in row) && row.date !== today),
-      } : {}),
+      place, selectionSource: placeSelectionSource, preferences,
     })
-  }, [appVersion, fastCacheReady, fastGeneration, meta, place, placeSelectionSource, preferences,
-    deviceTimeZone, services, today, todayContext, todaySchedule, todayContextReady, todaySchedules])
+  }, [appVersion, fastCacheReady, fastGeneration, place, placeSelectionSource, preferences,
+    deviceTimeZone, services, today, todayContext, todaySchedule])
   const activeScheduleContext = selectedDate === today ? context : currentSchedules.context
   const activeFastingEvents = useMemo(() => selectedDate === today
     ? fastingEvents
@@ -628,7 +555,6 @@ export function App({
   const activeRamadanOccurrence = resolveActiveRamadanOccurrence({
     today, correction: calendarPreferences.correction, hijriSupported,
     now: currentTime, timeZone: activeScheduleContext?.timeZone, events: activeFastingEvents,
-    officialHorizon: selectedDate === today ? officialHorizon : currentSchedules.officialHorizon,
   })
   const fastingModeEnabled = isFastingModeActive(fastingMode, activeRamadanOccurrence)
 
@@ -735,15 +661,14 @@ export function App({
             schedules={schedules}
             scheduleLoading={scheduleLoading}
             scheduleError={scheduleError}
-            contextReady={contextReady} officialHorizon={officialHorizon}
+            contextReady={contextReady}
             enrichmentError={enrichmentError}
-            onRetryEnrichment={() => { retryEnrichment(); if (officialMode) void services.refresh() }}
+            onRetryEnrichment={retryEnrichment}
             selectedDate={selectedDate}
             calendarPreferences={calendarPreferences}
             today={today}
             currentTime={currentTime}
             now={services.now}
-            officialMode={officialMode}
             hijriSupported={hijriSupported}
             fastingMode={fastingMode}
             fastingModeEnabled={fastingModeEnabled}
@@ -763,7 +688,7 @@ export function App({
               {locationNotice ? <p className="note" role="status">{locationNotice}</p> : null}
               {!locationNotice && nearbyCityNotice ? <p className="note" role="status">{nearbyCityNotice}</p> : null}{persistenceNotice}{recoveryNotices}</>}
             onChangeDate={changeScheduleDate}
-            onRetrySchedule={() => { retrySchedule(); if (officialMode) void services.refresh() }}
+            onRetrySchedule={retrySchedule}
           />}
 
       </div> : null}
@@ -779,10 +704,10 @@ export function App({
         onBack={closeLocationDialog} onSearch={() => { cancelInteractiveGps(); flushSync(() => openScreen('search')); document.querySelector<HTMLInputElement>('input[type="search"]')?.focus() }} onLocate={locateAutomatically}
         onAcceptGps={acceptGps} gpsState={gpsState} nameLookupState={nameLookupState} currentTime={currentTime} notice={persistenceNotice} /> : null}
       {navigation.screen === 'search' ? <SearchScreen locations={locations} catalogStatus={cityCatalogStatus} onLoadCities={loadCities}
-        onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectOfficial={selectOfficialLocation} notice={persistenceNotice} /> : null}
+        onSearchCities={services.cities.search} onBack={backScreen} onSelectCity={selectPresetCity} onSelectLocality={selectLocality} notice={persistenceNotice} /> : null}
       {navigation.screen === 'source-info' ? schedule && context
-        ? SourceInfo ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} meta={meta} placeLabel={sourcePlaceLabel}
-            checkedAt={repositoryState.checkedAt} updateFailed={repositoryState.update.status === 'failed'} onOpenMethodology={() => openScreen('methodology')} /> : null
+        ? SourceInfo ? <SourceInfo open onClose={backScreen} context={context} schedule={schedule} placeLabel={sourcePlaceLabel}
+            onOpenMethodology={() => openScreen('methodology')} /> : null
         : <Screen label={t('scheduleInfo')} top={<BackButton onClick={backScreen} />}><p className="screen-copy">{place ? t('scheduleForDate') : t('noSchedulePlace')}</p></Screen>
         : null}
       {navigation.screen === 'religious-event' && navigation.religiousEventId
@@ -792,10 +717,10 @@ export function App({
         fastingModeEnabled={fastingModeEnabled} onFastingModeChange={updateFastingMode}
         themeFamily={themeFamily} onThemeFamilyChange={updateThemeFamily}
         onOpen={openScreen} onBack={backScreen} getCapability={services.getCalculationProfileCapability} onReset={resetWithFastCache} version={version} notice={persistenceNotice}
-        sourceLabel={officialMode ? t('dumRt') : t(PROFILE_LABEL_KEYS[calculationSettings.profile])}
+        sourceLabel={t(PROFILE_LABEL_KEYS[calculationSettings.profile])}
         effectiveSource={resolution}
-        initialManualCalculation={place ? initialManualCalculation(place, selectedDate, datasets, capabilities) : undefined} /> : null}
-      {MethodologyDialog ? <MethodologyDialog open={methodologyDialogOpen} officialScheduleUrl={meta?.source.url ?? PRAYER_PROVIDERS[0]?.bundled.source.url ?? ''} onClose={backScreen} /> : null}
+        initialManualCalculation={place ? initialManualCalculation(place, capabilities) : undefined} /> : null}
+      {MethodologyDialog ? <MethodologyDialog open={methodologyDialogOpen} onClose={backScreen} /> : null}
       <ShareDialog open={shareDialogOpen} onClose={backScreen} />
     </AppShell>
   )

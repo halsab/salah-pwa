@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import type { PrayerLocation } from './types'
+import type { Locality } from './types'
 import {
   findNearestLocation,
   haversineDistanceKm,
   isConfirmedTatarstan,
 } from './location'
 
-const locations: PrayerLocation[] = [
+const locations: Locality[] = [
   { id: 'kazan', name: 'Казань', latitude: 55.7961, longitude: 49.1064 },
   {
     id: 'naberezhnye-chelny',

@@ -1,19 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import { required } from '../test/required'
-import { createCityPlace, createOfficialPlace, createGpsPlace, withNearbyCity } from './place'
+import { createCityPlace, createLocalityPlace, createGpsPlace, withNearbyCity } from './place'
 import { migrateRecentPlaces, rememberPlace, restoreRecentPlaces, updateRecentPlace } from './recentPlaces'
 
-const official = (id: string, longitude = 49) => createOfficialPlace({ id, name: id, latitude: 55, longitude }, 10)
+const locality = (id: string, longitude = 49) => createLocalityPlace({ id, name: id, latitude: 55, longitude }, 10)
 const city = (id: number, longitude = 49) => createCityPlace({ id, name: 'Одинаковое имя', countryCode: 'RU', admin1Code: '73', admin1Name: 'Татарстан', latitude: 55, longitude, population: 1, timeZone: 'Europe/Moscow' }, 10)
 const gps = (latitude: number, longitude: number, timestamp: number, name = '', accuracy = 20) => ({
   ...createGpsPlace({ latitude, longitude, accuracy, timestamp }, 'Europe/Moscow', null, `gps:operation:${timestamp}`), name,
 })
 
 describe('recentPlaces', () => {
-  it('promotes one city or official identity and preserves equal labels with distinct IDs and types', () => {
-    const existing = [official('b'), city(1), official('a')]
-    expect(rememberPlace(existing, official('b')).map(place => place.id)).toEqual(['locality:b', 'geonames:1', 'locality:a'])
-    const sameLabel = rememberPlace([official('same')], city(9))
+  it('promotes one city or locality identity and preserves equal labels with distinct IDs and types', () => {
+    const existing = [locality('b'), city(1), locality('a')]
+    expect(rememberPlace(existing, locality('b')).map(place => place.id)).toEqual(['locality:b', 'geonames:1', 'locality:a'])
+    const sameLabel = rememberPlace([locality('same')], city(9))
     expect(sameLabel.map(place => place.id)).toEqual(['geonames:9', 'locality:same'])
   })
 
@@ -74,14 +74,23 @@ describe('recentPlaces', () => {
 
   it('restores current place first, drops invalid/duplicate rows and is idempotent', () => {
     const current = gps(55, 49, 100)
-    const recents = migrateRecentPlaces([null, {}, gps(55, 49.001, 90), official('a'), official('a')], current)
+    const recents = migrateRecentPlaces([null, {}, gps(55, 49.001, 90), locality('a'), locality('a')], current)
     expect(recents.map(place => place.selection === 'gps' ? 'gps' : place.id)).toEqual(['gps', 'locality:a'])
     expect(restoreRecentPlaces(recents)).toEqual(recents)
     expect(restoreRecentPlaces('corrupted')).toEqual([])
   })
 
+  it('converts a legacy official locality in recent history to a calculated city', () => {
+    const legacy = { ...locality('kazan'), selection: 'official' as const, timeZone: 'UTC',
+      automaticTimeZone: { id: 'UTC', source: 'city' as const } }
+
+    expect(restoreRecentPlaces([legacy])).toMatchObject([
+      { id: 'locality:kazan', selection: 'city', timeZone: 'Europe/Moscow', automaticTimeZone: { id: 'Europe/Moscow' } },
+    ])
+  })
+
   it('migrates legacy manual history without reordering it or replacing an existing GPS snapshot with passive current state', () => {
-    const old = [official('one'), city(2), official('three')]
+    const old = [locality('one'), city(2), locality('three')]
     const activeGps = gps(55, 49.001, 500, 'passive newer name')
     const storedGps = gps(55, 49, 100, 'accepted snapshot')
     const migrated = migrateRecentPlaces([storedGps, ...old], activeGps)
@@ -91,8 +100,8 @@ describe('recentPlaces', () => {
   })
 
   it('adds a missing current place once and keeps it inside the ten-entry cap', () => {
-    const current = official('current')
-    const migrated = migrateRecentPlaces(Array.from({ length: 10 }, (_, index) => official(String(index))), current)
+    const current = locality('current')
+    const migrated = migrateRecentPlaces(Array.from({ length: 10 }, (_, index) => locality(String(index))), current)
     expect(migrated).toHaveLength(10)
     expect(migrated[0]?.id).toBe('locality:current')
     expect(migrated.some(place => place.id === 'locality:9')).toBe(false)
@@ -107,8 +116,8 @@ describe('recentPlaces', () => {
   })
 
   it('promotes the active legacy entry once while retaining the other legacy entries in order', () => {
-    const history = [official('one'), official('active'), official('three')]
-    const migrated = migrateRecentPlaces(history, official('active'))
+    const history = [locality('one'), locality('active'), locality('three')]
+    const migrated = migrateRecentPlaces(history, locality('active'))
     expect(migrated.map(place => place.id)).toEqual(['locality:active', 'locality:one', 'locality:three'])
     expect(restoreRecentPlaces(migrated)).toEqual(migrated)
   })
@@ -127,8 +136,8 @@ describe('recentPlaces', () => {
 
   it('repairs cross-type ID collisions in corrupt persisted data', () => {
     const gpsPlace = { ...gps(40, -73, 100), id: 'collision' }
-    const officialPlace = { ...official('official'), id: 'gps:history:40.000000:-73.000000' }
-    const normalized = restoreRecentPlaces([gpsPlace, officialPlace])
+    const localityPlace = { ...locality('collision'), id: 'gps:history:40.000000:-73.000000' }
+    const normalized = restoreRecentPlaces([gpsPlace, localityPlace])
     expect(normalized.map(place => place.id)).toEqual(['gps:history:40.000000:-73.000000', 'gps:history:40.000000:-73.000000:recovered:1'])
     expect(new Set(normalized.map(place => place.id)).size).toBe(normalized.length)
   })
@@ -141,8 +150,8 @@ describe('recentPlaces', () => {
   })
 
   it('keeps ten distinct places and evicts only the oldest on an eleventh selection', () => {
-    let places = Array.from({ length: 10 }, (_, index) => official(String(index)))
-    places = rememberPlace(places, official('10'))
+    let places = Array.from({ length: 10 }, (_, index) => locality(String(index)))
+    places = rememberPlace(places, locality('10'))
     expect(places).toHaveLength(10)
     expect(places.map(place => place.id)).toEqual(['locality:10', ...Array.from({ length: 9 }, (_, i) => `locality:${i}`)])
   })

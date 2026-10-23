@@ -1,98 +1,49 @@
-import { createLocationClock, DUM_RT_TIME_ZONE } from './locationTime'
-import { addDays } from './date'
-import { calculateSolarZenith, type CalculatedPrayerSchedule } from './prayerCalculation'
-import type { PrayerDay, PrayerKey, PrayerTime, SchedulePrayerKey } from './types'
+import { createLocationClock } from './locationTime'
+import { type CalculatedPrayerSchedule } from './prayerCalculation'
+import type { CalculatedPrayerKey, PrayerTime } from './types'
 
-export type PrayerSchedule = PrayerDay | CalculatedPrayerSchedule
-export type EventKind = 'prayer' | 'jamaat' | 'marker'
+export type PrayerSchedule = CalculatedPrayerSchedule
+export type EventKind = 'prayer' | 'marker'
 
-function isCalculatedSchedule(schedule: PrayerSchedule): schedule is CalculatedPrayerSchedule {
-  return 'entries' in schedule
-}
-
-interface EventDefinition {
+export interface ResolvedScheduleEvent {
   kind: EventKind
-}
-
-const EVENT_DEFINITIONS: Record<SchedulePrayerKey, EventDefinition> = {
-  fajrStart: { kind: 'prayer' },
-  fajrJamaat: { kind: 'jamaat' },
-  dhuhrJamaat: { kind: 'jamaat' },
-  asrJamaat: { kind: 'jamaat' },
-  maghribJamaat: { kind: 'jamaat' },
-  ishaJamaat: { kind: 'jamaat' },
-  fajr: { kind: 'prayer' },
-  sunrise: { kind: 'marker' },
-  zenith: { kind: 'marker' },
-  dhuhr: { kind: 'prayer' },
-  asr: { kind: 'prayer' },
-  maghrib: { kind: 'prayer' },
-  isha: { kind: 'prayer' },
-}
-
-interface EventSource extends EventDefinition {
-  key: SchedulePrayerKey
+  key: CalculatedPrayerKey
   scheduleDate: string
   timeZone: string
   time: PrayerTime
-}
-
-export interface ResolvedScheduleEvent extends EventSource {
   status: 'resolved'
-  provenance: 'published' | 'calculated'
+  provenance: 'calculated'
   instant: number
   date: string
   dayOffset: number
 }
 
-export interface UnavailableScheduleEvent extends EventDefinition {
-  key: 'zenith'
-  status: 'unavailable'
-  reason: 'calculation-failed'
-  provenance: 'calculated'
-  scheduleDate: string
-  timeZone: string
-}
+export type ScheduleEvent = ResolvedScheduleEvent
 
-export type ScheduleEvent = ResolvedScheduleEvent | UnavailableScheduleEvent
+const MARKER_KEYS: ReadonlySet<CalculatedPrayerKey> = new Set(['sunrise', 'zenith'])
 
 export function buildScheduleEvents(schedule: PrayerSchedule): ScheduleEvent[] {
-  const calculated = isCalculatedSchedule(schedule)
-  const timeZone = calculated ? schedule.timeZone : schedule.timeZone ?? DUM_RT_TIME_ZONE
-  const clock = createLocationClock(timeZone)
-  const keys = (Object.keys(EVENT_DEFINITIONS) as SchedulePrayerKey[])
-    .filter((key) => calculated ? key in schedule.entries : key in schedule && schedule[key as keyof PrayerDay] !== undefined)
-  if (!calculated && !keys.includes('zenith')) keys.push('zenith')
-
-  return keys.map((key): ScheduleEvent => {
-    const entry = calculated && key in schedule.entries
-      ? schedule.entries[key as keyof typeof schedule.entries]
-      : null
-    const day = calculated ? null : schedule
-    const officialTime = day && key !== 'fajr' ? day[key] : undefined
-    let time: PrayerTime | undefined = entry?.time ?? officialTime
-    let instant = entry?.instant
-    let provenance: ResolvedScheduleEvent['provenance'] = calculated ? 'calculated' : day?.provenance?.[key as PrayerKey] ?? 'published'
-    if (key === 'zenith' && !time && !calculated) {
-      const transit = day?.coordinates ? calculateSolarZenith(day.coordinates, day.date, timeZone) : null
-      if (!transit) return { ...EVENT_DEFINITIONS.zenith, key: 'zenith', status: 'unavailable', reason: 'calculation-failed', provenance: 'calculated', scheduleDate: schedule.date, timeZone }
-      time = transit.time
-      instant = transit.instant
-      provenance = 'calculated'
-    }
-    if (!time) return { ...EVENT_DEFINITIONS.zenith, key: 'zenith', status: 'unavailable', reason: 'calculation-failed', provenance: 'calculated', scheduleDate: schedule.date, timeZone }
-    const source: EventSource = { ...EVENT_DEFINITIONS[key], key, scheduleDate: schedule.date, timeZone, time }
-    // Позднее начало Фаджра наступает накануне: дата строки обозначает следующий день поста.
-    const eventDate = !calculated && key === 'fajrStart' && Number(time.split(':')[0]) >= 12
-      ? addDays(schedule.date, -1) : schedule.date
-    const resolvedInstant = instant ?? clock.toInstant(eventDate, time).getTime()
-    const date = clock.getCivilDate(new Date(resolvedInstant))
+  const clock = createLocationClock(schedule.timeZone)
+  return (Object.keys(schedule.entries) as CalculatedPrayerKey[]).map(key => {
+    const entry = schedule.entries[key]
+    const date = clock.getCivilDate(new Date(entry.instant))
     const dayOffset = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${schedule.date}T00:00:00Z`)) / 86_400_000
-    return { ...source, status: 'resolved', provenance, instant: resolvedInstant, date, dayOffset }
+    return {
+      kind: MARKER_KEYS.has(key) ? 'marker' : 'prayer',
+      key,
+      scheduleDate: schedule.date,
+      timeZone: schedule.timeZone,
+      time: entry.time,
+      status: 'resolved',
+      provenance: 'calculated',
+      instant: entry.instant,
+      date,
+      dayOffset,
+    }
   })
 }
 
-const KIND_PRIORITY: Record<EventKind, number> = { prayer: 0, jamaat: 1, marker: 2 }
+const KIND_PRIORITY: Record<EventKind, number> = { prayer: 0, marker: 1 }
 
 function tieBreak(left: ResolvedScheduleEvent, right: ResolvedScheduleEvent): number {
   const leftId = `${left.key}:${left.scheduleDate}:${left.timeZone}`
@@ -109,7 +60,6 @@ export function selectEventPair(now: Date, events: readonly ScheduleEvent[]): {
   let next: ResolvedScheduleEvent | null = null
   const nowInstant = now.getTime()
   for (const event of events) {
-    if (event.status !== 'resolved') continue
     if (event.instant > nowInstant) {
       if (!next || event.instant < next.instant
         || (event.instant === next.instant && tieBreak(event, next) < 0)) next = event
@@ -117,28 +67,4 @@ export function selectEventPair(now: Date, events: readonly ScheduleEvent[]): {
       || (event.instant === current.instant && tieBreak(event, current) < 0)) current = event
   }
   return { current, next }
-}
-
-
-export interface OfficialEventHorizon { previous: boolean; next: boolean }
-
-export function isOfficialEventHorizonComplete(now: Date, date: string, timeZone: string, horizon: OfficialEventHorizon | undefined): boolean {
-  return !horizon || horizon.next || now.getTime() < createLocationClock(timeZone).toInstant(date, '12:00').getTime()
-}
-
-export function selectOfficialEventPair(
-  now: Date, events: readonly ScheduleEvent[], date: string, timeZone: string,
-  horizon: OfficialEventHorizon,
-): ReturnType<typeof selectEventPair> {
-  const pair = selectEventPair(now, events)
-  const noon = createLocationClock(timeZone).toInstant(date, '12:00').getTime()
-  // Неизвестный D+1 может содержать Фаджр на D, но никогда раньше местного полудня.
-  if (!horizon.next) {
-    if (!isOfficialEventHorizonComplete(now, date, timeZone, horizon)) pair.current = null
-    if (pair.next && pair.next.instant >= noon) pair.next = null
-  }
-  // Coverage belongs to the source row. A verified row may publish an event
-  // whose actual civil date precedes that row (late Fajr).
-  if (!horizon.previous && pair.current && pair.current.scheduleDate < date) pair.current = null
-  return pair
 }

@@ -2,12 +2,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { failure, success } from '../../domain/result'
-import { createCityPlace, createGpsPlace, createOfficialPlace, withNearbyCity } from '../../domain/place'
+import { createCityPlace, createGpsPlace, createLocalityPlace, withNearbyCity } from '../../domain/place'
 import type { CitySearchResult } from '../../data/cityCatalog'
 import { LocationScreen, SearchScreen } from './LocationScreens'
 const location = { id: 'kazan', name: 'Казань', latitude: 55.79, longitude: 49.11 }
 const city = { id: 1, name: 'Москва', countryCode: 'RU', admin1Code: '48', admin1Name: 'Москва', latitude: 55.75, longitude: 37.61, population: 100, timeZone: 'Europe/Moscow' }
-const searchProps = { locations: [location], catalogStatus: 'ready' as const, onLoadCities: vi.fn(), onBack: vi.fn(), onSelectOfficial: vi.fn(), onSelectCity: vi.fn(), onSearchCities: vi.fn().mockResolvedValue(success({ cities: [city], status: 'complete', missingPackages: [] })) }
+const searchProps = { locations: [location], catalogStatus: 'ready' as const, onLoadCities: vi.fn(), onBack: vi.fn(), onSelectLocality: vi.fn(), onSelectCity: vi.fn(), onSearchCities: vi.fn().mockResolvedValue(success({ cities: [city], status: 'complete', missingPackages: [] })) }
 describe('экраны локации', () => {
   it('объясняет запрос разрешения на первом запуске без запуска GPS', () => {
     const onLocate = vi.fn()
@@ -104,7 +104,7 @@ describe('экраны локации', () => {
   })
   it('выбирает недавний город одним тапом без подтверждения', async () => {
     const onSelectRecent = vi.fn()
-    render(<LocationScreen place={createOfficialPlace(location, 0)} recentPlaces={[createOfficialPlace({ ...location, id: 'ufa', name: 'Уфа' }, 0)]} onSelectRecent={onSelectRecent} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    render(<LocationScreen place={createLocalityPlace(location, 0)} recentPlaces={[createLocalityPlace({ ...location, id: 'ufa', name: 'Уфа' }, 0)]} onSelectRecent={onSelectRecent} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     await userEvent.click(screen.getByRole('button', { name: 'Уфа' }))
     expect(onSelectRecent).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Выбрать' })).not.toBeInTheDocument()
@@ -112,7 +112,7 @@ describe('экраны локации', () => {
   it('показывает GPS как сохранённую точку с координатами и выбирает одним нажатием', async () => {
     const saved = createGpsPlace({ latitude: 40.7128, longitude: -74.006, accuracy: 35, timestamp: 123 }, 'Europe/Moscow', null, 'gps:history:ny')
     const onSelectRecent = vi.fn()
-    render(<LocationScreen place={createOfficialPlace(location, 0)} recentPlaces={[saved]} onSelectRecent={onSelectRecent} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    render(<LocationScreen place={createLocalityPlace(location, 0)} recentPlaces={[saved]} onSelectRecent={onSelectRecent} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     const row = screen.getByRole('button', { name: 'Сохранённая точка, 40.7128, -74.0060' })
     expect(row).toBeVisible()
     await userEvent.click(row)
@@ -120,7 +120,7 @@ describe('экраны локации', () => {
   })
   it('не показывает текущую GPS history row дважды и не ограничивает список тремя строками', () => {
     const current = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 100 }, 'Europe/Moscow', null, 'gps:runtime')
-    const history = Array.from({ length: 10 }, (_, index) => createOfficialPlace({ ...location, id: `place-${index}`, name: `Место ${index}`, longitude: 49 + index }, index))
+    const history = Array.from({ length: 10 }, (_, index) => createLocalityPlace({ ...location, id: `place-${index}`, name: `Место ${index}`, longitude: 49 + index }, index))
     render(<LocationScreen place={current} recentPlaces={[current, ...history]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     expect(screen.getAllByRole('button', { name: /^Место / })).toHaveLength(10)
   })
@@ -143,10 +143,10 @@ describe('экраны локации', () => {
     expect(screen.queryByRole('button', { name: /Москва/ })).not.toBeInTheDocument()
     expect(await screen.findByText('Город не найден')).toBeVisible()
   })
-  it('сохраняет доступ к опубликованным пунктам при офлайн-каталоге', async () => {
+  it('показывает найденный город с регионом без брендинга провайдера при офлайн-каталоге', async () => {
     render(<SearchScreen {...searchProps} catalogStatus="offline" />)
     await userEvent.type(screen.getByRole('searchbox'), 'Каз')
-    expect(screen.getByRole('button', { name: /Казань.*ДУМ РТ/ })).toBeEnabled()
+    expect(screen.getByRole('button', { name: /Казань.*Татарстан/ })).toBeEnabled()
     expect(screen.getByText('Для поиска городов нужен интернет')).toBeVisible()
   })
   it.each(['offline', 'unavailable', 'invalid'] as const)('обрабатывает ошибку %s и повторяет поиск', async reason => {

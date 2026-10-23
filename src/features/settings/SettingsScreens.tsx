@@ -36,19 +36,19 @@ interface SettingsScreensProps {
 export function SettingsScreens({ screen, preferences, sourceLabel, effectiveSource, initialManualCalculation, themeFamily, onThemeFamilyChange,
   fastingModeEnabled = false, onFastingModeChange = () => {}, onChange, onOpen, onBack, getCapability, onReset, notice, version }: SettingsScreensProps) {
   const { locale, t } = useLocalization()
-  const calculation = preferences.mode === 'manual' && preferences.source.kind === 'calculated' ? preferences.source.calculation
+  const storedManualSource = preferences.mode === 'manual' ? preferences.source : preferences.manualSourceDraft
+  const manualSource = storedManualSource
+  const calculation = preferences.mode === 'manual' ? preferences.source.calculation
     : preferences.calculationDraft ?? { profile: 'muslimWorldLeague', overrides: {} }
   const parameters = effectiveCalculationSettings(calculation)
-  const mode = preferences.mode === 'automatic' ? 'automatic' : preferences.source.kind === 'official' ? 'official' : 'calculated'
-  const manualSource = preferences.mode === 'manual' ? preferences.source : preferences.manualSourceDraft
-  const profileSelectionRequired = screen === 'profiles' && preferences.mode === 'automatic' && !preferences.calculationDraft && !preferences.manualSourceDraft
-  const restoreManual = (): SourcePreferences => manualSource?.kind === 'official'
-    ? { mode: 'manual', source: manualSource, calculationDraft: calculation }
-    : manualSource?.kind === 'calculated' ? manualCalculation(manualSource.calculation) : manualCalculation(calculation)
+  const mode = preferences.mode === 'automatic' ? 'automatic' : 'calculated'
+  const profileSelectionRequired = screen === 'profiles' && preferences.mode === 'automatic' && !preferences.calculationDraft && !manualSource
+  const restoreManual = (): SourcePreferences => manualSource?.kind === 'calculated'
+    ? manualCalculation(manualSource.calculation) : manualCalculation(calculation)
   const profileLabel = t(PROFILE_LABEL_KEYS[calculation.profile])
   const legacy = calculation.overrides.fajrAngle !== undefined || calculation.overrides.isha !== undefined || Object.keys(calculation.overrides.adjustments ?? {}).length > 0
   const privacyContent = getInformationContent('privacy', locale)
-  const aboutContent = getInformationContent('about', locale, '', version)
+  const aboutContent = getInformationContent('about', locale, version)
   const top = <BackButton onClick={onBack} />
   const row = (id: string, title: string, target: AppScreen, value?: string) => <ActionRow id={id} title={title} value={value} aria-label={value ? `${title} ${value}` : title} onClick={() => onOpen(target)} />
   if (screen === 'settings') return <Screen label={t('settings')} top={top} contentClassName="settings-menu" bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="settings-share" onClick={() => onOpen('share')}>{t('share')}</ActionButton></ScreenFooter>}>
@@ -64,11 +64,10 @@ export function SettingsScreens({ screen, preferences, sourceLabel, effectiveSou
   </Screen>
   if (screen === 'source') return <Screen label={t('scheduleSettings')} top={top} bottom={<ScreenFooter align="end"><ActionButton variant="auxiliary" id="source-info" onClick={() => onOpen('source-info')}>{t('scheduleInfo')}</ActionButton></ScreenFooter>}>
     <p className="screen-heading">{t('schedule')}</p><h1 className="screen-title">{mode === 'automatic' ? t('automatic') : t('choiceManual')}</h1>
-    <p className="note screen-space">{mode === 'automatic' ? t('automaticScheduleDescription') : mode === 'official' ? t('officialScheduleDescription') : t('calculatedScheduleDescription')}</p>
+    <p className="note screen-space">{mode === 'automatic' ? t('automaticScheduleDescription') : t('calculatedScheduleDescription')}</p>
     <div className="screen-stack screen-space">
       {row('source-method', t('method'), 'source-choice', mode === 'automatic' ? t('autoShort') : t('manualShort'))}
       {mode === 'automatic' ? <p className="note" role="status">{t('effectiveSource')}: {describeEffectiveSource(effectiveSource, t)}</p> : null}
-      {mode === 'official' ? <>{row('source-table', t('table'), 'source-info')}{row('source-profile', t('manualCalculation'), 'profiles')}</> : null}
       {mode === 'calculated' ? <>{row('source-profile', t('profile'), 'profiles', profileLabel)}{row('source-parameters', t('parameters'), 'parameters')}</> : null}
       {notice}
     </div>
@@ -124,13 +123,6 @@ export function SettingsScreens({ screen, preferences, sourceLabel, effectiveSou
 
 function describeEffectiveSource(source: ResolvedPrayerSource | null | undefined, t: ReturnType<typeof createTranslator>): string {
   if (!source) return t('sourceNotResolved')
-  if (source.kind === 'official') {
-    const provider = source.provider === 'dumRt' ? t('dumRt') : source.provider
-    if (source.status === 'ready') return t('effectiveOfficial', { name: provider })
-    if (source.status === 'not-covered') return t('effectiveOfficialUnavailable', { name: provider })
-    if (source.status === 'not-loaded') return t('effectiveOfficialNotLoaded', { name: provider })
-    return t('effectiveOfficialInvalid', { name: provider })
-  }
   if (source.status === 'unsupported') return t('effectiveCalculationUnsupported', { profile: t(PROFILE_LABEL_KEYS[source.settings.profile]) })
   return t('effectiveCalculation', { profile: t(PROFILE_LABEL_KEYS[source.settings.profile]), asr: source.settings.asrMethod === 'hanafi' ? t('hanafi') : t('otherMadhhabs') })
 }

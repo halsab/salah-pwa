@@ -14,67 +14,24 @@ import {
   searchCities,
   type CityDataset,
 } from './domain/cities'
-import { DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
-import { createGpsPlace, createOfficialPlace, type Place } from './domain/place'
+import { calculatePrayerSchedule, DEFAULT_CALCULATION_SETTINGS } from './domain/prayerCalculation'
+import { createCityPlace, createGpsPlace, createLocalityPlace, type Place } from './domain/place'
 import { migrateRecentPlaces, rememberPlace } from './domain/recentPlaces'
-import { getDatasetRevision, scheduleContextKey, type ScheduleContext } from './domain/scheduleContext'
+import { scheduleContextKey, type ScheduleContext } from './domain/scheduleContext'
 import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFastScheduleSnapshot,
   readFastScheduleSnapshot, writeFastScheduleSnapshot } from './features/schedule/fastScheduleSnapshot'
 import { failure, success } from './domain/result'
-import type { PrayerDay } from './domain/types'
 import { setLanguagePreference } from './localization'
 import { deleteVaqtProDatabase, getLocationChoice, setSetting, type SettingsPatch } from './storage/database'
 import { createPrayerRepository, loadPrayerRepositoryOptionalSettings } from './data/prayerRepository'
 import { THEME_PREFERENCE_CACHE_KEY } from './ui/themePreferenceCache'
-import { required } from './test/required'
 
-const kazanToday: PrayerDay = {
-  locationId: 'kazan',
-  date: '2026-09-01',
-  fajrStart: '02:21',
-  fajrJamaat: '03:17',
-  sunrise: '04:48',
-  zenith: '11:44',
-  dhuhr: '12:00',
-  asr: '16:24',
-  maghrib: '18:39',
-  isha: '20:33',
+type RemovedProviderTestStubs = {
+  getDays: (locationId: string, dates: readonly string[]) => Promise<unknown>
+  refresh: () => Promise<unknown>
+  subscribe: () => () => void
 }
-
-const kazanYesterday: PrayerDay = {
-  ...kazanToday,
-  date: '2026-08-31',
-  fajrJamaat: '03:16',
-}
-
-const kazanTomorrow: PrayerDay = {
-  ...kazanToday,
-  date: '2026-09-02',
-  fajrJamaat: '03:19',
-  asr: '16:21',
-}
-
-const chelnyToday: PrayerDay = {
-  ...kazanToday,
-  locationId: 'naberezhnye-chelny',
-  asr: '16:37',
-}
-
-function dumRtDay(locationId: string, date: string): PrayerDay {
-  return {
-    locationId,
-    date,
-    fajrStart: '02:00',
-    fajrJamaat: '03:00',
-    sunrise: '04:30',
-    zenith: '11:45',
-    dhuhr: '12:00',
-    asr: '16:00',
-    maghrib: '19:00',
-    isha: date === '2026-10-12' ? '23:59' : date === '2026-10-13' ? '20:13'
-      : date === '2026-10-31' ? '20:31' : date === '2026-11-01' ? '20:01' : '20:00',
-  }
-}
+type TestAppServices = AppServices & TestSettingsServices & RemovedProviderTestStubs
 
 const cityDataset: CityDataset = {
   source: {
@@ -91,29 +48,13 @@ const cityDataset: CityDataset = {
   ],
 }
 
+const defaultPlace = createCityPlace({ id: 551487, name: 'Казань', countryCode: 'RU', admin1Code: '73', admin1Name: 'Татарстан',
+  latitude: 55.7946, longitude: 49.1115, population: 1_308_660, timeZone: 'Europe/Moscow' }, 0)
+
 const initializedState = {
-  meta: {
-    schemaVersion: 2,
-    source: {
-      name: 'ДУМ Республики Татарстан',
-      url: 'https://dumrt.ru/ru/help-info/prayertime/',
-      updatedAt: '2025-12-27T10:49:04.000Z',
-      years: [2026],
-    },
-    locations: [
-      { id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 },
-      {
-        id: 'naberezhnye-chelny',
-        name: 'Набережные Челны',
-        latitude: 55.742,
-        longitude: 52.3992,
-      },
-    ],
-  },
-  locationChoice: { mode: 'official', locationId: 'kazan', source: 'default' },
+  locationChoice: { mode: 'calculated', coordinates: defaultPlace, place: defaultPlace, source: 'default' },
   themeFamily: 'classic',
   preferences: automaticPreferences(),
-  dataState: 'ready', update: { status: 'idle' }, checkedAt: null,
 } satisfies PrayerRepositoryState
 
 function initialized(overrides: Partial<PrayerRepositoryState> & { calculationSettings?: typeof DEFAULT_CALCULATION_SETTINGS } = {}) {
@@ -128,10 +69,7 @@ function deferred<Value>() {
   return { promise, resolve }
 }
 
-function createServices(
-  overrides: Partial<AppServices & TestSettingsServices> = {},
-): AppServices & TestSettingsServices {
-  const days = [kazanYesterday, kazanToday, kazanTomorrow, chelnyToday]
+function createServices(overrides: Partial<TestAppServices> = {}): TestAppServices {
 
   return {
     initialize: vi.fn().mockResolvedValue(initialized()),
@@ -142,15 +80,9 @@ function createServices(
       ),
       findNearest: vi.fn().mockResolvedValue(success(null)),
     },
-    getDays: vi
-      .fn()
-      .mockImplementation((locationId: string, dates: readonly string[]) =>
-        Promise.resolve(success(
-          dates.map((date) => days.find((day) => day.locationId === locationId && day.date === date)),
-        )),
-      ),
+    getDays: vi.fn().mockResolvedValue(success([])),
     ...settingsServices(overrides),
-    refresh: vi.fn().mockResolvedValue(initializedState),
+    refresh: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn(() => () => {}),
     invalidateAndDrain: vi.fn().mockResolvedValue(undefined),
     loadGeography: vi.fn().mockResolvedValue(parseCoverageGeometry(geometry)),
@@ -184,25 +116,21 @@ function memoryStorage(): Storage {
   }
 }
 
-function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test', includeNeighbors = false) {
-  const location = initializedState.meta.locations.find(item => item.id === 'kazan')
-  if (!location) throw new Error('Kazan test location is missing')
-  const selectedPlace = createOfficialPlace(location, services.now().getTime())
+function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test', _includeNeighbors = false) {
+  const selectedPlace = { ...defaultPlace, timestamp: services.now().getTime() }
+  const settings = { ...DEFAULT_CALCULATION_SETTINGS, profile: 'tatarstan' as const, asrMethod: 'hanafi' as const, highLatitudeRule: 'tatarstan' as const }
   const context: ScheduleContext = {
     location: { id: selectedPlace.id, latitude: selectedPlace.latitude, longitude: selectedPlace.longitude },
-    date: '2026-09-01', timeZone: 'Europe/Moscow', mode: 'automatic', source: 'official',
-    provider: 'dumRt', datasetRevision: getDatasetRevision(initializedState.meta), datasetVersion: initializedState.meta.source.updatedAt,
-    coverage: 'RU-TA', localityId: 'kazan',
+    date: '2026-09-01', timeZone: 'Europe/Moscow', mode: 'automatic', source: 'calculated', settings,
   }
-  const schedule = { ...kazanToday, timeZone: context.timeZone,
-    coordinates: { latitude: selectedPlace.latitude, longitude: selectedPlace.longitude } }
+  const schedule = calculatePrayerSchedule(context.location, context.date, context.timeZone, settings)
   const generation = invalidateFastScheduleSnapshot()
   if (!generation || !activateFastScheduleContext(scheduleContextKey(context), generation)) {
     throw new Error('Could not activate the test cache')
   }
   if (!writeFastScheduleSnapshot({ appVersion, now: services.now(), deviceTimeZone: services.getDeviceTimeZone(),
     generation, context, schedule, place: selectedPlace, selectionSource: 'default', preferences: automaticPreferences(),
-    meta: initializedState.meta, ...(includeNeighbors ? { neighbors: [kazanYesterday, kazanTomorrow].map(day => ({ ...day, timeZone: context.timeZone, coordinates: schedule.coordinates })) } : {}) })) throw new Error('Could not write the test cache')
+    })) throw new Error('Could not write the test cache')
   return context
 }
 
@@ -225,7 +153,7 @@ describe('VaqtPro', () => {
     vi.unstubAllGlobals()
   })
 
-  it('запускает обновление после выбора места, если выбор опередил инициализацию', async () => {
+  it('calculates a selected place without waiting for or starting timetable updates', async () => {
     const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
     const services = createServices({ initialize: vi.fn(() => initialization.promise) })
     render(<App services={services} />)
@@ -237,29 +165,30 @@ describe('VaqtPro', () => {
     expect(services.refresh).not.toHaveBeenCalled()
 
     await act(async () => { initialization.resolve(initialized()); await initialization.promise })
-    await waitFor(() => expect(services.refresh).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(services.initialize).toHaveBeenCalledTimes(1))
+    expect(services.refresh).not.toHaveBeenCalled()
   })
 
-  it('shows the complete cached official home in the first render while authoritative reads remain pending', () => {
+  it('shows the calculated cached home while IndexedDB reads remain pending', async () => {
     const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const neighbors = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
+    const neighbors = deferred<unknown>()
     const services = createServices({ initialize: vi.fn(() => initialization.promise), getDays: vi.fn(() => neighbors.promise) })
     seedStartupSnapshot(services, 'warm-test', true)
     const view = render(<App services={services} version="warm-test" />)
-    expect(screen.getByRole('timer', { name: 'До Асра, осталось 3 ч 24 мин' })).toBeVisible()
+    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
     expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Настройки' })).toBeEnabled()
     view.unmount()
   })
 
-  it('retains a verified complete snapshot and exposes recovery when authoritative storage is unavailable', async () => {
+  it('continues using the calculated snapshot without requesting legacy schedule data', async () => {
     const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
     const services = createServices({ initialize: vi.fn(() => initialization.promise),
       getDays: vi.fn().mockResolvedValue(failure({ kind: 'storage', reason: 'unavailable' })) })
     seedStartupSnapshot(services, 'warm-test', true)
     const view = render(<App services={services} version="warm-test" />)
-    expect(await screen.findByRole('alert')).toBeVisible()
-    expect(screen.getByRole('timer', { name: 'До Асра, осталось 3 ч 24 мин' })).toBeVisible()
+    await screen.findByRole('timer')
+    expect(services.getDays).not.toHaveBeenCalled()
     expect(within(screen.getByRole('list', { name: 'Расписание дня' })).getByText('16:24')).toBeVisible()
     view.unmount()
   })
@@ -268,10 +197,10 @@ describe('VaqtPro', () => {
     const localStore = memoryStorage()
     vi.stubGlobal('localStorage', localStore)
     const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const neighbors = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
+    const neighbors = deferred<unknown>()
     const services = createServices({
       initialize: vi.fn(() => initialization.promise),
-      getDays: vi.fn<AppServices['getDays']>((_id, dates) => dates.length === 2 ? neighbors.promise : Promise.resolve(success([]))),
+      getDays: vi.fn<RemovedProviderTestStubs['getDays']>((_id, _dates) => neighbors.promise),
     })
     seedStartupSnapshot(services)
 
@@ -279,10 +208,9 @@ describe('VaqtPro', () => {
     const list = screen.getByRole('list', { name: 'Расписание дня' })
     expect(within(list).getByText('16:24')).toBeVisible()
     expect(services.initialize).toHaveBeenCalledTimes(1)
-    expect(services.getDays).toHaveBeenCalledTimes(1)
+    expect(services.getDays).not.toHaveBeenCalled()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
 
-    await act(async () => { neighbors.resolve(success([kazanYesterday, kazanTomorrow])); await neighbors.promise })
     expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
     await act(async () => { initialization.resolve(initialized()); await initialization.promise })
     await expectSchedule()
@@ -338,35 +266,12 @@ describe('VaqtPro', () => {
     expect(recovery).not.toHaveTextContent('Показано сохранённое расписание')
   })
 
-  it('заменяет тёплый снимок после гидратации новой revision официального набора', async () => {
-    const localStore = memoryStorage()
-    vi.stubGlobal('localStorage', localStore)
-    const initialization = deferred<Awaited<ReturnType<AppServices['initialize']>>>()
-    const updatedMeta = {
-      ...initializedState.meta,
-      source: { ...initializedState.meta.source, updatedAt: '2026-09-02T00:00:00.000Z' },
-    }
-    const updatedRevision = getDatasetRevision(updatedMeta)
-    const services = createServices({
-      initialize: vi.fn(() => initialization.promise),
-      getDays: vi.fn<AppServices['getDays']>((id, dates, revision) => Promise.resolve(success(dates.map(date => {
-        const day = [kazanYesterday, kazanToday, kazanTomorrow].find(candidate => candidate.locationId === id && candidate.date === date)
-        return day && revision === updatedRevision ? { ...day, asr: '16:25' } : day
-      })))),
-    })
-    seedStartupSnapshot(services)
-    render(<App services={services} version="warm-test" />)
-    const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('16:24')).toBeVisible()
-    expect(await screen.findByRole('timer', { name: /До Асра/ })).toBeVisible()
-
-    await act(async () => { initialization.resolve(initialized({ meta: updatedMeta })); await initialization.promise })
-    expect(await screen.findByText('16:25')).toBeVisible()
-    expect(screen.queryByText('16:24')).not.toBeInTheDocument()
-    await waitFor(() => expect(readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(),
-      deviceTimeZone: services.getDeviceTimeZone() })).toMatchObject({
-      context: { datasetRevision: updatedRevision }, schedule: { asr: '16:25' },
-    }))
+  it('не запрашивает расписание после гидратации автоматического расчётного источника', async () => {
+    const services = createServices()
+    render(<App services={services} />)
+    await screen.findByRole('timer')
+    expect(services.getDays).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Казань/ })).toBeVisible()
   })
 
   it('удаляет тёплый снимок синхронно до попытки очистить пользовательские данные', async () => {
@@ -399,7 +304,7 @@ describe('VaqtPro', () => {
     expect(JSON.parse(localStore.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
     expect(document.documentElement.dataset.theme).toBe('seasonal')
     await waitFor(() => expect(readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(),
-      deviceTimeZone: services.getDeviceTimeZone() })).toMatchObject({ context: { date: '2026-09-01' }, schedule: { asr: '16:24' } }))
+      deviceTimeZone: services.getDeviceTimeZone() })).toMatchObject({ context: { date: '2026-09-01' }, schedule: { entries: { asr: { time: '16:24' } } } }))
     const restoredMarker = JSON.parse(localStore.getItem(FAST_SCHEDULE_STORAGE_KEYS.activeContext) ?? 'null') as { generation: string; contextKey: string | null }
     const restoredSnapshot = readFastScheduleSnapshot({ appVersion: 'warm-test', now: services.now(), deviceTimeZone: services.getDeviceTimeZone() })
     expect(restoredSnapshot).not.toBeNull()
@@ -443,7 +348,7 @@ describe('VaqtPro', () => {
     const services = createServices()
     render(<App services={services} />)
     await screen.findByRole('timer')
-    expect(services.getDays).toHaveBeenCalledWith('kazan', expect.any(Array), expect.any(String), 'dumRt')
+    expect(services.getDays).not.toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     const initializationCount = vi.mocked(services.initialize).mock.calls.length
     const refreshCount = vi.mocked(services.refresh).mock.calls.length
@@ -499,20 +404,20 @@ describe('VaqtPro', () => {
       selectedPlaces(patch).some(place => place.id === 'geonames:524901'))).toBe(true))
     await userEvent.click(screen.getByRole('button', { name: /Москва/ }))
     const recent = screen.getByRole('region', { name: 'Недавние места' })
-    await userEvent.click(within(recent).getByRole('button', { name: 'Казань' }))
+    await userEvent.click(within(recent).getByRole('button', { name: /Казань/ }))
     expect(await screen.findByRole('button', { name: 'Казань' })).toBeVisible()
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument()
   })
 
   it('сливает загруженную позднее legacy history с выбором, сделанным во время startup', async () => {
     const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
-    const oldManual = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1)
+    const oldManual = createLocalityPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1)
     const stored = { locationChoice: { mode: 'official' as const, locationId: 'kazan', source: 'default' as const },
       recentPlaces: [oldManual], recentPlacesMigrated: false }
     const saveSettings = vi.fn<AppServices['saveSettings']>(patch => {
       if (selectedPlaces(patch).length) {
         const baseline = stored.recentPlacesMigrated ? stored.recentPlaces : migrateRecentPlaces(stored.recentPlaces,
-          createOfficialPlace(required(initializedState.meta.locations[0]), 0))
+          defaultPlace)
         stored.recentPlaces = selectedPlaces(patch).reduce((history, place) => rememberPlace(history, place), baseline)
         stored.recentPlacesMigrated = true
       }
@@ -543,9 +448,9 @@ describe('VaqtPro', () => {
     })
     await userEvent.click(screen.getByRole('button', { name: 'Москва' }))
     const recent = screen.getByRole('region', { name: 'Недавние места' })
-    expect(within(recent).getByRole('button', { name: 'Казань' })).toBeVisible()
+    expect(within(recent).getByRole('button', { name: /Казань/ })).toBeVisible()
     expect(within(recent).getByRole('button', { name: /Набережные Челны/ })).toBeVisible()
-    expect(stored.recentPlaces.map(place => place.id)).toEqual(['geonames:524901', 'locality:kazan', 'locality:naberezhnye-chelny'])
+    expect(stored.recentPlaces.map(place => place.id)).toEqual(expect.arrayContaining(['geonames:524901', 'geonames:551487', 'locality:naberezhnye-chelny']))
     expect(selectedPlaces(saveSettings.mock.calls[0]?.[0]).map(place => place.id)).toEqual(['geonames:524901'])
   })
 
@@ -555,10 +460,10 @@ describe('VaqtPro', () => {
     vi.stubGlobal('localStorage', storage)
     const initialization = deferred<Awaited<ReturnType<NonNullable<AppServices['initializeStartup']>>>>()
     const optional = deferred<Awaited<ReturnType<NonNullable<AppServices['loadOptionalSettings']>>>>()
-    const previousCurrent = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 10)
+    const previousCurrent = createLocalityPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 10)
     const legacyHistory = Array.from({ length: 10 }, (_, index) => index === 2
       ? previousCurrent
-      : createOfficialPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 35 + index, longitude: 20 + index }, index))
+      : createLocalityPlace({ id: `legacy-${index}`, name: `Legacy ${index}`, latitude: 35 + index, longitude: 20 + index }, index))
     const startupState: PrayerRepositoryState = {
       ...initializedState,
       locationChoice: { mode: 'official', locationId: 'naberezhnye-chelny', source: 'manual' },
@@ -701,7 +606,7 @@ describe('VaqtPro', () => {
     expect(screen.getByRole('combobox', { name: 'День' })).toHaveValue('20')
     expect(screen.queryByRole('button', { name: 'Сегодня' })).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
+    expect(await screen.findByRole('timer')).toHaveAccessibleName(/До Асра/)
     expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveTextContent('20 раби авв.')
     expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveAccessibleDescription(/раби аль-авваль/)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Выбрать дату' })).toHaveFocus())
@@ -709,7 +614,7 @@ describe('VaqtPro', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'День' }), '21')
     expect(screen.getByRole('button', { name: 'Сегодня' })).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    expect(await screen.findByRole('list')).toHaveTextContent('16:21')
+    expect(await screen.findByRole('list')).toHaveTextContent('Аср')
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.click(screen.getByRole('button', { name: 'Сегодня' }))
@@ -724,14 +629,12 @@ describe('VaqtPro', () => {
   it('сохраняет автоактивацию текущей ночи Рамадана при просмотре другой даты', async () => {
     const services = createServices({
       now: () => new Date('2026-02-17T18:30:00.000Z'),
-      getDays: vi.fn((locationId: string, dates: readonly string[]) => Promise.resolve(success(
-        dates.map(date => dumRtDay(locationId, date)),
-      ))),
+      getDays: vi.fn().mockResolvedValue(success([])),
     })
     render(<App services={services} />)
 
     await screen.findByRole('list', { name: 'Расписание дня' })
-    expect(screen.getByText('До начала поста')).toBeVisible()
+    expect(await screen.findByText('До начала поста')).toBeVisible()
     await chooseGregorianDate('2026-03-01')
     await userEvent.click(screen.getByRole('button', { name: 'Настройки' }))
 
@@ -811,11 +714,8 @@ describe('VaqtPro', () => {
     expect(services.getPermission).toHaveBeenCalledTimes(1)
     expect(services.getPosition).toHaveBeenNthCalledWith(1, 'coarse')
     expect(services.getPosition).toHaveBeenNthCalledWith(2, 'precise')
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith(
-      'naberezhnye-chelny',
-      'automatic',
-      expect.objectContaining({ selection: 'gps' }),
-      expect.any(Function),
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(
+      expect.objectContaining({ selection: 'gps' }), 'automatic', expect.any(Function),
     )
     expect(services.cities.load).not.toHaveBeenCalled()
     expect(services.cities.search).not.toHaveBeenCalled()
@@ -824,20 +724,21 @@ describe('VaqtPro', () => {
 
   it('показывает весь день и выделяет текущее событие после готовности соседних событий', async () => {
     render(<App services={createServices()} />)
-    expect(await screen.findByRole('timer')).toHaveAccessibleName('До Асра, осталось 3 ч 24 мин')
+    expect(await screen.findByRole('timer')).toHaveAccessibleName(/До Асра/)
     expect((await screen.findByText('Зухр', { exact: true })).closest('li')).toHaveAttribute('aria-current', 'true')
     expect(screen.queryByRole('button', { name: 'Расписание' })).not.toBeInTheDocument()
     await expectSchedule()
     const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getAllByRole('listitem')).toHaveLength(8)
-    expect(within(list).getByText('Фаджр в мечети')).toBeVisible()
+    expect(within(list).getAllByRole('listitem')).toHaveLength(7)
+    expect(within(list).getByText('Фаджр')).toBeVisible()
+    expect(within(list).queryByText(/в мечети/)).not.toBeInTheDocument()
     expect(within(list).getByText('Зухр').closest('li')).toHaveAttribute('aria-current', 'true')
     expect(within(list).getByText('Аср').closest('li')).not.toHaveAttribute('aria-current')
   })
 
   it.each([
     ['2026-09-01T08:50:00Z', 'До Зухра, осталось 10 мин'],
-    ['2026-09-01T00:00:00Z', 'До Фаджра в мечети, осталось 17 мин'],
+    ['2026-09-01T00:00:00Z', 'До восхода, осталось 1 ч 48 мин'],
   ])('сохраняет подписи намазов и джамаата в %s', async (time, label) => {
     render(<App services={createServices({ now: () => new Date(time) })} />)
     expect(await screen.findByRole('timer')).toHaveAccessibleName(label)
@@ -919,45 +820,40 @@ describe('VaqtPro', () => {
     expect(screen.getByText('1 сентября')).toBeVisible()
   })
 
-  it('показывает строку ДУМ РТ по московской дате, когда GPS-устройство ещё на предыдущем дне', async () => {
+  it('рассчитывает GPS-расписание по локальной дате места без запроса таблицы', async () => {
     const services = await showGpsKazan('America/Los_Angeles', '2026-10-12T21:30:00Z')
-
-    expect(homeDate()).toHaveAttribute('datetime', '2026-10-13')
-    const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('20:13')).toBeVisible()
-    expect(within(list).queryByText('23:59')).not.toBeInTheDocument()
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 1 ч 30 мин')
-    expect(services.getDays).toHaveBeenCalledWith('kazan', expect.arrayContaining(['2026-10-13']), expect.any(String), 'dumRt')
-  })
-
-  it('сохраняет московскую дату строки накануне осеннего DST-перехода устройства', async () => {
-    await showGpsKazan('America/Los_Angeles', '2026-10-31T21:30:00Z')
-
-    expect(homeDate()).toHaveAttribute('datetime', '2026-11-01')
-    const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('20:01')).toBeVisible()
-    expect(within(list).queryByText('20:31')).not.toBeInTheDocument()
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра, осталось 1 ч 30 мин')
-  })
-
-  it('показывает московскую дату, текущий Аср и следующий Магриб, когда GPS-устройство уже на следующем дне', async () => {
-    await showGpsKazan('Asia/Tokyo', '2026-10-12T15:30:00Z')
 
     expect(homeDate()).toHaveAttribute('datetime', '2026-10-12')
     const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('23:59')).toBeVisible()
-    expect(within(list).queryByText('20:13')).not.toBeInTheDocument()
-    expect(within(list).getByText('Аср').closest('li')).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Магриба, осталось 30 мин')
+    expect(within(list).getByText('Зухр')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
   })
 
-  it('выбирает current и next по событийному instant после московской полуночи', async () => {
-    await showGpsKazan('America/Los_Angeles', '2026-10-12T23:30:00Z')
+  it('сохраняет локальную дату места накануне DST-перехода устройства', async () => {
+    const services = await showGpsKazan('America/Los_Angeles', '2026-10-31T21:30:00Z')
+
+    expect(homeDate()).toHaveAttribute('datetime', '2026-10-31')
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('Зухр')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
+  })
+
+  it('показывает дату по часовому поясу GPS-места, если устройство уже на следующем дне', async () => {
+    const services = await showGpsKazan('Asia/Tokyo', '2026-10-12T15:30:00Z')
 
     expect(homeDate()).toHaveAttribute('datetime', '2026-10-13')
     const list = screen.getByRole('list', { name: 'Расписание дня' })
-    expect(within(list).getByText('Фаджр (конец сухура)').closest('li')).toHaveAttribute('aria-current', 'true')
-    expect(screen.getByRole('timer')).toHaveAccessibleName('До Фаджра в мечети, осталось 30 мин')
+    expect(within(list).getByText('Зухр')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
+  })
+
+  it('не запрашивает таблицу после полуночи по часовому поясу места', async () => {
+    const services = await showGpsKazan('America/Los_Angeles', '2026-10-12T23:30:00Z')
+
+    expect(homeDate()).toHaveAttribute('datetime', '2026-10-12')
+    const list = screen.getByRole('list', { name: 'Расписание дня' })
+    expect(within(list).getByText('Фаджр')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
   })
 
   it.each(['2026-10-10', '2026-10-15'])('сохраняет явно выбранную дату %s при переходе official → calculated и смене места', async (date) => {
@@ -1048,9 +944,9 @@ describe('VaqtPro', () => {
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     await chooseCity('Казань', 'Казань, Татарстан, Россия', /Стамбул/)
     await expectSchedule()
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(8)
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     expect(services.cities.load).toHaveBeenCalledTimes(1)
-    expect(services.saveOfficialLocation).toHaveBeenLastCalledWith('kazan', 'manual', expect.objectContaining({ cityId: 551487, coverage: 'inside' }), expect.any(Function))
+    expect(services.saveCalculatedLocation).toHaveBeenLastCalledWith(expect.objectContaining({ cityId: 551487, coverage: 'inside' }), 'manual', expect.any(Function))
   })
 
   it('игнорирует позднее разрешение startup GPS после ручного выбора', async () => {
@@ -1058,7 +954,7 @@ describe('VaqtPro', () => {
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ locationChoice: { mode: 'official', locationId: 'kazan', source: 'automatic' } })), getPermission: vi.fn(() => permission.promise) })
     render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
+    await chooseCity('Челны', /Набережные Челны.*Татарстан/)
     await act(async () => { permission.resolve('granted'); await permission.promise })
     expect(services.getPosition).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
@@ -1156,19 +1052,22 @@ describe('VaqtPro', () => {
       selectionGate.resolve(undefined)
       await waitFor(async () => {
         const value = await loadPrayerRepositoryOptionalSettings()
-        expect(value).toMatchObject({ value: { recentPlaces: [expect.objectContaining({
+        expect(value.ok && value.value.recentPlaces).toEqual(expect.arrayContaining([expect.objectContaining({
           id: 'gps:history:41.010000:28.950000', latitude: 41.03, accuracy: 10, timestamp: 200,
-        }), expect.objectContaining({ id: 'locality:kazan' })] } })
+        }), expect.objectContaining({ id: 'geonames:551487' })]))
       })
       await act(async () => {
         nearest.resolve(success({ id: 745044, name: 'Стамбул', countryCode: 'TR', admin1Code: '34', admin1Name: 'Стамбул',
           latitude: 41.03, longitude: 28.95, population: 1, timeZone: 'Europe/Istanbul' }))
         await Promise.resolve()
       })
-      await waitFor(async () => expect(await loadPrayerRepositoryOptionalSettings()).toMatchObject({ value: { recentPlaces: [
-        expect.objectContaining({ name: 'Стамбул', timestamp: 200, accuracy: 10, latitude: 41.03, id: 'gps:history:41.010000:28.950000' }),
-        expect.objectContaining({ id: 'locality:kazan' }),
-      ] } }))
+      await waitFor(async () => {
+        const value = await loadPrayerRepositoryOptionalSettings()
+        expect(value.ok && value.value.recentPlaces).toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'Стамбул', timestamp: 200, accuracy: 10, latitude: 41.03, id: 'gps:history:41.010000:28.950000' }),
+          expect.objectContaining({ id: 'geonames:551487' }),
+        ]))
+      })
       expect(await getLocationChoice()).toMatchObject({ value: { place: { name: 'Стамбул', timestamp: 200, latitude: 41.03 } } })
       expect(saveSettings.mock.calls.filter(([patch]) => patch.placeEvents?.some(event => event.change === 'refinement'))
         .every(([patch]) => patch.recentPlaces === undefined)).toBe(true)
@@ -1284,7 +1183,7 @@ describe('VaqtPro', () => {
 
   it('migrates the original persisted GPS snapshot after a passive refresh races optional hydration', async () => {
     const original = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 80, timestamp: 100 }, 'Europe/Moscow', null, 'gps:legacy-current')
-    const oldManual = createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 50)
+    const oldManual = createLocalityPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 50)
     const startupState: PrayerRepositoryState = {
       ...initializedState,
       locationChoice: { mode: 'calculated', coordinates: original, place: original, source: 'automatic' },
@@ -1365,8 +1264,8 @@ describe('VaqtPro', () => {
   it('does not migrate a passive GPS refresh after the one-time history migration completed', async () => {
     const selected = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 30, timestamp: 100 }, 'Europe/Moscow', null, 'gps:refresh:100')
     const legacyHistory = [
-      createOfficialPlace({ id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 }, 1),
-      createOfficialPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1),
+      createLocalityPlace({ id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 }, 1),
+      createLocalityPlace({ id: 'naberezhnye-chelny', name: 'Набережные Челны', latitude: 55.742, longitude: 52.3992 }, 1),
     ]
     const state = initialized({ locationChoice: { mode: 'calculated', coordinates: selected, place: selected, source: 'automatic' },
       recentPlaces: legacyHistory, recentPlacesMigrated: true })
@@ -1390,10 +1289,11 @@ describe('VaqtPro', () => {
     await userEvent.click(screen.getByRole('button', { name: 'По геопозиции' }))
     await screen.findByRole('button', { name: '55.7420, 52.3992' })
     await expectSchedule()
-    expect(within(await screen.findByRole('list')).getByText('16:37')).toBeVisible()
+    expect(within(await screen.findByRole('list')).getByText('Зухр')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
     expect(services.getPosition).toHaveBeenCalledTimes(2)
     expect(services.cities.findNearest).toHaveBeenCalledWith(55.742, 52.3992, 25, false)
-    expect(services.saveOfficialLocation).toHaveBeenCalledWith('naberezhnye-chelny', 'automatic', expect.objectContaining({ selection: 'gps' }), expect.any(Function))
+    expect(services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({ selection: 'gps', latitude: 55.742, longitude: 52.3992 }), 'automatic', expect.any(Function))
   })
 
   it('вне Татарстана сохраняет грубые GPS-координаты при отказе точного запроса и каталога', async () => {
@@ -1440,13 +1340,13 @@ describe('VaqtPro', () => {
     const services = createServices({ saveSettings })
     render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
+    await chooseCity('Челны', /Набережные Челны.*Татарстан/)
     expect(await screen.findByText('Не удалось сохранить изменения')).toBeVisible()
     expect(screen.getByRole('button', { name: 'Набережные Челны' })).toBeVisible()
     expect(screen.getAllByText('Не удалось сохранить изменения')).toHaveLength(1)
     await userEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Повторить' }))
     await waitFor(() => expect(screen.queryByText('Не удалось сохранить изменения')).not.toBeInTheDocument())
-    expect(saveSettings.mock.lastCall?.[0]).toMatchObject({ locationChoice: { locationId: 'naberezhnye-chelny' } })
+    expect(saveSettings.mock.lastCall?.[0]).toMatchObject({ locationChoice: { mode: 'calculated', coordinates: { id: 'locality:naberezhnye-chelny' } } })
   })
 
   it('восстанавливается после смены неподдерживаемого профиля', async () => {
@@ -1487,7 +1387,7 @@ describe('VaqtPro', () => {
     await openSource()
     await userEvent.click(screen.getByRole('button', { name: 'О расписании' }))
     const details = screen.getByRole('region', { name: 'Сведения об источнике' })
-    expect(details).toHaveTextContent('ДУМ РФ')
+    expect(details).toHaveTextContent('Профиль расчёта: Россия')
     expect(details).toHaveTextContent('Шафиитский, маликитский и ханбалитский')
   })
 
@@ -1502,42 +1402,31 @@ describe('VaqtPro', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Поделиться' })).toHaveFocus())
   })
 
-  it('повторяет загрузку после ошибки открытия хранилища и ошибки дня', async () => {
-    const base = createServices()
-    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()), getDays: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockImplementation(base.getDays) })
+  it('повторяет инициализацию хранилища и продолжает расчёт без таблиц', async () => {
+    const services = createServices({ initialize: vi.fn().mockResolvedValueOnce(failure({ kind: 'storage', reason: 'unavailable' })).mockResolvedValue(initialized()) })
     render(<App services={services} />)
     expect(await screen.findByRole('alert')).toBeVisible()
     await userEvent.click(screen.getByRole('button', { name: 'Попробовать снова' }))
-    expect(await screen.findByRole('button', { name: 'Повторить' })).toBeVisible()
-    await userEvent.click(screen.getByRole('button', { name: 'Повторить' }))
     expect(await screen.findByRole('timer')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
   })
 
   it('при быстрых сменах города скрывает старую таблицу и игнорирует запоздалый ответ', async () => {
-    const base = createServices()
-    const chelny = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
-    const apastovo = deferred<Awaited<ReturnType<AppServices['getDays']>>>()
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ meta: { ...initializedState.meta, locations: [...initializedState.meta.locations, { id: 'apastovo', name: 'Апастово', latitude: 55.2, longitude: 48.5 }] } })), getDays: vi.fn<AppServices['getDays']>((id, dates, revision, provider) => id === 'naberezhnye-chelny' ? chelny.promise : id === 'apastovo' ? apastovo.promise : base.getDays(id, dates, revision, provider)) })
+    const services = createServices()
     render(<App services={services} />)
     await screen.findByRole('timer')
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
-    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    await chooseCity('Апастово', /Апастово.*ДУМ РТ/, /Набережные Челны/)
-    await act(async () => { chelny.resolve(success([chelnyToday])); await chelny.promise })
-    expect(screen.getByText('Загружаем расписание…')).toBeVisible()
-    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    await act(async () => { apastovo.resolve(success([{ ...kazanToday, locationId: 'apastovo', asr: '16:45' }])); await apastovo.promise })
-    expect(await screen.findByText('16:45')).toBeVisible()
+    await chooseCity('Челны', /Набережные Челны.*Татарстан/)
+    expect(screen.getByRole('timer')).toBeVisible()
     await expectSchedule()
-    expect(within(screen.getByRole('list')).getByText('16:45')).toBeVisible()
-    expect(screen.queryByText('16:37')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('list')).getByText('Аср')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
   })
 
   it('выбор города сохраняет ручной способ, а Авто возвращает официальную таблицу', async () => {
     const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences: manualCalculation({ profile: 'karachi', overrides: {} }) })) })
     render(<App services={services} />)
     await screen.findByRole('timer')
-    await chooseCity('Челны', /Набережные Челны.*ДУМ РТ/)
+    await chooseCity('Челны', /Набережные Челны.*Татарстан/)
     await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     await openSource()
@@ -1546,11 +1435,11 @@ describe('VaqtPro', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Автоматически' }))
     await backHomeFromSource()
     await expectSchedule()
-    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(8)
+    expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
   })
 
-  it('расчётный холодный старт не ждёт зависшего обновления официальной таблицы', async () => {
-    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ meta: null, dataState: 'not-loaded' })), refresh: vi.fn<AppServices['refresh']>(() => new Promise(() => {})) })
+  it('calculated startup does not depend on legacy timetable updates', async () => {
+    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized()), refresh: vi.fn<RemovedProviderTestStubs['refresh']>(() => new Promise(() => {})) })
     render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
     await chooseCity('Стамбул', /Стамбул, Стамбул, Турция/)
@@ -1558,21 +1447,19 @@ describe('VaqtPro', () => {
     await expectSchedule()
     expect(within(screen.getByRole('list')).getAllByRole('listitem')).toHaveLength(7)
     expect(services.getDays).not.toHaveBeenCalled()
-    expect(services.refresh).toHaveBeenCalled()
+    expect(services.refresh).not.toHaveBeenCalled()
   })
 
-  it.each([automaticPreferences(), { mode: 'manual', source: { kind: 'official', provider: 'dumRt' } } as const])('различает отсутствие таблицы в автоматическом и ручном режиме', async preferences => {
-    render(<App services={createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences })) })} />)
+  it.each([automaticPreferences(), manualCalculation({ profile: 'tatarstan', overrides: {} })])('рассчитывает будущую дату при любом сохранённом режиме источника', async preferences => {
+    const services = createServices({ initialize: vi.fn().mockResolvedValue(initialized({ preferences })) })
+    render(<App services={services} />)
     await screen.findByRole('button', { name: 'Казань' })
     await userEvent.click(screen.getByRole('button', { name: 'Выбрать дату' }))
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Год' }), '2027')
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Месяц' }), '1')
     await userEvent.click(screen.getByRole('button', { name: 'Назад' }))
-    if (preferences.mode === 'automatic') expect(within(await screen.findByRole('list')).getByText('Фаджр')).toBeVisible()
-    else {
-      expect(await screen.findByRole('alert')).toHaveTextContent(/Официальная таблица недоступна.*места или даты/)
-      expect(screen.queryByRole('list')).not.toBeInTheDocument()
-    }
+    expect(within(await screen.findByRole('list')).getByText('Фаджр')).toBeVisible()
+    expect(services.getDays).not.toHaveBeenCalled()
   })
 
   it('legacy appearance не управляет новой темой и не возвращает прежние разделы', async () => {
@@ -1638,7 +1525,7 @@ describe('VaqtPro', () => {
     })
     expect(document.documentElement.dataset.theme).toBe('seasonal')
     expect(JSON.parse(localStorage.getItem(THEME_PREFERENCE_CACHE_KEY) ?? 'null')).toEqual({ version: 1, themeFamily: 'seasonal' })
-    expect(services.getDays).toHaveBeenCalled()
+    expect(services.getDays).not.toHaveBeenCalled()
   })
 
   it('применяет сезон текущего дня, а не открытой даты, и сохраняет выбор без reload', async () => {
@@ -1678,7 +1565,7 @@ describe('VaqtPro', () => {
   })
 
   it('выбирает летнюю палитру по локальной текущей дате', async () => {
-    const preferences = manualCalculation({ profile: 'dumRt', overrides: {} })
+    const preferences = manualCalculation({ profile: 'tatarstan', overrides: {} })
     render(<App services={createServices({
       initialize: vi.fn().mockResolvedValue(initialized({ themeFamily: 'seasonal', preferences })),
       now: () => new Date('2026-06-15T09:00:00.000Z'),
@@ -1717,9 +1604,7 @@ async function showGpsKazan(deviceTimeZone: string, currentInstant: string) {
       timestamp: now.getTime(),
     })),
     now: () => new Date(now),
-    getDays: vi.fn((_locationId: string, dates: readonly string[]) => Promise.resolve(success(
-      dates.map(date => dumRtDay('kazan', date)),
-    ))),
+    getDays: vi.fn().mockResolvedValue(success([])),
   })
   render(<App services={services} />)
   await userEvent.click(await screen.findByRole('button', { name: 'По геопозиции' }))
