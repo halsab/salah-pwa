@@ -5,7 +5,7 @@ test.use({ timezoneId: 'Europe/Moscow' })
 test('upgrades the published v12 official IndexedDB without reviving official prayer data', async ({ page, context }) => {
   const officialRequests: string[] = []
   page.on('request', request => {
-    if (/prayer-times-(?:current|manifest)\\.json/.test(request.url())) officialRequests.push(request.url())
+    if (request.url().includes('/data/prayer-times-current.json') || request.url().includes('/data/prayer-times-manifest.json')) officialRequests.push(request.url())
   })
 
   // Load a static, script-free resource on the app origin before seeding the
