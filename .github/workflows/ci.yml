@@ -155,6 +155,14 @@ jobs:
         if: inputs.full_quality_gate
         run: npx playwright install --with-deps chromium webkit
 
+      - name: Установить Chromium для smoke-тестов
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        run: npx playwright install --with-deps chromium
+
+      - name: Проверить запуск production-сайта
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        run: npx playwright test tests/smoke.spec.ts --project=chromium
+
       - name: Проверить критический браузерный набор
         if: inputs.full_quality_gate
         run: npm run test:e2e
