@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { completeDataset } from '../test/prayerDataset'
-import { deleteSalahDatabase, getDatasetMeta, replaceDataset } from '../storage/database'
+import { deleteVaqtProDatabase, getDatasetMeta, replaceDataset } from '../storage/database'
 import * as database from '../storage/database'
 import { createPrayerRepository } from './prayerRepository'
 import { getDatasetRevision } from '../domain/scheduleContext'
@@ -15,7 +15,7 @@ const response = (value: unknown) => new Response(JSON.stringify(value))
 function update(hash = 'a', sequence = 1, value: unknown = dataset) {
   return vi.fn().mockResolvedValueOnce(response(manifest(hash, sequence))).mockResolvedValueOnce(response(value))
 }
-afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await deleteSalahDatabase() })
+afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); await deleteVaqtProDatabase() })
 
 it('initializes cached state without starting or waiting for a hanging fetch', async () => {
   await replaceDataset(dataset, manifest())

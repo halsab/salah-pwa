@@ -3,9 +3,9 @@
  * Upstream-коммит: 1b775385b17884ecb48374615c96ec6ee1b58d21 (MIT, © Jelly UI contributors).
  * Лицензия и границы производного слоя зафиксированы в THIRD_PARTY_NOTICES.md.
  *
- * Сохранён только soft-body алгоритм, необходимый action-компонентам Salah.
+ * Сохранён только soft-body алгоритм, необходимый action-компонентам VaqtPro.
  * Локальные изменения относительно upstream:
- * - удалены каналы depth/tilt/rotateZ/press/clickDepth — кнопки Salah их не используют,
+ * - удалены каналы depth/tilt/rotateZ/press/clickDepth — кнопки VaqtPro их не используют,
  *   а перспективная проекция при нулевом tilt тождественна;
  * - удалены lean/stretchAlong/pulseAt/centerPop и заготовки под слайдеры;
  * - JellyConfig сокращён до реально используемых полей, комментарии на русском;

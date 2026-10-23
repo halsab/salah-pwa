@@ -42,7 +42,7 @@ const CONTENT_SECURITY_POLICY = [
 
 export default defineConfig({
   server: { host: '0.0.0.0' },
-  base: '/salah-pwa/',
+  base: '/',
   define: {
     'import.meta.env.VITE_APP_PACKAGE_VERSION': JSON.stringify(LOCAL_APP_VERSION),
   },
@@ -80,15 +80,16 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['old-timey-mono-license.txt', 'data/ODbL-1.0.txt', 'data/tatarstan-boundary.NOTICE.txt'],
       manifest: {
-        name: 'Salah — времена намаза',
-        short_name: 'Salah',
+        name: 'VaqtPro — времена намаза',
+        short_name: 'VaqtPro',
         description: 'Время намаза для выбранного места: официальные таблицы и расчёт на устройстве. Сохранённые данные доступны офлайн.',
         lang: 'ru',
         display: 'standalone',
         background_color: '#000000',
         theme_color: '#000000',
-        start_url: './',
-        scope: './',
+        id: '/',
+        start_url: '/',
+        scope: '/',
         icons: [
           ...[192, 512, 1024].map(size => ({
             src: iconUrl('light', `icon-${size}.png`),
@@ -120,11 +121,11 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: /\/salah-pwa\/data\/prayer-times-(?:current|manifest)\.json$/,
+            urlPattern: /\/data\/prayer-times-(?:current|manifest)\.json$/,
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: /\/salah-pwa\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
+            urlPattern: /\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
             // Проверенные пакеты сохраняет Worker в IndexedDB; сырой ответ не кешируем.
             handler: 'NetworkOnly',
           },

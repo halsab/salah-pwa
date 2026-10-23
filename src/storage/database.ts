@@ -93,7 +93,7 @@ export interface DatasetMeta {
   identity?: DatasetIdentity
 }
 
-interface SalahDatabase extends DBSchema {
+interface VaqtProDatabase extends DBSchema {
   control: { key: 'generation'; value: number }
   days: {
     key: string
@@ -110,7 +110,7 @@ interface SalahDatabase extends DBSchema {
   }
 }
 
-let databasePromise: Promise<IDBPDatabase<SalahDatabase>> | undefined
+let databasePromise: Promise<IDBPDatabase<VaqtProDatabase>> | undefined
 
 function storedValue(record: StoredSettingRecord | undefined): unknown {
   return record?.value
@@ -145,10 +145,10 @@ function migrateLegacyLocationChoice(
   return undefined
 }
 
-function getDatabase(): Promise<IDBPDatabase<SalahDatabase>> {
+function getDatabase(): Promise<IDBPDatabase<VaqtProDatabase>> {
   if (databasePromise) return databasePromise
 
-  const opening = openDB<SalahDatabase>(DATABASE_NAME, DATABASE_VERSION, {
+  const opening = openDB<VaqtProDatabase>(DATABASE_NAME, DATABASE_VERSION, {
     blocking() { void databasePromise?.then(database => database.close()); databasePromise = undefined },
     terminated() { databasePromise = undefined },
     upgrade(database, oldVersion, _newVersion, transaction) {
@@ -460,7 +460,7 @@ export function getLocationChoice(): Promise<
   return getSetting('locationChoice')
 }
 
-export async function deleteSalahDatabase(): Promise<void> {
+export async function deleteVaqtProDatabase(): Promise<void> {
   const activePromise = databasePromise
   databasePromise = undefined
   if (activePromise) {
@@ -569,7 +569,7 @@ export function clearAppData(): Promise<Result<void, StorageFailure>> {
   return storageResult(async () => {
     const database = await getDatabase()
     // Очистка вместо deleteDB не блокируется открытыми соединениями других вкладок.
-    // Все записи salah персональны или зависят от пользовательской сессии; публичный каталог живёт отдельно.
+    // Записи основной базы персональны или зависят от пользовательской сессии; публичный каталог живёт отдельно.
     const transaction = database.transaction(['settings', 'days', 'meta', 'control'], 'readwrite')
     try {
       const generation = (await transaction.objectStore('control').get('generation')) ?? 0

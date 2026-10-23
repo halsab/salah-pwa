@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createGpsPlace, createOfficialPlace, type Place } from '../domain/place'
 import { success } from '../domain/result'
 import { createSettingsPersistence } from '../features/settings/settingsPersistence'
-import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, setSetting, type LocationChoice, type SettingsPatch } from '../storage/database'
+import { clearAppData, deleteVaqtProDatabase, getLocationChoice, getSetting, setSetting, type LocationChoice, type SettingsPatch } from '../storage/database'
 import { createPrayerRepository, loadPrayerRepositoryOptionalSettings } from './prayerRepository'
 
 const coarse = createGpsPlace({ latitude: 41.01, longitude: 28.95, accuracy: 500, timestamp: 100 }, 'Europe/Moscow', null, 'gps:operation:a')
@@ -19,7 +19,7 @@ async function history() {
   return result.value.recentPlaces
 }
 
-afterEach(async () => { vi.restoreAllMocks(); await deleteSalahDatabase() })
+afterEach(async () => { vi.restoreAllMocks(); await deleteVaqtProDatabase() })
 
 describe('transactional place history', () => {
   it('stores a selected place and its recent history atomically, then updates the same GPS identity', async () => {

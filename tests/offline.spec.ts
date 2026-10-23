@@ -2,7 +2,7 @@ import { choosePlace, expectSchedule, readSavedSetting, expect, test } from './f
 
 test('сохранённое расписание и поиск города работают без сети', async ({ page, context, request }) => {
   const manifest = await (await request.get('./manifest.webmanifest')).json() as Record<string, unknown>
-  expect(manifest).toMatchObject({ scope: './', start_url: './' })
+  expect(manifest).toMatchObject({ id: '/', scope: '/', start_url: '/' })
   expect(manifest).not.toHaveProperty('orientation')
 
   await page.goto('./')

@@ -92,7 +92,7 @@ describe('workflow action pins', () => {
   })
 
   it('проверяет все YAML-файлы каталога и сообщает успех через logger', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'salah-actions-'))
+    const root = await mkdtemp(join(tmpdir(), 'vaqtpro-actions-'))
     const directory = join(root, '.github', 'workflows')
     await mkdir(directory, { recursive: true })
     await writeFile(
@@ -113,7 +113,7 @@ describe('workflow action pins', () => {
   })
 
   it('возвращает ошибку с относительным путём для любого незакреплённого workflow', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'salah-actions-'))
+    const root = await mkdtemp(join(tmpdir(), 'vaqtpro-actions-'))
     const directory = join(root, '.github', 'workflows')
     await mkdir(directory, { recursive: true })
     await writeFile(join(directory, 'release.yaml'), 'steps:\n  - uses: actions/checkout@v6\n')

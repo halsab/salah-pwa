@@ -5,7 +5,7 @@ interface CatalogDatabase extends DBSchema {
   indexes: { key: 'current' | 'previous'; value: CityIndex }
   shards: { key: string; value: string }
 }
-// Публичные пакеты отделены от выбранного места и расписаний в базе salah.
+// Публичные пакеты отделены от выбранного места и расписаний основной базы.
 let database: Promise<IDBPDatabase<CatalogDatabase>> | undefined
 function openCatalogDatabase() {
   if (!database) {

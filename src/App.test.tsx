@@ -23,7 +23,7 @@ import { activateFastScheduleContext, FAST_SCHEDULE_STORAGE_KEYS, invalidateFast
 import { failure, success } from './domain/result'
 import type { PrayerDay } from './domain/types'
 import { setLanguagePreference } from './localization'
-import { deleteSalahDatabase, getLocationChoice, setSetting, type SettingsPatch } from './storage/database'
+import { deleteVaqtProDatabase, getLocationChoice, setSetting, type SettingsPatch } from './storage/database'
 import { createPrayerRepository, loadPrayerRepositoryOptionalSettings } from './data/prayerRepository'
 import { THEME_PREFERENCE_CACHE_KEY } from './ui/themePreferenceCache'
 import { required } from './test/required'
@@ -206,7 +206,7 @@ function seedStartupSnapshot(services: AppServices, appVersion = 'warm-test', in
   return context
 }
 
-describe('Salah', () => {
+describe('VaqtPro', () => {
   beforeEach(() => vi.stubGlobal('localStorage', memoryStorage()))
   afterEach(() => vi.unstubAllGlobals())
 
@@ -1184,7 +1184,7 @@ describe('Salah', () => {
     } finally {
       selectionGate.resolve(undefined)
       view.unmount()
-      await deleteSalahDatabase()
+      await deleteVaqtProDatabase()
     }
   })
 
@@ -1323,7 +1323,7 @@ describe('Salah', () => {
       ] } }))
     } finally {
       view.unmount()
-      await deleteSalahDatabase()
+      await deleteVaqtProDatabase()
     }
   })
 

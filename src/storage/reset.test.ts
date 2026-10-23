@@ -1,9 +1,9 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { openDB } from 'idb'
-import { clearAppData, deleteSalahDatabase, getDataGeneration, getSetting, saveSettings, setSetting } from './database'
+import { clearAppData, deleteVaqtProDatabase, getDataGeneration, getSetting, saveSettings, setSetting } from './database'
 import { automaticPreferences } from '../domain/sourcePreferences'
 
-afterEach(deleteSalahDatabase)
+afterEach(deleteVaqtProDatabase)
 
 it('атомарно удаляет все пользовательские и legacy записи, сохраняя соединение', async () => {
   await setSetting('sourcePreferences', automaticPreferences())

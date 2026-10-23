@@ -3,10 +3,10 @@ import { JELLY_PRESETS, type JellyPreset } from './presets'
 import { JellyBody, traceSmoothPath } from './softBody'
 
 /**
- * Контроллер одной jelly-поверхности Salah: нативная кнопка остаётся в light DOM,
+ * Контроллер одной jelly-поверхности VaqtPro: нативная кнопка остаётся в light DOM,
  * а canvas за её содержимым рисует ту же tertiary-поверхность и локально её
  * деформирует. В покое форма совпадает с CSS-пилюлей, поэтому визуальный язык
- * Salah не меняется.
+ * VaqtPro не меняется.
  *
  * Запас JELLY_SURFACE_PAD равен content inset: канвас не создаёт overflow и
  * не выходит за пределы экранного паддинга.

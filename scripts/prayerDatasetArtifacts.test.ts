@@ -55,7 +55,7 @@ const dataset: PrayerDataset = {
 const temporaryDirectories: string[] = []
 
 async function temporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(path.join(tmpdir(), 'salah-prayer-artifacts-'))
+  const directory = await mkdtemp(path.join(tmpdir(), 'vaqtpro-prayer-artifacts-'))
   temporaryDirectories.push(directory)
   return directory
 }

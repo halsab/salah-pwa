@@ -261,23 +261,23 @@ test('pagehide/pageshow lifecycle events quiesce and reacquire before rendering 
 
 test('repeated real back and forward navigation keeps execution ownership singular', async ({ context }) => {
   const owner = await context.newPage()
-  await owner.route('**/salah-pwa/away.html', route => route.fulfill({
-    contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
+  await owner.route('**/away.html', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside VaqtPro</main>',
   }))
   await owner.addInitScript(() => {
     window.addEventListener('pageshow', event => {
-      const events = JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]
+      const events = JSON.parse(sessionStorage.getItem('vaqtpro-pageshow-events') ?? '[]') as string[]
       events.push(event.persisted ? 'bfcache' : 'navigation')
-      sessionStorage.setItem('salah-pageshow-events', JSON.stringify(events))
+      sessionStorage.setItem('vaqtpro-pageshow-events', JSON.stringify(events))
     })
   })
   await owner.goto('./')
   await expect(owner.locator('[data-execution-owner]')).toBeVisible()
   await owner.waitForTimeout(1_000)
   await owner.goto('away.html')
-  await expect(owner).toHaveURL(/\/salah-pwa\/away\.html$/)
+  await expect(owner).toHaveURL(/\/away\.html$/)
   await expect(owner).toHaveTitle('Away')
-  await expect(owner.getByText('Outside Salah')).toBeVisible()
+  await expect(owner.getByText('Outside VaqtPro')).toBeVisible()
   const bfcacheResults: boolean[] = []
 
   const currentOwner = await context.newPage()
@@ -285,7 +285,7 @@ test('repeated real back and forward navigation keeps execution ownership singul
   await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
   await owner.goBack({ waitUntil: 'commit' })
   bfcacheResults.push(await owner.evaluate(() =>
-    (JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]).at(-1) === 'bfcache'))
+    (JSON.parse(sessionStorage.getItem('vaqtpro-pageshow-events') ?? '[]') as string[]).at(-1) === 'bfcache'))
 
   await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
   await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
@@ -302,7 +302,7 @@ test('repeated real back and forward navigation keeps execution ownership singul
     await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
     await owner.goBack({ waitUntil: 'commit' })
     bfcacheResults.push(await owner.evaluate(() =>
-      (JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]).at(-1) === 'bfcache'))
+      (JSON.parse(sessionStorage.getItem('vaqtpro-pageshow-events') ?? '[]') as string[]).at(-1) === 'bfcache'))
     await expect(owner.getByRole('heading', { name: 'Приложение уже открыто' })).toBeVisible()
     await expect(currentOwner.locator('[data-execution-owner]')).toBeVisible()
     await owner.getByRole('button', { name: 'Продолжить здесь' }).click()
@@ -318,7 +318,7 @@ test('repeated real back and forward navigation keeps execution ownership singul
 
 test('Playwright browser restores plain same-origin documents from BFCache', async ({ context }) => {
   const page = await context.newPage()
-  await page.route('**/salah-pwa/plain-*.html', route => route.fulfill({
+  await page.route('**/plain-*.html', route => route.fulfill({
     contentType: 'text/html', body: `<!doctype html><title>${new URL(route.request().url()).pathname.split('/').at(-1)}</title><main>Plain same-origin document</main>`,
   }))
   await page.addInitScript(() => {
@@ -346,14 +346,14 @@ test('Playwright browser restores plain same-origin documents from BFCache', asy
 
 test('repeated back and forward navigation confirms real BFCache restoration', async ({ context }) => {
   const page = await context.newPage()
-  await page.route('**/salah-pwa/away.html', route => route.fulfill({
-    contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside Salah</main>',
+  await page.route('**/away.html', route => route.fulfill({
+    contentType: 'text/html', body: '<!doctype html><title>Away</title><main>Outside VaqtPro</main>',
   }))
   await page.addInitScript(() => {
     window.addEventListener('pageshow', event => {
-      const events = JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[]
+      const events = JSON.parse(sessionStorage.getItem('vaqtpro-pageshow-events') ?? '[]') as string[]
       events.push(event.persisted ? 'bfcache' : 'navigation')
-      sessionStorage.setItem('salah-pageshow-events', JSON.stringify(events))
+      sessionStorage.setItem('vaqtpro-pageshow-events', JSON.stringify(events))
     })
   })
   await page.goto('./')
@@ -364,16 +364,16 @@ test('repeated back and forward navigation confirms real BFCache restoration', a
   for (let cycle = 0; cycle < 3; cycle += 1) {
     await page.goto('away.html')
     await expect(page).toHaveTitle('Away')
-    await expect(page.getByText('Outside Salah')).toBeVisible()
+    await expect(page.getByText('Outside VaqtPro')).toBeVisible()
     await page.goBack({ waitUntil: 'commit' })
-    await expect(page).toHaveURL(/\/salah-pwa\/$/)
-    const events = await page.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
+    await expect(page).toHaveURL(/\/$/)
+    const events = await page.evaluate(() => JSON.parse(sessionStorage.getItem('vaqtpro-pageshow-events') ?? '[]') as string[])
     restorationResults.push(events.at(-1) ?? 'missing')
     await expect(page.locator('[data-execution-owner]')).toBeVisible()
     await page.goForward({ waitUntil: 'commit' })
     await expect(page).toHaveTitle('Away')
     await page.goBack({ waitUntil: 'commit' })
-    const restoredAgain = await page.evaluate(() => JSON.parse(sessionStorage.getItem('salah-pageshow-events') ?? '[]') as string[])
+    const restoredAgain = await page.evaluate(() => JSON.parse(sessionStorage.getItem('vaqtpro-pageshow-events') ?? '[]') as string[])
     restorationResults.push(restoredAgain.at(-1) ?? 'missing')
   }
   test.skip(restorationResults.some(result => result !== 'bfcache'),

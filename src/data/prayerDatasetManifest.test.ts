@@ -46,9 +46,9 @@ describe('prayer dataset manifest', () => {
 
   it('разрешает dataset относительно manifest под BASE_URL', () => {
     expect(resolvePrayerDatasetUrl(
-      '/salah-pwa/data/prayer-times-manifest.json',
+      '/data/prayer-times-manifest.json',
       manifest,
-    )).toBe('/salah-pwa/data/prayer-times-current.json')
+    )).toBe('/data/prayer-times-current.json')
   })
 
   it('вычисляет lowercase SHA-256 через WebCrypto', async () => {

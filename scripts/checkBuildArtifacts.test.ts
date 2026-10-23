@@ -63,6 +63,9 @@ function completePrayerDataset(): PrayerDataset {
 
 function requiredArtifacts(cityCatalog = catalog): BuildArtifact[] {
   return [
+    { path: 'index.html', size: 250 },
+    { path: 'manifest.webmanifest', size: 100 },
+    { path: 'share-qr.svg', size: 200 },
     { path: 'assets/index-a1b2c3.js', size: 100 },
     { path: 'assets/index-a1b2c3.css', size: 20 },
     { path: 'data/cities/index.json', size: 200 },
@@ -74,7 +77,15 @@ function requiredArtifacts(cityCatalog = catalog): BuildArtifact[] {
 
 async function writeBuildArtifacts(
   root: string,
-  options: { cityCatalog?: typeof catalog; cityShards?: typeof generated.shards; mainJavaScript?: string; css?: string } = {},
+  options: {
+    cityCatalog?: typeof catalog
+    cityShards?: typeof generated.shards
+    mainJavaScript?: string
+    css?: string
+    html?: string
+    manifest?: Record<string, unknown>
+    shareQr?: string
+  } = {},
 ): Promise<{ prayerDatasetPath: string; prayerManifestPath: string }> {
   const cityCatalog = options.cityCatalog ?? catalog
   const cityShards = options.cityShards ?? generated.shards
@@ -88,12 +99,24 @@ async function writeBuildArtifacts(
   const prayerManifest = createPrayerDatasetManifest(prayerDatasetBytes, 2)
   const prayerDatasetPath = join(root, 'data/prayer-times-current.json')
   const prayerManifestPath = join(root, 'data/prayer-times-manifest.json')
+  const appManifest = options.manifest ?? {
+    name: 'VaqtPro — времена намаза',
+    short_name: 'VaqtPro',
+    id: '/',
+    start_url: '/',
+    scope: '/',
+    display: 'standalone',
+  }
+  const shareQr = options.shareQr ?? await readFile(join(process.cwd(), 'public/share-qr.svg'), 'utf8')
   const primaryShard = cityCatalog.shards[0]
   if (!primaryShard) throw new Error('Fixture справочника не содержит пакетов')
 
   await Promise.all([
     writeFile(join(root, 'assets/index-build.js'), options.mainJavaScript ?? 'application code'),
     writeFile(join(root, 'assets/index-build.css'), options.css ?? '.app { display: block; }'),
+    writeFile(join(root, 'index.html'), options.html ?? '<meta name="apple-mobile-web-app-title" content="VaqtPro" /><title>VaqtPro — времена намаза</title>'),
+    writeFile(join(root, 'manifest.webmanifest'), JSON.stringify(appManifest)),
+    writeFile(join(root, 'share-qr.svg'), shareQr),
     writeFile(join(root, 'assets/city-search.worker.js'), 'worker code'),
     writeFile(join(root, 'sw.js'), 'offline worker'),
     writeFile(join(root, 'data/cities/index.json'), JSON.stringify(cityCatalog)),
@@ -108,7 +131,7 @@ async function writeBuildArtifacts(
   return { prayerDatasetPath, prayerManifestPath }
 }
 
-async function temporaryDirectory(prefix = 'salah-build-artifacts-'): Promise<string> {
+async function temporaryDirectory(prefix = 'vaqtpro-build-artifacts-'): Promise<string> {
   return mkdtemp(join(tmpdir(), prefix))
 }
 
@@ -117,6 +140,9 @@ describe('production artifact validation', () => {
     expect(validateBuildArtifacts([], catalog)).toEqual(expect.arrayContaining([
       'mainJavaScript: artifact не найден',
       'mainCss: artifact не найден',
+      'indexHtml: artifact не найден',
+      'webManifest: artifact не найден',
+      'shareQr: artifact не найден',
       'cityIndex: artifact не найден',
       'prayerTimes: artifact не найден',
       'prayerManifest: artifact не найден',
@@ -170,6 +196,57 @@ describe('production artifact validation', () => {
         log: (message) => messages.push(message),
       })).rejects.toThrow('mainJavaScript: artifact не найден')
       expect(messages).toEqual([])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects stale branding and a subpath PWA installation scope', async () => {
+    const root = await temporaryDirectory()
+
+    try {
+      await writeBuildArtifacts(root, {
+        html: '<meta name="apple-mobile-web-app-title" content="Salah" /><title>Salah — времена намаза</title>',
+        manifest: {
+          name: 'Salah — времена намаза',
+          short_name: 'Salah',
+          id: '/salah-pwa/',
+          start_url: '/salah-pwa/',
+          scope: '/salah-pwa/',
+          display: 'standalone',
+        },
+      })
+
+      let errorMessage = ''
+      try {
+        await checkBuildArtifacts(root, { log: () => undefined })
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error)
+      }
+      expect(errorMessage).toContain('appTitle: index.html не содержит название VaqtPro')
+      expect(errorMessage).toContain('appleTitle: index.html не содержит название VaqtPro')
+      expect(errorMessage).toContain('webManifest: имя приложения должно быть VaqtPro')
+      expect(errorMessage).toContain('webManifest: id должен указывать на корень сайта')
+      expect(errorMessage).toContain('webManifest: start_url должен указывать на корень сайта')
+      expect(errorMessage).toContain('webManifest: scope должен указывать на корень сайта')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a QR image that differs from the verified VaqtPro destination', async () => {
+    const root = await temporaryDirectory()
+
+    try {
+      await writeBuildArtifacts(root, { shareQr: '<svg xmlns="http://www.w3.org/2000/svg" />' })
+
+      let errorMessage = ''
+      try {
+        await checkBuildArtifacts(root, { log: () => undefined })
+      } catch (error) {
+        errorMessage = error instanceof Error ? error.message : String(error)
+      }
+      expect(errorMessage).toContain('shareQr: QR-код не соответствует проверенной ссылке https://vaqt.pro/')
     } finally {
       await rm(root, { recursive: true, force: true })
     }

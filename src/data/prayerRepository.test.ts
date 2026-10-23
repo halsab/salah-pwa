@@ -6,13 +6,13 @@ import { getDatasetRevision } from '../domain/scheduleContext'
 import { getDeviceTimeZone } from '../domain/locationTime'
 import { success } from '../domain/result'
 import { automaticPreferences, manualCalculation } from '../domain/sourcePreferences'
-import { clearAppData, deleteSalahDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, setSetting, type LocationChoice } from '../storage/database'
+import { clearAppData, deleteVaqtProDatabase, getLocationChoice, getSetting, replaceDataset, saveLocationChoice, setSetting, type LocationChoice } from '../storage/database'
 import * as database from '../storage/database'
 import { createPrayerRepository, initializePrayerRepository, initializePrayerRepositoryStartup, loadPrayerRepositoryOptionalSettings } from './prayerRepository'
 
 const dataset = completeDataset()
 const repo = createPrayerRepository()
-afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteSalahDatabase() })
+afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllGlobals(); await deleteVaqtProDatabase() })
 
 describe('local initialization and persistence', () => {
   it('loads the selected source identity without scanning the full prayer dataset', async () => {
@@ -229,7 +229,7 @@ describe('local initialization and persistence', () => {
     vi.stubGlobal('indexedDB', { open: () => { throw new Error('disabled') } })
     expect(await repo.saveSettings(patch)).toMatchObject({ ok: false, error: { kind: 'storage' } })
     vi.unstubAllGlobals()
-    await deleteSalahDatabase()
+    await deleteVaqtProDatabase()
 
     expect(await repo.saveSettings(patch)).toEqual(success(undefined))
     expect(await initializePrayerRepositoryStartup()).toMatchObject({ value: { locationChoice: { place: { id: selected.id } } } })

@@ -13,7 +13,7 @@ export default defineConfig({
     timeout: process.env.CI ? 15_000 : 5_000,
   },
   use: {
-    baseURL: `http://127.0.0.1:${port}/salah-pwa/`,
+    baseURL: `http://127.0.0.1:${port}/`,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -59,7 +59,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `npm run preview -- --host 127.0.0.1 --port ${port}`,
-    url: `http://127.0.0.1:${port}/salah-pwa/`,
+    url: `http://127.0.0.1:${port}/`,
     reuseExistingServer: !process.env.CI,
   },
 })

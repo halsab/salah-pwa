@@ -1,1 +1,1 @@
-export const APP_SHARE_URL = 'https://halsab.github.io/salah-pwa/'
+export const APP_SHARE_URL = 'https://vaqt.pro/'

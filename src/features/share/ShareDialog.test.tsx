@@ -54,7 +54,7 @@ describe('ShareDialog', () => {
 
     await user.click(copyButton)
 
-    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+    expect(writeText).toHaveBeenCalledWith('https://vaqt.pro/')
     expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
     expect(props.onClose).not.toHaveBeenCalled()
     expect(copyButton).toHaveFocus()
@@ -69,8 +69,8 @@ describe('ShareDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Поделиться' }))
 
-    expect(share).toHaveBeenCalledWith({ title: 'Salah — время намаза', url: 'https://halsab.github.io/salah-pwa/' })
-    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://halsab.github.io/salah-pwa/')
+    expect(share).toHaveBeenCalledWith({ title: 'VaqtPro — время намаза', url: 'https://vaqt.pro/' })
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://vaqt.pro/')
   })
 
   it('при отсутствии Web Share API показывает прежнее копирование', async () => {
@@ -82,7 +82,7 @@ describe('ShareDialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
 
-    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+    expect(writeText).toHaveBeenCalledWith('https://vaqt.pro/')
     expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
   })
 
@@ -108,7 +108,7 @@ describe('ShareDialog', () => {
 
     expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
-    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+    expect(writeText).toHaveBeenCalledWith('https://vaqt.pro/')
   })
 
   it('при ошибке share сообщает о ней и даёт скопировать ссылку', async () => {
@@ -122,7 +122,7 @@ describe('ShareDialog', () => {
 
     expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
-    expect(writeText).toHaveBeenCalledWith('https://halsab.github.io/salah-pwa/')
+    expect(writeText).toHaveBeenCalledWith('https://vaqt.pro/')
     expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
   })
 
@@ -138,7 +138,7 @@ describe('ShareDialog', () => {
     expect(status).not.toBeEmptyDOMElement()
     expect(status).toHaveAttribute('aria-live', 'polite')
     expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveFocus()
-    expect(screen.getByRole('textbox')).toHaveValue('https://halsab.github.io/salah-pwa/')
+    expect(screen.getByRole('textbox')).toHaveValue('https://vaqt.pro/')
     expect(props.onClose).not.toHaveBeenCalled()
   })
 
@@ -151,7 +151,7 @@ describe('ShareDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Скопировать ссылку' }))
 
     expect(await screen.findByRole('status')).not.toBeEmptyDOMElement()
-    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://halsab.github.io/salah-pwa/')
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://vaqt.pro/')
     expect(screen.getByRole('textbox')).toHaveFocus()
   })
 
@@ -196,7 +196,7 @@ describe('ShareDialog', () => {
     const { props } = renderDialog()
     expect(screen.getByRole('region', { name: 'Поделиться' })).toBeVisible()
     expect(screen.getByRole('img', { name: 'QR-код ссылки на приложение' })).toHaveAttribute('src', '/share-qr.svg')
-    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://halsab.github.io/salah-pwa/')
+    expect(screen.getByRole('textbox', { name: 'Ссылка на приложение' })).toHaveValue('https://vaqt.pro/')
     await user.click(screen.getByRole('button', { name: 'Назад' }))
     expect(props.onClose).toHaveBeenCalledOnce()
   })

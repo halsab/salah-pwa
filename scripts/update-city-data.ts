@@ -60,7 +60,7 @@ async function main() {
   const { index, shards } = buildCityPackages(cities, baseline.source)
   await validateCityIndex(index)
   for (const descriptor of index.shards) await parseCityShard(JSON.stringify(shards[descriptor.id]), index, descriptor)
-  const temporary = await mkdtemp(path.join(tmpdir(), 'salah-city-packages-'))
+  const temporary = await mkdtemp(path.join(tmpdir(), 'vaqtpro-city-packages-'))
   try {
     await mkdir(path.join(temporary, index.version))
     await writeFile(path.join(temporary, 'index.json'), JSON.stringify(index))

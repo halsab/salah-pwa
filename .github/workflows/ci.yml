@@ -119,7 +119,7 @@ jobs:
             exit 0
           fi
 
-          baseline_root="$(mktemp -d "$RUNNER_TEMP/salah-pr-base-XXXXXX")"
+          baseline_root="$(mktemp -d "$RUNNER_TEMP/vaqtpro-pr-base-XXXXXX")"
           if ! git archive "$BASE_SHA" | tar -x -C "$baseline_root"; then
             echo '::notice::Bundle baseline unavailable because the PR base checkout could not be prepared.'
             exit 0

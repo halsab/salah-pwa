@@ -43,7 +43,7 @@ function JellyButton({ preset = 'standard', baseClassName, className, type = 'bu
 
 type ActionButtonProps = ComponentProps<'button'> & { variant?: ButtonVariant; preset?: JellyPreset }
 
-/** Обычное самостоятельное действие Salah. */
+/** Обычное самостоятельное действие VaqtPro. */
 export function ActionButton({ variant = 'action', preset = 'standard', ...rest }: ActionButtonProps) {
   return <JellyButton baseClassName={`pill pill--${variant}`} preset={preset} {...rest} />
 }

@@ -7,7 +7,7 @@ import { success } from '../domain/result'
 import type { Result } from '../domain/result'
 import type { PrayerDataset } from '../domain/types'
 import {
-  deleteSalahDatabase,
+  deleteVaqtProDatabase,
   getDatasetMeta,
   getStartupData,
   clearAppData,
@@ -176,7 +176,7 @@ function syntheticDataset(id: string, timeZone: string, fajrStart: PrayerDataset
 
 afterEach(async () => {
   vi.unstubAllGlobals()
-  await deleteSalahDatabase()
+  await deleteVaqtProDatabase()
 })
 
 describe('database', () => {
@@ -462,7 +462,7 @@ it('migrates real v6 Nominatim names without requesting the network or deleting 
 it('recovers after a browser rejects opening a newer incompatible database', async () => {
   await createVersion5Database({}, 13)
   expect(await getLocationChoice()).toMatchObject({ ok: false, error: { kind: 'storage' } })
-  await deleteSalahDatabase()
+  await deleteVaqtProDatabase()
   expect(unwrap(await getLocationChoice())).toBeUndefined()
 })
 

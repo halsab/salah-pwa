@@ -36,12 +36,18 @@ const REQUIRED_ARTIFACTS: ReadonlyArray<{
   name: string
   matches: (path: string) => boolean
 }> = [
+  { name: 'indexHtml', matches: (path) => path === 'index.html' },
+  { name: 'webManifest', matches: (path) => path === 'manifest.webmanifest' },
+  { name: 'shareQr', matches: (path) => path === 'share-qr.svg' },
   { name: 'mainJavaScript', matches: (path) => /^assets\/index-[^/]+\.js$/.test(path) },
   { name: 'mainCss', matches: (path) => /^assets\/index-[^/]+\.css$/.test(path) },
   { name: 'cityIndex', matches: (path) => path === 'data/cities/index.json' },
   { name: 'prayerTimes', matches: (path) => path === `data/${PRAYER_DATASET_FILE_NAME}` },
   { name: 'prayerManifest', matches: (path) => path === `data/${PRAYER_MANIFEST_FILE_NAME}` },
 ]
+
+// Хеш фиксирует SVG-код, сгенерированный для официальной ссылки приложения.
+const VAQTPRO_SHARE_QR_SHA256 = '3becf6afdf685b1737b83cd049eca14e233500fdef7a8c283416ecfe0046fa03'
 
 const SIZE_METRIC_LABELS = [
   ['mainJavaScript', 'Main JavaScript'],
@@ -84,6 +90,58 @@ export function validateBuildArtifacts(
     if (count > 1) errors.push(`cities: повторный artifact ${path}`)
   }
 
+  return errors
+}
+
+async function validateApplicationIdentity(
+  distDirectory: string,
+  artifacts: readonly BuildArtifact[],
+): Promise<string[]> {
+  const errors: string[] = []
+  if (artifacts.some((artifact) => artifact.path === 'index.html')) {
+    const html = await readFile(join(distDirectory, 'index.html'), 'utf8')
+    if (!/<title>VaqtPro — времена намаза<\/title>/i.test(html)) {
+      errors.push('appTitle: index.html не содержит название VaqtPro')
+    }
+    if (!/<meta\s+name="apple-mobile-web-app-title"\s+content="VaqtPro"\s*\/>/i.test(html)) {
+      errors.push('appleTitle: index.html не содержит название VaqtPro')
+    }
+  }
+
+  if (!artifacts.some((artifact) => artifact.path === 'manifest.webmanifest')) return errors
+  try {
+    const input: unknown = JSON.parse(await readFile(join(distDirectory, 'manifest.webmanifest'), 'utf8'))
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new Error('manifest.webmanifest должен содержать объект')
+    }
+    const manifest = input as Record<string, unknown>
+    if (manifest.name !== 'VaqtPro — времена намаза' || manifest.short_name !== 'VaqtPro') {
+      errors.push('webManifest: имя приложения должно быть VaqtPro')
+    }
+    for (const field of ['id', 'start_url', 'scope'] as const) {
+      if (typeof manifest[field] !== 'string') {
+        errors.push(`webManifest: ${field} должен указывать на корень сайта`)
+        continue
+      }
+      const url = new URL(manifest[field], 'https://vaqt.pro/')
+      if (url.origin !== 'https://vaqt.pro' || url.pathname !== '/') {
+        errors.push(`webManifest: ${field} должен указывать на корень сайта`)
+      }
+    }
+    if (manifest.display !== 'standalone') {
+      errors.push('webManifest: display должен оставаться standalone')
+    }
+  } catch (error) {
+    errors.push(`webManifest: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  if (artifacts.some((artifact) => artifact.path === 'share-qr.svg')) {
+    const qrCode = await readFile(join(distDirectory, 'share-qr.svg'))
+    const checksum = createHash('sha256').update(qrCode).digest('hex')
+    if (checksum !== VAQTPRO_SHARE_QR_SHA256) {
+      errors.push('shareQr: QR-код не соответствует проверенной ссылке https://vaqt.pro/')
+    }
+  }
   return errors
 }
 
@@ -315,6 +373,7 @@ export async function checkBuildArtifacts(
   const city = await validateCityArtifacts(distDirectory, artifacts)
   const errors = [
     ...validateBuildArtifacts(artifacts, city.catalog),
+    ...await validateApplicationIdentity(distDirectory, artifacts),
     ...city.errors,
     ...await validatePrayerArtifacts(distDirectory, artifacts),
   ]
