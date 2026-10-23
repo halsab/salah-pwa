@@ -14,3 +14,27 @@ test('основной путь: поиск города сохраняет вы
   })
   expect(pageErrors).toEqual([])
 })
+
+
+test('production entry serves manifest, JavaScript and CSS from site root', async ({ request }) => {
+  const response = await request.get('/')
+  expect(response.ok()).toBe(true)
+  const html = await response.text()
+  const manifestPath = html.match(/<link[^>]+rel=["']manifest["'][^>]+href=["']([^"']+)/)?.[1]
+    ?? html.match(/<link[^>]+href=["']([^"']+)["'][^>]+rel=["']manifest["']/)?.[1]
+  expect(manifestPath).toBeTruthy()
+
+  const manifestResponse = await request.get(manifestPath!)
+  expect(manifestResponse.ok()).toBe(true)
+  expect(manifestResponse.headers()['content-type']).toContain('json')
+  expect(await manifestResponse.json()).toMatchObject({ scope: './', start_url: './' })
+
+  for (const pattern of [/<script[^>]+src=["']([^"']+\.js)["']/i, /<link[^>]+href=["']([^"']+\.css)["']/i]) {
+    const assetPath = html.match(pattern)?.[1]
+    expect(assetPath).toBeTruthy()
+    expect(assetPath).toMatch(/^\/assets\//)
+    const assetResponse = await request.get(assetPath!)
+    expect(assetResponse.ok()).toBe(true)
+    expect(assetResponse.headers()['content-type']).not.toContain('text/html')
+  }
+})
