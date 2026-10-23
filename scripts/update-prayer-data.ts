@@ -24,7 +24,7 @@ async function downloadLocation(
   location: (typeof DUM_RT_LOCATIONS)[number],
 ): Promise<{ days: PrayerDay[]; updatedAt: string }> {
   const response = await fetch(`${SOURCE_BASE}${location.sourceFile}`, {
-    headers: { 'User-Agent': 'vaqtpro-data-sync/1.0 (github.com/halsab/salah-pwa)' },
+    headers: { 'User-Agent': 'vaqtpro-data-sync/1.0 (github.com/halsab/vaqtpro)' },
   })
 
   if (!response.ok) {

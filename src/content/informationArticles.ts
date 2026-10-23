@@ -41,7 +41,7 @@ ${version ? `\nВерсия ${markdownText(version)}.\n` : ''}
 - Граница Татарстана: © участники [OpenStreetMap](https://www.openstreetmap.org/copyright) через geoBoundaries (ODbL).
 - Шрифт: Old Timey Mono — © 2024 Darren Embry, [SIL Open Font License 1.1](${import.meta.env.BASE_URL}old-timey-mono-license.txt).
 
-[Все источники и лицензии](https://github.com/halsab/salah-pwa/blob/main/THIRD_PARTY_NOTICES.md).`
+[Все источники и лицензии](https://github.com/halsab/vaqtpro/blob/main/THIRD_PARTY_NOTICES.md).`
 }
 
 export function methodologyArticle(officialScheduleUrl: string): string {
