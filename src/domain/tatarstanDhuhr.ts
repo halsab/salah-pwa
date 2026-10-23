@@ -40,25 +40,20 @@ export interface TatarstanPlaceIdentity {
 }
 
 export function verifiedTatarstanLocalityId(place: TatarstanPlaceIdentity): TatarstanLocalityId | undefined {
+  if (place.selection !== 'city' || place.region?.code !== 'RU-TA' || place.coverage !== 'inside') return undefined
   if (place.id.startsWith('locality:')) {
     const localityId = place.id.slice('locality:'.length)
-    return Object.hasOwn(TATARSTAN_FIXED_DHUHR, localityId) ? localityId as TatarstanLocalityId : undefined
+    if (!Object.hasOwn(TATARSTAN_FIXED_DHUHR, localityId)) return undefined
+    const canonical = localities.find(item => item.id === localityId)
+    if (!canonical || typeof place.latitude !== 'number' || !Number.isFinite(place.latitude)
+      || typeof place.longitude !== 'number' || !Number.isFinite(place.longitude)) return undefined
+    return haversineDistanceKm(place.latitude, place.longitude, canonical.latitude, canonical.longitude) <= 1
+      ? localityId as TatarstanLocalityId : undefined
   }
-  if (place.region?.code !== 'RU-TA' || place.coverage !== 'inside') return undefined
-  if (place.selection === 'city' && place.cityId !== undefined) return GEONAMES_LOCALITY_IDS[place.cityId]
-  const latitude = place.latitude
-  const longitude = place.longitude
-  if (place.selection === 'gps' && typeof latitude === 'number' && Number.isFinite(latitude)
-    && typeof longitude === 'number' && Number.isFinite(longitude)
-    && typeof place.accuracy === 'number' && Number.isFinite(place.accuracy) && place.accuracy <= 2_000) {
-    let nearest: { id: TatarstanLocalityId; distanceKm: number } | undefined
-    for (const locality of localities) {
-      if (!Object.hasOwn(TATARSTAN_FIXED_DHUHR, locality.id)) continue
-      const distanceKm = haversineDistanceKm(latitude, longitude, locality.latitude, locality.longitude)
-      if (!nearest || distanceKm < nearest.distanceKm) nearest = { id: locality.id as TatarstanLocalityId, distanceKm }
-    }
-    if (nearest && nearest.distanceKm <= 2) return nearest.id
+  if (place.cityId !== undefined && place.id === `geonames:${place.cityId}`) {
+    return GEONAMES_LOCALITY_IDS[place.cityId]
   }
+  // GPS proximity alone is not verified locality membership.
   return undefined
 }
 

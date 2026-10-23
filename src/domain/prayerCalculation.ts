@@ -12,7 +12,7 @@ import {
 import { isCalculationSettings, type IshaMethod } from './calculationSettings'
 
 import { addDays } from './date'
-import { tatarstanDhuhrInstant } from './tatarstanDhuhr'
+import { tatarstanDhuhrInstant, verifiedTatarstanLocalityId } from './tatarstanDhuhr'
 import {
   createLocationClock,
   zonedDateTimeToInstant,
@@ -108,10 +108,12 @@ interface LocationCoordinates {
   latitude: number
   longitude: number
   id?: string | null
-  selection?: string
+  selection?: 'city' | 'gps'
   region?: { code: string } | null
   coverage?: string
   localityId?: string
+  accuracy?: number | null
+  cityId?: number
 }
 
 const MINUTE = 60_000
@@ -368,8 +370,10 @@ function tatarstanDhuhr(
   timeZone: string,
   zenith: Date,
 ): Date {
-  const localityId = location.localityId ?? (location.id?.startsWith('locality:') ? location.id.slice('locality:'.length) : undefined)
-  return new Date(tatarstanDhuhrInstant(date, timeZone, zenith.getTime(), localityId))
+  const verified = location.id && location.selection
+    ? verifiedTatarstanLocalityId({ ...location, id: location.id, selection: location.selection })
+    : undefined
+  return new Date(tatarstanDhuhrInstant(date, timeZone, zenith.getTime(), location.localityId ?? verified))
 }
 
 function addMinutes(instant: Date, minutes: number): Date {

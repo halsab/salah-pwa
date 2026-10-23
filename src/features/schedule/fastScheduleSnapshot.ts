@@ -69,7 +69,7 @@ function isContext(value: unknown): value is ScheduleContext {
 
 function isCachedPlace(value: unknown): value is Place {
   return isPlace(value) && value.accuracy === null && Number.isFinite(value.timestamp) && value.timestamp >= 0
-    && value.cityId === undefined && value.source === undefined
+    && (value.cityId === undefined || value.selection === 'city' && Number.isInteger(value.cityId)) && value.source === undefined
     && (value.nearbyCity === undefined || gpsCountryCode(value) !== undefined)
 }
 
@@ -232,7 +232,7 @@ export function invalidateFastScheduleSnapshot(): string | null {
 function cachePlace(place: Place): Place {
   // Для freshness достаточно времени последнего фикса; country hint нужен автоматическому профилю.
   const { accuracy: _accuracy, nearbyCity: _nearbyCity,
-    cityId: _cityId, source: _source, ...displayPlace } = place
+    source: _source, ...displayPlace } = place
   const countryCode = gpsCountryCode(place)
   const city = place.nearbyCity
   const nearbyCity = countryCode && city && typeof city.latitude === 'number' && typeof city.longitude === 'number' ? {
