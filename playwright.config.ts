@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 const port = 4175
+const previewUrl = `http://127.0.0.1:${port}/`
 
 export default defineConfig({
   testDir: './tests',
@@ -13,7 +14,7 @@ export default defineConfig({
     timeout: process.env.CI ? 15_000 : 5_000,
   },
   use: {
-    baseURL: `http://127.0.0.1:${port}/salah-pwa/`,
+    baseURL: previewUrl,
     trace: 'retain-on-failure',
   },
   projects: [
@@ -59,7 +60,7 @@ export default defineConfig({
   ],
   webServer: {
     command: `npm run preview -- --host 127.0.0.1 --port ${port}`,
-    url: `http://127.0.0.1:${port}/salah-pwa/`,
+    url: previewUrl,
     reuseExistingServer: !process.env.CI,
   },
 })
