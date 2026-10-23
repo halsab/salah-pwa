@@ -84,8 +84,9 @@ function getDatabase(): Promise<IDBPDatabase<VaqtProDatabase>> {
       // one-time schema upgrade. Preserve unrelated user preferences.
       if (!database.objectStoreNames.contains('settings')) database.createObjectStore('settings', { keyPath: 'key' })
       if (!database.objectStoreNames.contains('control')) database.createObjectStore('control')
-      if (database.objectStoreNames.contains('days')) database.deleteObjectStore('days')
-      if (database.objectStoreNames.contains('meta')) database.deleteObjectStore('meta')
+      const legacyDatabase = database as unknown as IDBDatabase
+      if (legacyDatabase.objectStoreNames.contains('days')) legacyDatabase.deleteObjectStore('days')
+      if (legacyDatabase.objectStoreNames.contains('meta')) legacyDatabase.deleteObjectStore('meta')
       const settings = transaction.objectStore('settings')
       const control = transaction.objectStore('control')
       if (oldVersion < DATABASE_VERSION) {
