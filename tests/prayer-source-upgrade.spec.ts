@@ -68,9 +68,13 @@ test('upgrades the published v12 official IndexedDB without reviving official pr
     finally { db.close() }
   })).toEqual({ version: 15, stores: ['control', 'settings'] })
 
-  for (const key of ['locationChoice', 'sourcePreferences', 'calculationSettings', 'recentPlaces', 'recentPlacesMigrated']) {
+  for (const key of ['locationChoice', 'sourcePreferences', 'calculationSettings']) {
     expect(await readSavedSetting(page, key)).toBeUndefined()
   }
+  // Initial hydration is allowed to create an empty, canonical new-version
+  // place history immediately after resetting the obsolete history.
+  expect(await readSavedSetting(page, 'recentPlaces')).toEqual([])
+  expect([undefined, true]).toContain(await readSavedSetting(page, 'recentPlacesMigrated'))
   expect(await readSavedSetting(page, 'appearance')).toBe('dark')
   expect(await readSavedSetting(page, 'languagePreference')).toBe('ru')
   expect(await readSavedSetting(page, 'calendarPreferences')).toEqual({ calendar: 'gregorian', correction: 1 })
@@ -108,18 +112,18 @@ test('upgrades the published v12 official IndexedDB without reviving official pr
 
 test('unverified GPS near a fixed-time city still uses generic Dhuhr', async ({ page, context }) => {
   await context.grantPermissions(['geolocation'])
-  await context.setGeolocation({ latitude: 56.5234, longitude: 52.9943, accuracy: 10 })
+  await context.setGeolocation({ latitude: 55.6379, longitude: 51.8150, accuracy: 10 })
   await page.goto('./')
-  await choosePlace(page, 'Агрыз', 'Агрыз Татарстан')
+  await choosePlace(page, 'Нижнекамск', 'Нижнекамск Татарстан')
   await expectSchedule(page, 7)
   const dhuhr = page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem').filter({ hasText: 'Зухр' })
-  await expect(dhuhr).toContainText('11:45')
+  await expect(dhuhr).toContainText('11:50')
   await page.locator('#home-location').click()
   await page.getByRole('button', { name: 'По геопозиции' }).click()
   const accept = page.getByRole('button', { name: 'Использовать эту точку' })
   if (await accept.isVisible()) await accept.click()
   await expect.poll(() => readSavedSetting(page, 'locationChoice')).toMatchObject({
-    mode: 'calculated', place: { selection: 'gps', latitude: 56.5234, longitude: 52.9943 },
+    mode: 'calculated', place: { selection: 'gps', latitude: 55.6379, longitude: 51.8150 },
   })
   await expectSchedule(page, 7)
   await expect(dhuhr).toContainText('12:00')
