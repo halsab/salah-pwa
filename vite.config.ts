@@ -120,11 +120,11 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
           {
-            urlPattern: /\/salah-pwa\/data\/prayer-times-(?:current|manifest)\.json$/,
+            urlPattern: /\/data\/prayer-times-(?:current|manifest)\.json$/,
             handler: 'NetworkOnly',
           },
           {
-            urlPattern: /\/salah-pwa\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
+            urlPattern: /\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
             // Проверенные пакеты сохраняет Worker в IndexedDB; сырой ответ не кешируем.
             handler: 'NetworkOnly',
           },
