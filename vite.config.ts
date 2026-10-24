@@ -82,7 +82,7 @@ export default defineConfig({
       manifest: {
         name: 'VaqtPro — времена намаза',
         short_name: 'VaqtPro',
-        description: 'Время намаза для выбранного места: официальные таблицы и расчёт на устройстве. Сохранённые данные доступны офлайн.',
+        description: 'Время намаза для выбранного места: независимый расчёт на устройстве. Сохранённые данные доступны офлайн.',
         lang: 'ru',
         display: 'standalone',
         background_color: '#000000',
@@ -115,15 +115,9 @@ export default defineConfig({
           '**/data/cities-current.json',
           '**/data/cities/*/*.json',
           'city-cache-cleanup.js',
-          '**/data/prayer-times-current.json',
-          '**/data/prayer-times-manifest.json',
         ],
         maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
         runtimeCaching: [
-          {
-            urlPattern: /\/data\/prayer-times-(?:current|manifest)\.json$/,
-            handler: 'NetworkOnly',
-          },
           {
             urlPattern: /\/data\/cities\/[a-f0-9]{20}\/[A-Z]{2}-[0-9]+\.json$/,
             // Проверенные пакеты сохраняет Worker в IndexedDB; сырой ответ не кешируем.

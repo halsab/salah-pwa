@@ -1,189 +1,89 @@
-import { required } from '../test/required'
 import { describe, expect, it } from 'vitest'
-
-import { parseDumRtCsv } from '../data/parseDumRtCsv'
 import { calculatePrayerSchedule } from './prayerCalculation'
-import { zonedDateTimeToInstant } from './locationTime'
-import { buildScheduleEvents, selectEventPair, selectOfficialEventPair } from './scheduleEvents'
+import { buildScheduleEvents, selectEventPair } from './scheduleEvents'
 
-function official(csv: string) {
-  return required(parseDumRtCsv(csv, 'kazan')[0])
+function schedule(date = '2026-05-05', timeZone = 'Europe/Moscow') {
+  return calculatePrayerSchedule({ latitude: 55.79, longitude: 49.12 }, date, timeZone)
 }
-const lateFajr = official('05.05.2026;23:54;02:22;03:53;11:41;12:00;16:58;19:30;21:00')
-const apastovo = official('07.02.2026;05:21;05:56;07:27;12:01;12:00;14:43;16:35;18:19')
 
-describe('хронология расписания', () => {
-  it('относит позднее начало Фаджра к вечеру накануне дня поста и сравнивает его реальный момент', () => {
-    const events = buildScheduleEvents(lateFajr)
-    expect(events.find(({ key }) => key === 'fajrStart')).toMatchObject({
-      kind: 'prayer', time: '23:54', scheduleDate: '2026-05-05',
-      timeZone: 'Europe/Moscow', status: 'resolved',
-      instant: Date.parse('2026-05-04T23:54:00+03:00'), date: '2026-05-04', dayOffset: -1,
-    })
-    expect(selectEventPair(new Date('2026-05-04T23:53:59+03:00'), events).next?.key).toBe('fajrStart')
-    const exact = selectEventPair(new Date('2026-05-04T23:54:00+03:00'), events)
-    expect(exact.current?.key).toBe('fajrStart')
-    expect(exact.next?.key).toBe('fajrJamaat')
-    expect(selectEventPair(new Date('2026-05-05T00:00:00+03:00'), events)).toEqual(exact)
-    expect(selectEventPair(new Date('2026-05-05T09:30:00+03:00'), events).next?.key).toBe('zenith')
-    expect(lateFajr.fajrStart).toBe('23:54')
+describe('calculated schedule chronology', () => {
+  it('uses calculated instants and keeps prayer events distinct from markers', () => {
+    const value = schedule()
+    const events = buildScheduleEvents(value)
+    expect(events).toHaveLength(7)
+    expect(events.find(({ key }) => key === 'fajr')).toMatchObject({ kind: 'prayer', provenance: 'calculated', scheduleDate: value.date })
+    expect(events.filter(({ kind }) => kind === 'marker').map(({ key }) => key).sort()).toEqual(['sunrise', 'zenith'])
+    expect(events.every(event => event.instant === value.entries[event.key].instant)).toBe(true)
   })
 
-  it.each([
-    ['2026-01-01', '23:59', '2025-12-31', -1],
-    ['2026-05-01', '23:40', '2026-04-30', -1],
-    ['2026-05-05', '00:00', '2026-05-05', 0],
-  ] as const)('Фаджр %s %s сохраняет календарную границу', (scheduleDate, time, date, dayOffset) => {
-    const event = buildScheduleEvents({ ...lateFajr, date: scheduleDate, fajrStart: time }).find(({ key }) => key === 'fajrStart')
-    expect(event).toMatchObject({ date, dayOffset, instant: Date.parse(`${date}T${time}:00+03:00`) })
+  it('uses actual instants when late Fajr falls on the previous civil date', () => {
+    const value = schedule()
+    value.entries.fajr = { time: '23:54', instant: Date.parse('2026-05-04T20:54:00Z'), estimated: false }
+    const events = buildScheduleEvents(value)
+    const fajr = events.find(({ key }) => key === 'fajr')
+    expect(fajr).toMatchObject({ scheduleDate: value.date, timeZone: 'Europe/Moscow', date: '2026-05-04', dayOffset: -1 })
+    expect(selectEventPair(new Date('2026-05-04T20:53:59Z'), events).next?.key).toBe('fajr')
+    expect(selectEventPair(new Date('2026-05-04T20:54:00Z'), events).current?.key).toBe('fajr')
   })
 
-  it('сравнивает абсолютные моменты при любой перестановке событий и при Зухре раньше зенита', () => {
-    const events = buildScheduleEvents(apastovo)
+  it('resolves Tatarstan May 5 late Fajr to its actual previous-day instant', () => {
+    const value = calculatePrayerSchedule(
+      { latitude: 55.7946485, longitude: 49.1115022 },
+      '2026-05-05', 'Europe/Moscow',
+      { profile: 'tatarstan', asrMethod: 'hanafi', highLatitudeRule: 'tatarstan' },
+    )
+    const fajr = buildScheduleEvents(value).find(({ key }) => key === 'fajr')
+
+    expect(fajr).toMatchObject({ time: '23:58', scheduleDate: '2026-05-05', date: '2026-05-04', dayOffset: -1 })
+    expect(fajr?.instant).toBe(value.entries.fajr.instant)
+  })
+
+  it('selects current and next events by absolute instant regardless of input order', () => {
+    const events = buildScheduleEvents(schedule())
+    const fajr = events.find(({ key }) => key === 'fajr')
+    const sunrise = events.find(({ key }) => key === 'sunrise')
+    if (!fajr || !sunrise) throw new Error('Expected calculated Fajr and sunrise events')
+    const now = new Date((fajr.instant + sunrise.instant) / 2)
     for (let index = 0; index < events.length; index += 1) {
       const reordered = [...events.slice(index), ...events.slice(0, index)].reverse()
-      expect(selectEventPair(new Date('2026-02-07T11:59:59+03:00'), reordered).next?.key).toBe('dhuhr')
-      const atDhuhr = selectEventPair(new Date('2026-02-07T12:00:00+03:00'), reordered)
-      expect(atDhuhr.current?.key).toBe('dhuhr')
-      expect(atDhuhr.next?.key).toBe('zenith')
-      expect(selectEventPair(new Date('2026-02-07T12:01:00+03:00'), reordered).current?.key).toBe('zenith')
+      expect(selectEventPair(now, reordered)).toMatchObject({
+        current: { key: 'fajr' }, next: { key: 'sunrise' },
+      })
     }
   })
 
-  it('при совпадении выбирает намаз перед дополнительной отметкой с обеих сторон границы', () => {
-    const events = buildScheduleEvents({ ...apastovo, zenith: '12:00' })
-    for (const ordered of [events, [...events].reverse()]) {
-      expect(selectEventPair(new Date('2026-02-07T11:59:59+03:00'), ordered).next?.key).toBe('dhuhr')
-      expect(selectEventPair(new Date('2026-02-07T12:00:00+03:00'), ordered).current?.key).toBe('dhuhr')
-    }
+  it('prefers a prayer over a marker when both resolve to the same instant', () => {
+    const value = schedule()
+    const zenith = value.entries.zenith.instant
+    value.entries.dhuhr = { ...value.entries.dhuhr, instant: zenith }
+    const pair = selectEventPair(new Date(zenith), buildScheduleEvents(value))
+    expect(pair.current?.key).toBe('dhuhr')
   })
 
-  it('разделяет джамаат, начало Фаджра и дополнительные отметки', () => {
-    const events = buildScheduleEvents(apastovo)
-    expect(events.every(event => !('label' in event) && !('countdownLabel' in event))).toBe(true)
-    expect(events.find(({ key }) => key === 'fajrJamaat')?.kind).toBe('jamaat')
-    expect(events.find(({ key }) => key === 'dhuhr')?.kind).toBe('prayer')
-    expect(events.find(({ key }) => key === 'fajrStart')?.kind).toBe('prayer')
-    expect(events.filter(({ kind }) => kind === 'marker').map(({ key }) => key).sort()).toEqual(['sunrise', 'zenith'])
-    const calculated = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2026-09-01', 'Europe/Moscow')
-    expect(buildScheduleEvents(calculated).find(({ key }) => key === 'fajr')?.kind).toBe('prayer')
-  })
-
-  it('не создаёт отсутствующие джамааты и рассчитывает отсутствующий зенит с координатами и timezone провайдера', () => {
-    const { fajrJamaat: _fajr, zenith: _zenith, ...published } = apastovo
-    const schedule = { ...published, timeZone: 'Asia/Novosibirsk', coordinates: { latitude: 55.2, longitude: 48.5 } }
-    const events = buildScheduleEvents(schedule)
-    expect(events.some(event => event.key === 'fajrJamaat')).toBe(false)
-    const zenith = events.find(event => event.key === 'zenith')
-    expect(zenith).toMatchObject({ status: 'resolved', provenance: 'calculated', timeZone: 'Asia/Novosibirsk' })
-    if (!zenith || zenith.status !== 'resolved') throw new Error('Зенит не рассчитан')
-    expect(Math.abs(zenith.instant - zonedDateTimeToInstant(schedule.date, zenith.time, 'Asia/Novosibirsk').getTime())).toBeLessThan(60_000)
-    expect(buildScheduleEvents(apastovo).find(event => event.key === 'zenith')).toMatchObject({
-      status: 'resolved', time: '12:01', provenance: 'published',
+  it('preserves local civil dates and offsets across a timezone date boundary', () => {
+    const value = schedule('2026-01-01', 'Pacific/Apia')
+    const instant = Date.parse('2025-12-31T23:30:22.000Z')
+    value.entries.zenith = { time: '12:30', instant, estimated: false }
+    expect(buildScheduleEvents(value).find(({ key }) => key === 'zenith')).toMatchObject({
+      timeZone: 'Pacific/Apia', scheduleDate: '2026-01-01', date: '2026-01-01', dayOffset: 0,
     })
   })
 
-  it('сохраняет правильный транзит в событии для даты на линии перемены дат', () => {
-    const { fajrJamaat: _fajr, zenith: _zenith, ...published } = apastovo
-    const schedule = {
-      ...published,
-      date: '2026-01-01',
-      timeZone: 'Pacific/Apia',
-      coordinates: { latitude: -13.83, longitude: -171.76 },
-    }
-    const event = buildScheduleEvents(schedule).find(({ key }) => key === 'zenith')
-    expect(event).toMatchObject({
-      status: 'resolved', provenance: 'calculated', time: '12:30',
-      scheduleDate: '2026-01-01', date: '2026-01-01', dayOffset: 0,
-    })
-    if (!event || event.status !== 'resolved') throw new Error('Зенит не рассчитан')
-    expect(Math.abs(event.instant - Date.parse('2025-12-31T23:30:22.000Z'))).toBeLessThanOrEqual(5_000)
-  })
-
-  it('поддерживает опубликованные congregation события для каждого применимого намаза', () => {
-    const events = buildScheduleEvents({
-      ...apastovo, dhuhrJamaat: '12:30', asrJamaat: '15:00', maghribJamaat: '16:45', ishaJamaat: '18:30',
-    })
-    expect(events.filter(event => event.kind === 'jamaat').map(event => event.key)).toEqual([
-      'fajrJamaat', 'dhuhrJamaat', 'asrJamaat', 'maghribJamaat', 'ishaJamaat',
-    ])
-  })
-
-  it('возвращает явный сбой зенита без надежных координат и не выбирает его как событие', () => {
-    const { zenith: _zenith, ...withoutZenith } = apastovo
-    const events = buildScheduleEvents(withoutZenith)
-    const zenith = events.find(event => event.key === 'zenith')
-    expect(zenith).toMatchObject({ status: 'unavailable', reason: 'calculation-failed', provenance: 'calculated' })
-    expect(selectEventPair(new Date('2026-02-07T12:00:30+03:00'), events).current?.key).toBe('dhuhr')
-  })
-
-  it('сохраняет рассчитанный instant и его календарный offset через конец года', () => {
-    const schedule = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2026-12-31', 'Europe/Moscow')
-    const instant = Date.parse('2027-01-01T00:10:00+03:00')
-    schedule.entries.isha = { time: '00:10', instant, estimated: false }
-    expect(buildScheduleEvents(schedule).find(({ key }) => key === 'isha')).toMatchObject({
-      status: 'resolved', instant, date: '2027-01-01', scheduleDate: '2026-12-31', dayOffset: 1, time: '00:10',
-    })
-  })
-
-  it('выбирает события соседних дат по моменту, включая прежний Иша и будущий Фаджр до полуночи', () => {
-    const before = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2026-12-31', 'Europe/Moscow')
-    const after = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, '2027-01-01', 'Europe/Moscow')
+  it('selects adjacent calculated events across midnight and year-end', () => {
+    const before = schedule('2026-12-31')
+    const after = schedule('2027-01-01')
     before.entries.isha = { time: '00:10', instant: Date.parse('2027-01-01T00:10:00+03:00'), estimated: false }
     after.entries.fajr = { time: '23:55', instant: Date.parse('2026-12-31T23:55:00+03:00'), estimated: false }
     const events = [after, before].flatMap(buildScheduleEvents)
     const midnight = selectEventPair(new Date('2027-01-01T00:00:00+03:00'), events)
-    expect(midnight.current).toMatchObject({ key: 'fajr', date: '2026-12-31', dayOffset: -1 })
-    expect(midnight.next).toMatchObject({ key: 'isha', date: '2027-01-01', dayOffset: 1 })
-    const exact = selectEventPair(new Date('2027-01-01T00:10:00+03:00'), events)
-    expect(exact.current?.key).toBe('isha')
-    expect(exact.next?.key).toBe('sunrise')
+    expect(midnight.current).toMatchObject({ key: 'fajr', scheduleDate: '2027-01-01', date: '2026-12-31', dayOffset: -1 })
+    expect(midnight.next).toMatchObject({ key: 'isha', scheduleDate: '2026-12-31', date: '2027-01-01', dayOffset: 1 })
   })
 
-  it('без соседнего дня возвращает null, а не придумывает событие', () => {
-    const events = buildScheduleEvents(apastovo)
-    expect(selectEventPair(new Date('2026-02-07T00:00:00+03:00'), events).current).toBeNull()
-    expect(selectEventPair(new Date('2026-02-07T23:59:59+03:00'), events).next).toBeNull()
+  it('returns null when no event exists before or after the current time', () => {
+    const events = buildScheduleEvents(schedule())
+    expect(selectEventPair(new Date('2026-05-04T00:00:00Z'), events).current).toBeNull()
+    expect(selectEventPair(new Date('2026-05-06T00:00:00Z'), events).next).toBeNull()
     expect(selectEventPair(new Date(), [])).toEqual({ next: null, current: null })
   })
-})
-
-
-it('does not claim a complete event horizon when the following official row is outside coverage', () => {
-  const day = { ...lateFajr, date: '2026-12-31', fajrStart: '05:00' as const, isha: '23:58' as const }
-  const events = buildScheduleEvents(day)
-  const horizon = { previous: true, next: false }
-  expect(selectOfficialEventPair(new Date('2026-12-31T08:00:00+03:00'), events, day.date, 'Europe/Moscow', horizon).next?.key).toBe('zenith')
-  expect(selectOfficialEventPair(new Date('2026-12-31T23:53:00+03:00'), events, day.date, 'Europe/Moscow', horizon)).toEqual({ current: null, next: null })
-})
-
-it('retains the first covered countdown without inventing a preceding current event', () => {
-  const day = { ...lateFajr, date: '2026-01-01', fajrStart: '05:00' as const, fajrJamaat: '05:30' as const, sunrise: '07:00' as const }
-  const pair = selectOfficialEventPair(new Date('2026-01-01T00:01:00+03:00'), buildScheduleEvents(day), day.date, 'Europe/Moscow', { previous: false, next: true })
-  expect(pair.current).toBeNull()
-  expect(pair.next?.key).toBe('fajrStart')
-})
-
-it('keeps late Fajr from the first covered row even though its event date is the prior civil day', () => {
-  const firstCovered = { ...lateFajr, date: '2026-01-01', fajrStart: '23:54' as const }
-  const events = buildScheduleEvents(firstCovered)
-  const pair = selectOfficialEventPair(new Date('2025-12-31T20:55:00Z'), events,
-    firstCovered.date, 'Europe/Moscow', { previous: false, next: true })
-  expect(pair.current).toMatchObject({ key: 'fajrStart', scheduleDate: firstCovered.date, date: '2025-12-31', dayOffset: -1 })
-})
-
-
-it('prefers a verified D+1 late Fajr to a later published D event', () => {
-  const today = { ...lateFajr, date: '2026-12-30', isha: '23:58' as const }
-  const tomorrow = { ...lateFajr, date: '2026-12-31', fajrStart: '23:54' as const }
-  const pair = selectOfficialEventPair(new Date('2026-12-30T23:53:00+03:00'), [today, tomorrow].flatMap(buildScheduleEvents), today.date, 'Europe/Moscow', { previous: true, next: true })
-  expect(pair.next).toMatchObject({ key: 'fajrStart', scheduleDate: tomorrow.date, time: '23:54' })
-})
-
-it('uses the official timezone for the noon horizon across a device DST change', () => {
-  const today = { ...lateFajr, date: '2026-03-29', fajrStart: '05:00' as const }
-  const events = buildScheduleEvents(today)
-  const horizon = { previous: true, next: false }
-  expect(selectOfficialEventPair(new Date('2026-03-29T10:30:00+02:00'), events, today.date, 'Europe/Moscow', horizon).current).not.toBeNull()
-  expect(selectOfficialEventPair(new Date('2026-03-29T11:30:00+02:00'), events, today.date, 'Europe/Moscow', horizon)).toEqual({ current: null, next: null })
 })

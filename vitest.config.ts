@@ -18,8 +18,6 @@ export default defineConfig({
         'src/**/*.{ts,tsx}',
         'scripts/releaseVersion.ts',
         'scripts/parseGeoNamesCities.ts',
-        'scripts/prayerDatasetArtifacts.ts',
-        'scripts/selectDatasetYear.ts',
         'scripts/checkActionPins.ts',
         'scripts/checkBuildArtifacts.ts'
       ],

@@ -11,21 +11,23 @@ import {
   updateFastingModePreferences,
 } from './fasting'
 import { calculatePrayerSchedule } from './prayerCalculation'
+import { zonedDateTimeToInstant } from './locationTime'
 import { ramadanOccurrenceIdForDate } from './religiousEvents'
-import type { PrayerDay, PrayerTime } from './types'
+import type { PrayerTime } from './types'
 
-function day(date: string, fajrStart: PrayerTime = '04:00', maghrib: PrayerTime = '19:00', timeZone = 'Europe/Moscow'): PrayerDay {
-  return {
-    locationId: 'test', date, timeZone, fajrStart, fajrJamaat: '04:30', sunrise: '06:00',
-    zenith: '12:00', dhuhr: '12:10', asr: '16:00', maghrib, isha: '21:00',
-  }
+function day(date: string, fajr: PrayerTime = '04:00', maghrib: PrayerTime = '19:00', timeZone = 'Europe/Moscow') {
+  const schedule = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, date, timeZone)
+  const fajrDate = fajr >= '20:00' ? addDays(date, -1) : date
+  schedule.entries.fajr = { time: fajr, instant: zonedDateTimeToInstant(fajrDate, fajr, timeZone).getTime(), estimated: false }
+  schedule.entries.maghrib = { time: maghrib, instant: zonedDateTimeToInstant(date, maghrib, timeZone).getTime(), estimated: false }
+  return schedule
 }
 
 function resolve(input: {
   now: string
   today?: string
   selectedDate?: string
-  schedules: PrayerDay[]
+  schedules: ReturnType<typeof day>[]
   timeZone?: string
   preferences?: { manualEnabled: boolean; suppressedRamadanOccurrence?: `ramadan-${number}` }
   correction?: -1 | 0 | 1
@@ -98,7 +100,7 @@ describe('режим поста', () => {
       .toEqual({ manualEnabled: false })
   })
 
-  it('берёт официальное начало Фаджра, а не время джамаата, и включает границы поста точно', () => {
+  it('uses calculated Fajr and includes fasting boundaries exactly', () => {
     const yesterday = day('2026-03-09', '04:10')
     const today = day('2026-03-10', '04:00')
     const tomorrow = day('2026-03-11', '04:05')
@@ -189,7 +191,7 @@ describe('режим поста', () => {
     const events = buildFastingScheduleEvents(schedules, 'America/New_York')
     expect(events.fajr).toHaveLength(2)
     expect(events.maghrib).toHaveLength(2)
-    expect(events.fajr.every(event => event.provenance === 'calculated' && event.timeZone === 'America/New_York')).toBe(true)
+    expect(events.fajr.every(event => event.timeZone === 'America/New_York')).toBe(true)
     expect(events.fajr.map(event => event.date)).toEqual(['2026-03-08', '2026-03-09'])
   })
 
@@ -229,12 +231,11 @@ describe('режим поста', () => {
 })
 
 
-it('keeps a verified current-day fasting interval when tomorrow is outside official coverage', () => {
+it('keeps a complete current-day fasting interval using calculated events', () => {
   const today = '2026-12-31'
   const events = buildFastingScheduleEvents([day(today, '05:00')], 'Europe/Moscow')
   const input = { today, selectedDate: today, timeZone: 'Europe/Moscow', correction: 0 as const,
-    hijriSupported: false, preferences: { manualEnabled: true }, events,
-    officialHorizon: { previous: true, next: false } }
+    hijriSupported: false, preferences: { manualEnabled: true }, events }
   expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T08:00:00+03:00') })).toMatchObject({ kind: 'day' })
   expect(resolveFastingTimeline({ ...input, now: new Date('2026-12-31T15:00:00+03:00') }))
     .toMatchObject({ kind: 'day', start: { scheduleDate: today }, end: { scheduleDate: today } })
@@ -250,6 +251,6 @@ it('preserves fasting events from the first covered schedule row with a previous
   expect(fajr).toMatchObject({ scheduleDate: coveredScheduleDate, date: today, dayOffset: -1 })
   const timeline = resolveFastingTimeline({ now: new Date('2025-12-31T20:55:00Z'), today,
     selectedDate: today, timeZone: 'Europe/Moscow', correction: 0, hijriSupported: false,
-    preferences: { manualEnabled: true }, events, officialHorizon: { previous: false, next: true } })
+    preferences: { manualEnabled: true }, events })
   expect(timeline).toMatchObject({ kind: 'day', start: { scheduleDate: coveredScheduleDate, date: today } })
 })

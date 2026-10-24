@@ -17,10 +17,10 @@ describe('уведомления о лицензиях', () => {
       'public/old-timey-mono-license.txt',
       'GeoNames',
       'OpenStreetMap',
-      'ДУМ РТ',
     ]) {
       expect(notices).toContain(expected)
     }
+    expect(notices).not.toMatch(/ДУМ РТ|ДУМ РФ|dumrt\.ru/i)
     for (const dependency of [
       /\[React \/ ReactDOM 19\.2\.8\]\(https:\/\/github\.com\/react\/react\) — MIT/,
       /\[adhan 4\.4\.6\]\(https:\/\/github\.com\/batoulapps\/adhan-js\) — MIT/,

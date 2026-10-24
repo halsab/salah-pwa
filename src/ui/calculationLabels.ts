@@ -13,12 +13,12 @@ export const EVENT_LABEL_KEYS: Record<CalculatedPrayerKey, MessageKey> = {
 }
 
 export const HIGH_LATITUDE_KEYS: Record<HighLatitudeMethod, MessageKey> = {
-  dumRt: 'highLatitudeDumRt', seventhOfNight: 'highLatitudeSeventhOfNight',
+  tatarstan: 'highLatitudeTatarstan', seventhOfNight: 'highLatitudeSeventhOfNight',
   twilightAngle: 'highLatitudeTwilightAngle', nearestDay: 'highLatitudeNearestDay',
 }
 
 export const PROFILE_LABEL_KEYS: Record<CalculationProfileId, MessageKey> = {
-  dumRt: 'profileDumRt', dumRf: 'profileDumRf', turkey: 'profileTurkey',
+  tatarstan: 'profileTatarstan', russia: 'profileRussia', turkey: 'profileTurkey',
   muslimWorldLeague: 'profileMuslimWorldLeague', karachi: 'profileKarachi',
   northAmerica: 'profileNorthAmerica', ummAlQura: 'profileUmmAlQura',
   canadaFcna: 'profileCanadaFcna', dubai: 'profileDubai', qatar: 'profileQatar',

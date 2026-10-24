@@ -1,5 +1,5 @@
 import { getCivilDate, isValidTimeZone } from './locationTime'
-import { buildScheduleEvents, type OfficialEventHorizon, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
+import { buildScheduleEvents, type PrayerSchedule, type ResolvedScheduleEvent } from './scheduleEvents'
 import type { DateCorrection } from './calendar'
 import { ramadanOccurrenceIdForDate, type RamadanOccurrenceId } from './religiousEvents'
 import { addDays } from './date'
@@ -64,10 +64,9 @@ export function buildFastingScheduleEvents(
 
   for (const schedule of schedules) {
     try {
-      const fajrKey = 'entries' in schedule ? 'fajr' : 'fajrStart'
       for (const event of buildScheduleEvents(schedule)) {
-        if (event.status !== 'resolved' || event.timeZone !== timeZone) continue
-        if (event.key === fajrKey) events.fajr.push(event)
+        if (event.timeZone !== timeZone) continue
+        if (event.key === 'fajr') events.fajr.push(event)
         else if (event.key === 'maghrib') events.maghrib.push(event)
       }
     } catch {
@@ -112,7 +111,6 @@ export function resolveActiveRamadanOccurrence(input: {
   now?: Date
   timeZone?: string | null | undefined
   events?: FastingScheduleEvents
-  officialHorizon?: OfficialEventHorizon | undefined
 }): RamadanOccurrenceId | null {
   if (!input.hijriSupported) return null
   const currentOccurrence = occurrenceForFastDate(input.today, input.correction, true)
@@ -122,14 +120,12 @@ export function resolveActiveRamadanOccurrence(input: {
 
   const now = input.now.getTime()
   for (const fajr of input.events.fajr) {
-    if (input.officialHorizon?.next === false && fajr.scheduleDate > input.today) continue
     const occurrence = occurrenceForFastDate(fajr.scheduleDate, input.correction, true)
     const maghrib = input.events.maghrib.find(event => event.scheduleDate === fajr.scheduleDate)
     if (occurrence && maghrib && validInterval(fajr, maghrib) && now >= fajr.instant && now < maghrib.instant) return occurrence
   }
 
   for (const fajr of input.events.fajr) {
-    if (input.officialHorizon?.next === false && fajr.scheduleDate > input.today) continue
     const occurrence = occurrenceForFastDate(fajr.scheduleDate, input.correction, true)
     if (!occurrence || fajr.instant <= now) continue
     const precedingMaghrib = input.events.maghrib.reduce<ResolvedScheduleEvent | null>((closest, maghrib) => {
@@ -150,7 +146,6 @@ export function resolveFastingTimeline(input: {
   hijriSupported: boolean
   preferences: FastingModePreferences
   events: FastingScheduleEvents
-  officialHorizon?: OfficialEventHorizon | undefined
 }): FastingTimeline | null {
   if (input.selectedDate !== input.today || !isValidTimeZone(input.timeZone)
     || getCivilDate(input.now, input.timeZone) !== input.today) return null
@@ -172,10 +167,9 @@ export function resolveFastingTimeline(input: {
 
   for (const fajr of input.events.fajr) {
     if (fajr.instant <= now || !isAutomaticFastDate(fajr.scheduleDate, input.preferences, input.correction, input.hijriSupported)) continue
-    if (input.officialHorizon?.next === false && fajr.scheduleDate > input.today) continue
     const precedingMaghrib = input.events.maghrib.reduce<ResolvedScheduleEvent | null>((closest, maghrib) => {
       if (maghrib.instant >= fajr.instant || maghrib.instant > now || !validInterval(maghrib, fajr)
-        || (input.officialHorizon?.previous === false && maghrib.scheduleDate < input.today)) return closest
+      ) return closest
       return !closest || maghrib.instant > closest.instant ? maghrib : closest
     }, null)
     if (precedingMaghrib) return { kind: 'night', start: precedingMaghrib, end: fajr }

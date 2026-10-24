@@ -1,6 +1,6 @@
-import { isCalculationSelection, isCalculationSettings, selectionFromSettings, type CalculationSelection } from './calculationSettings'
+import { isCalculationSelection, type CalculationSelection } from './calculationSettings'
 
-export type ManualSource = { kind: 'official'; provider: string } | { kind: 'calculated'; calculation: CalculationSelection }
+export type ManualSource = { kind: 'calculated'; calculation: CalculationSelection }
 export type SourcePreferences = { calculationDraft?: CalculationSelection; manualSourceDraft?: ManualSource } & (
   | { mode: 'automatic' }
   | { mode: 'manual'; source: ManualSource }
@@ -15,10 +15,8 @@ export function manualCalculation(calculation: CalculationSelection): SourcePref
 }
 function isManualSource(value: unknown): value is ManualSource {
   if (!value || typeof value !== 'object') return false
-  const source = value as { kind?: unknown; provider?: unknown; calculation?: unknown }
-  return source.kind === 'official'
-    ? typeof source.provider === 'string' && source.provider.length > 0
-    : source.kind === 'calculated' && isCalculationSelection(source.calculation)
+  const source = value as { kind?: unknown; calculation?: unknown }
+  return source.kind === 'calculated' && isCalculationSelection(source.calculation)
 }
 export function isSourcePreferences(value: unknown): value is SourcePreferences {
   if (!value || typeof value !== 'object') return false
@@ -29,12 +27,7 @@ export function isSourcePreferences(value: unknown): value is SourcePreferences 
   if (p.mode !== 'manual' || !p.source) return false
   return isManualSource(p.source)
 }
-export function restoreSourcePreferences(value: unknown, legacySettings?: unknown, legacyChoice?: { mode?: unknown }): SourcePreferences {
-  if (isSourcePreferences(value)) return value
-  if (!isCalculationSettings(legacySettings)) return automaticPreferences()
-  const calculation = selectionFromSettings(legacySettings)
-  // Наличие старой записи означает редактирование; даже совпадение с прежним default не доказывает автоматический режим.
-  return legacyChoice?.mode === 'official'
-    ? { mode: 'manual', source: { kind: 'official', provider: 'dumRt' }, calculationDraft: calculation }
-    : manualCalculation(calculation)
+export function restoreSourcePreferences(value: unknown): SourcePreferences {
+  // Old official sources and retired profile IDs are intentionally not migrated.
+  return isSourcePreferences(value) ? value : automaticPreferences()
 }

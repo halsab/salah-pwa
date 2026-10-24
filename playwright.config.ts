@@ -27,6 +27,7 @@ export default defineConfig({
         '**/privacy.spec.ts',
         '**/location-selection.spec.ts',
         '**/security.spec.ts',
+        '**/prayer-source-upgrade.spec.ts',
       ],
       use: { ...devices['Desktop Chrome'], launchOptions: {
         args: ['--enable-features=BackForwardCache'], ignoreDefaultArgs: ['--disable-back-forward-cache'],

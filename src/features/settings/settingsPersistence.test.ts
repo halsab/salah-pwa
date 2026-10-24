@@ -11,8 +11,10 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-const a = { locationChoice: { mode: 'official' as const, locationId: 'kazan', source: 'manual' as const } }
-const b = { locationChoice: { mode: 'official' as const, locationId: 'naberezhnye-chelny', source: 'manual' as const } }
+const a = { locationChoice: { mode: 'calculated' as const, source: 'manual' as const,
+  coordinates: { latitude: 55.79, longitude: 49.12, timeZone: 'Europe/Moscow', accuracy: null, timestamp: 1 } } }
+const b = { locationChoice: { mode: 'calculated' as const, source: 'manual' as const,
+  coordinates: { latitude: 55.742, longitude: 52.399, timeZone: 'Europe/Moscow', accuracy: null, timestamp: 2 } } }
 
 it.each(['result', 'rejection'])('handles %s failure and retries the latest complete state', async kind => {
   const save = vi.fn().mockImplementationOnce(() => kind === 'result'

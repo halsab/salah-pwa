@@ -84,13 +84,13 @@ describe('one-shot GPS operations', () => {
     expect(h.result.current.place).toBeNull()
     expect(h.result.current.gpsState).toEqual({ status: 'refining' })
     expect(h.chosen).not.toHaveBeenCalled()
-    expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
+    expect(h.services.saveCalculatedLocation).not.toHaveBeenCalled()
     const id = h.result.current.gpsPreview?.id
     await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
     expect(h.result.current.place).toMatchObject({ ...preciseFix, id })
     expect(h.result.current.gpsState).toEqual({ status: 'ready', lowAccuracy: false })
     expect(h.chosen).toHaveBeenCalledOnce()
-    expect(h.services.saveOfficialLocation).toHaveBeenCalledWith('kazan', 'automatic', expect.objectContaining(preciseFix), expect.any(Function))
+    expect(h.services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining(preciseFix), 'automatic', expect.any(Function))
   })
   it('finishes once after a sufficiently accurate coarse point while precise continues', async () => {
     const h = setup()
@@ -239,7 +239,7 @@ describe('one-shot GPS operations', () => {
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
-    act(() => h.result.current.selectOfficial('kazan'))
+    act(() => h.result.current.selectLocality('kazan'))
     const afterSelection = h.persist.mock.calls.length
     await act(async () => {
       h.precise.resolve(success(preciseFix))
@@ -247,7 +247,7 @@ describe('one-shot GPS operations', () => {
       await pending
       await Promise.resolve()
     })
-    expect(h.result.current.place).toMatchObject({ selection: 'official', id: 'locality:kazan' })
+    expect(h.result.current.place).toMatchObject({ selection: 'city', id: 'locality:kazan' })
     expect(h.persist.mock.calls).toHaveLength(afterSelection)
   })
   it('accepts provisional coarse once and still applies a late useful precise point', async () => {
@@ -359,14 +359,14 @@ describe('one-shot GPS operations', () => {
     let pending!: Promise<void>
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
-    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'muslimWorldLeague', asrMethod: 'standard' } })
     await act(async () => {
       h.lookup.resolve(success({ ...city, countryCode: 'TR', latitude: goodCoarseFix.latitude, longitude: goodCoarseFix.longitude }))
       await Promise.resolve()
     })
     expect(h.result.current.place?.nearbyCity?.countryCode).toBe('TR')
-    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey', asrMethod: 'standard' } })
     await act(async () => { h.precise.resolve(failure({ kind: 'geolocation', reason: 'timeout' })); await pending })
   })
@@ -379,11 +379,11 @@ describe('one-shot GPS operations', () => {
       h.lookup.resolve(success({ ...city, countryCode: 'TR', latitude: coarseFix.latitude, longitude: coarseFix.longitude }))
       await Promise.resolve()
     })
-    expect(resolvePrayerTimeSource(h.result.current.gpsPreview as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.gpsPreview as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey' } })
     await act(async () => { h.precise.resolve(success(preciseFix)); await pending })
     expect(h.result.current.place).toMatchObject({ ...preciseFix, nearbyCity: { countryCode: 'TR' } })
-    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey' } })
   })
   it('retains the prior country when the refined fix lookup fails or finds nothing', async () => {
@@ -400,7 +400,7 @@ describe('one-shot GPS operations', () => {
     await act(async () => { h.precise.resolve(success(preciseFix)); await Promise.resolve() })
     await act(async () => { secondLookup.resolve(success(null)); await pending })
     expect(h.result.current.place).toMatchObject({ ...preciseFix, nearbyCity: { countryCode: 'TR' } })
-    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'turkey' } })
   })
   it('invalidates country metadata after refinement moves more than 25 km from its city', async () => {
@@ -418,7 +418,7 @@ describe('one-shot GPS operations', () => {
     await act(async () => { h.precise.resolve(success(farPreciseFix)); await Promise.resolve() })
     expect(h.result.current.place).toMatchObject(farPreciseFix)
     expect(h.result.current.place?.nearbyCity).toBeUndefined()
-    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'muslimWorldLeague' } })
     await act(async () => { secondLookup.resolve(success(null)); await pending })
   })
@@ -428,7 +428,7 @@ describe('one-shot GPS operations', () => {
     const h = setup()
     act(() => h.result.current.restore({ mode: 'calculated', coordinates: saved, source: 'automatic', place: saved }, []))
     expect(h.result.current.place).toMatchObject({ nearbyCity: { countryCode: 'CA' }, timeZone: 'America/Los_Angeles' })
-    expect(resolvePrayerTimeSource(saved, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'canadaFcna' } })
     expect(h.services.cities.findNearest).not.toHaveBeenCalled()
     expect(h.services.getPosition).not.toHaveBeenCalled()
@@ -453,7 +453,7 @@ describe('one-shot GPS operations', () => {
       await pending
     })
     expect(h.result.current.place).toMatchObject({ ...preciseFix, nearbyCity: { countryCode: 'CA' } })
-    expect(resolvePrayerTimeSource(h.result.current.place as Place, '2026-09-01', automaticPreferences(), []))
+    expect(resolvePrayerTimeSource(h.result.current.place as Place, automaticPreferences()))
       .toMatchObject({ kind: 'calculated', settings: { profile: 'canadaFcna' } })
   })
   it('ignores responses after unmount without saving', async () => {
@@ -462,14 +462,13 @@ describe('one-shot GPS operations', () => {
     act(() => { pending = h.result.current.locate() })
     h.unmount()
     await act(async () => { h.coarse.resolve(success(coarseFix)); h.precise.resolve(success(preciseFix)); await pending })
-    expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
     expect(h.services.saveCalculatedLocation).not.toHaveBeenCalled()
   })
   it('ignores a saved GPS timezone override across restoration and a new GPS request', async () => {
     const h = setup()
     const saved = { ...createGpsPlace(coarseFix, 'UTC', geometry, 'gps:saved'), timeZone: 'America/New_York',
       timeZoneOverride: { id: 'America/New_York', source: 'user' as const } }
-    act(() => h.result.current.restore({ mode: 'official', locationId: 'kazan', source: 'automatic', place: saved }, locations))
+    act(() => h.result.current.restore({ mode: 'calculated', coordinates: saved, source: 'automatic', place: saved }, locations))
     expect(h.services.getPosition).not.toHaveBeenCalled()
     expect(h.result.current.place).toMatchObject({ timeZone: 'America/Los_Angeles', id: 'gps:saved' })
     expect(h.result.current.place).not.toHaveProperty('timeZoneOverride')
@@ -480,14 +479,16 @@ describe('one-shot GPS operations', () => {
     act(() => h.result.current.selectCity(city))
   })
   it('serializes slow saves so the manual choice is persisted last', async () => {
-    const save = deferred<Awaited<ReturnType<TestSettingsServices['saveOfficialLocation']>>>()
-    const h = setup({ saveOfficialLocation: vi.fn().mockReturnValue(save.promise) })
+    const save = deferred<Awaited<ReturnType<TestSettingsServices['saveCalculatedLocation']>>>()
+    const h = setup({ saveCalculatedLocation: vi.fn().mockReturnValueOnce(save.promise).mockResolvedValue(success(undefined)) })
     act(() => { void h.result.current.locate() })
-    await act(async () => { h.coarse.resolve(success(coarseFix)); await Promise.resolve() })
+    await act(async () => { h.coarse.resolve(success(goodCoarseFix)); await Promise.resolve() })
+    await waitFor(() => expect(h.services.saveCalculatedLocation).toHaveBeenCalledTimes(1))
     act(() => h.result.current.selectCity(city))
-    expect(h.services.saveCalculatedLocation).not.toHaveBeenCalled()
+    expect(h.services.saveCalculatedLocation).toHaveBeenCalledTimes(1)
     await act(async () => { save.resolve(success(undefined)); h.precise.resolve(success(preciseFix)); await Promise.resolve() })
-    await waitFor(() => expect(h.services.saveCalculatedLocation).toHaveBeenCalledWith(expect.objectContaining({ cityId: 1 }), 'manual', expect.any(Function)))
+    await waitFor(() => expect(h.services.saveCalculatedLocation).toHaveBeenCalledTimes(2))
+    expect(h.services.saveCalculatedLocation).toHaveBeenLastCalledWith(expect.objectContaining({ cityId: 1 }), 'manual', expect.any(Function))
   })
   it('uses explicit device fallback when geographic package is unavailable', async () => {
     const h = setup({ loadGeography: vi.fn().mockResolvedValue(null) })
@@ -495,7 +496,6 @@ describe('one-shot GPS operations', () => {
     act(() => { pending = h.result.current.locate() })
     await act(async () => { h.coarse.resolve(success(coarseFix)); h.precise.resolve(success(preciseFix)); await pending })
     expect(h.result.current.place).toMatchObject({ coverage: 'unavailable', timeZone: 'America/Los_Angeles' })
-    expect(h.services.saveOfficialLocation).not.toHaveBeenCalled()
   })
 })
 

@@ -4,11 +4,8 @@ import { gzipSync } from 'node:zlib'
 import { join, relative, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { validatePrayerDatasetManifest, verifyPrayerDatasetBytes } from '../src/data/prayerDatasetManifest'
 import { validateCityIndex, parseCityShard } from '../src/domain/citySchema'
 import { createSearchFilter, type CityIndex } from '../src/domain/cityIndex'
-import type { PrayerDatasetManifest } from '../src/domain/types'
-import { PRAYER_DATASET_FILE_NAME, PRAYER_MANIFEST_FILE_NAME } from './prayerDatasetArtifacts'
 
 export interface BuildArtifact {
   path: string
@@ -42,8 +39,6 @@ const REQUIRED_ARTIFACTS: ReadonlyArray<{
   { name: 'mainJavaScript', matches: (path) => /^assets\/index-[^/]+\.js$/.test(path) },
   { name: 'mainCss', matches: (path) => /^assets\/index-[^/]+\.css$/.test(path) },
   { name: 'cityIndex', matches: (path) => path === 'data/cities/index.json' },
-  { name: 'prayerTimes', matches: (path) => path === `data/${PRAYER_DATASET_FILE_NAME}` },
-  { name: 'prayerManifest', matches: (path) => path === `data/${PRAYER_MANIFEST_FILE_NAME}` },
 ]
 
 // Хеш фиксирует SVG-код, сгенерированный для официальной ссылки приложения.
@@ -68,6 +63,9 @@ export function validateBuildArtifacts(
     } else if (matchesForCategory.length > 1) {
       errors.push(`${name}: найдено ${matchesForCategory.length} artifacts`)
     }
+  }
+  if (artifacts.some(({ path }) => /prayer-times-(?:current|manifest)\.json$/i.test(path))) {
+    errors.push('prayerData: obsolete timetable artifacts must not be bundled')
   }
 
   const cityArtifacts = artifacts.filter((artifact) => artifact.path.startsWith('data/cities/'))
@@ -207,40 +205,6 @@ async function validateCityArtifacts(
   return { catalog, errors }
 }
 
-async function validatePrayerArtifacts(distDirectory: string, artifacts: readonly BuildArtifact[]): Promise<string[]> {
-  const datasetPath = `data/${PRAYER_DATASET_FILE_NAME}`
-  const manifestPath = `data/${PRAYER_MANIFEST_FILE_NAME}`
-  const hasDataset = artifacts.some((artifact) => artifact.path === datasetPath)
-  const hasManifest = artifacts.some((artifact) => artifact.path === manifestPath)
-  if (!hasDataset || !hasManifest) return []
-
-  let manifest: PrayerDatasetManifest
-  try {
-    const manifestInput: unknown = JSON.parse(
-      await readFile(join(distDirectory, manifestPath), 'utf8'),
-    )
-    const validation = validatePrayerDatasetManifest(manifestInput)
-    if (!validation.ok) throw new Error('Некорректный manifest расписания')
-    if (validation.value.url !== PRAYER_DATASET_FILE_NAME) {
-      throw new Error('Manifest ссылается не на текущий набор расписания')
-    }
-    manifest = validation.value
-  } catch (error) {
-    return [`prayerManifest: ${error instanceof Error ? error.message : String(error)}`]
-  }
-
-  try {
-    const datasetBytes = await readFile(join(distDirectory, datasetPath))
-    const verification = await verifyPrayerDatasetBytes(datasetBytes, manifest, {
-      digest: (bytes) => Promise.resolve(createHash('sha256').update(bytes).digest('hex')),
-    })
-    if (!verification.ok) throw new Error('Набор расписания не соответствует manifest или схеме')
-    return []
-  } catch (error) {
-    return [`prayerTimes: ${error instanceof Error ? error.message : String(error)}`]
-  }
-}
-
 function isJavaScript(path: string): boolean {
   return /\.(?:js|mjs|cjs)$/.test(path)
 }
@@ -375,7 +339,6 @@ export async function checkBuildArtifacts(
     ...validateBuildArtifacts(artifacts, city.catalog),
     ...await validateApplicationIdentity(distDirectory, artifacts),
     ...city.errors,
-    ...await validatePrayerArtifacts(distDirectory, artifacts),
   ]
 
   if (errors.length > 0) {

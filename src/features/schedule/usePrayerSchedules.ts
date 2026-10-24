@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { addDays } from '../../domain/date'
 import {
@@ -6,11 +6,10 @@ import {
   calculatePrayerSchedule,
 } from '../../domain/prayerCalculation'
 import { scheduleContextKey, type ScheduleContext } from '../../domain/scheduleContext'
+import { verifiedTatarstanLocalityId } from '../../domain/tatarstanDhuhr'
 import { buildScheduleEvents, type PrayerSchedule } from '../../domain/scheduleEvents'
-import type { PrayerDay } from '../../domain/types'
 import type { Place } from '../../domain/place'
-import { coversOfficialDate, type ResolvedPrayerSource } from '../../domain/prayerSource'
-import { isPrayerDay } from '../../domain/prayerDatasetValidation'
+import type { ResolvedPrayerSource } from '../../domain/prayerSource'
 import type { CalculationProfileId } from '../../domain/prayerCalculation'
 import type { FastScheduleStartup } from './fastScheduleSnapshot'
 
@@ -19,17 +18,8 @@ export type DisplaySchedule = PrayerSchedule
 export type ScheduleError =
   | { code: 'load-failed' }
   | { code: 'unsupported-profile'; profile: CalculationProfileId }
-  | { code: 'profile-unavailable' }
-  | { code: 'source-not-covered' }
-  | { code: 'official-invalid' }
-  | { code: 'official-not-loaded' }
-
-interface PrayerScheduleServices {
-  getDays: (locationId: string, dates: readonly string[], datasetRevision: string, provider: string) => Promise<(PrayerDay | undefined)[]>
-}
 
 interface UsePrayerSchedulesOptions {
-  services: PrayerScheduleServices
   location: Place | null
   resolution: ResolvedPrayerSource | null
   mode: 'automatic' | 'manual'
@@ -41,152 +31,87 @@ interface ScheduleResult {
   context: ScheduleContext
   key: string
   retry: number
-  services: PrayerScheduleServices
+  enrichmentRetry: number
   schedules: DisplaySchedule[]
-  error: ScheduleError | null
   contextReady: boolean
   enrichmentError: boolean
 }
 
-function snapshotHasCoveredNeighbors(snapshot: FastScheduleStartup): boolean {
-  if (snapshot.context.source !== 'official' || !snapshot.meta) return snapshot.neighbors !== undefined
-  const coverage = {
-    schemaVersion: snapshot.meta.schemaVersion,
-    years: snapshot.meta.source.years,
-    ...snapshot.meta.providerInfo?.coverage,
-  }
-  const expected = [addDays(snapshot.context.date, -1), addDays(snapshot.context.date, 1)]
-    .filter(date => coversOfficialDate(coverage, date))
-  const actual = snapshot.neighbors?.map(day => day.date) ?? []
-  return actual.length === expected.length && expected.every(date => actual.includes(date))
+function scheduleError(error: unknown): ScheduleError {
+  return error instanceof UnsupportedCalculationProfileError
+    ? { code: 'unsupported-profile', profile: error.profile }
+    : { code: 'load-failed' }
 }
 
-export function usePrayerSchedules({
-  services, location, resolution, mode, selectedDate, initialSnapshot,
-}: UsePrayerSchedulesOptions) {
+export function usePrayerSchedules({ location, resolution, mode, selectedDate, initialSnapshot }: UsePrayerSchedulesOptions) {
   const latitude = location?.latitude
   const longitude = location?.longitude
   const id = location?.id ?? null
+  const localityId = location && resolution?.settings.profile === 'tatarstan'
+    ? verifiedTatarstanLocalityId(location)
+    : undefined
   const description: ScheduleContext | null = resolution?.status === 'ready' && latitude !== undefined && longitude !== undefined
-    ? resolution.kind === 'official' && resolution.revision && resolution.version && resolution.coverage && resolution.locationId
-      ? { location: { id, latitude, longitude }, date: selectedDate, timeZone: resolution.timeZone, mode,
-        source: 'official', provider: resolution.provider, datasetRevision: resolution.revision,
-        datasetVersion: resolution.version, coverage: resolution.coverage, localityId: resolution.locationId }
-      : resolution.kind === 'calculated'
-        ? { location: { id, latitude, longitude }, date: selectedDate, timeZone: resolution.timeZone, mode, source: 'calculated', settings: resolution.settings }
-        : null
+    ? { location: { id, latitude, longitude, ...(localityId ? { localityId } : {}) }, date: selectedDate,
+      timeZone: resolution.timeZone, mode, source: 'calculated', settings: resolution.settings }
     : null
   const serialized = description ? JSON.stringify(description) : null
   const context = useMemo<ScheduleContext | null>(() => serialized ? JSON.parse(serialized) as ScheduleContext : null, [serialized])
-  const coverageKey = resolution?.kind === 'official' && resolution.dateCoverage ? JSON.stringify(resolution.dateCoverage) : null
-  const dateCoverage = useMemo(() => coverageKey ? JSON.parse(coverageKey) as NonNullable<Extract<ResolvedPrayerSource, { kind: 'official' }>['dateCoverage']> : null, [coverageKey])
   const key = context ? scheduleContextKey(context) : null
   const [result, setResult] = useState<ScheduleResult | null>(() => initialSnapshot
-    ? { context: initialSnapshot.context, key: scheduleContextKey(initialSnapshot.context), retry: 0,
-      services, schedules: [initialSnapshot.schedule, ...(initialSnapshot.neighbors ?? [])], error: null,
-      contextReady: snapshotHasCoveredNeighbors(initialSnapshot), enrichmentError: false }
+    ? { context: initialSnapshot.context, key: scheduleContextKey(initialSnapshot.context), retry: 0, enrichmentRetry: 0,
+      schedules: [initialSnapshot.schedule], contextReady: false, enrichmentError: false }
     : null)
   const [retry, setRetry] = useState(0)
   const [enrichmentRetry, setEnrichmentRetry] = useState(0)
-  const resultRef = useRef(result)
+
+  const matching = result?.key === key && result.retry === retry && result.enrichmentRetry === enrichmentRetry ? result : null
+  const selectedComputation = useMemo((): { schedule: DisplaySchedule | null; error: ScheduleError | null } => {
+    if (!context || !key) return { schedule: null, error: null }
+    const stored = matching?.schedules.find(day => day.date === context.date)
+    if (stored) return { schedule: stored, error: null }
+    if (initialSnapshot && retry === 0 && scheduleContextKey(initialSnapshot.context) === key) {
+      return { schedule: initialSnapshot.schedule, error: null }
+    }
+    try {
+      return { schedule: calculatePrayerSchedule(context.location, context.date, context.timeZone, context.settings), error: null }
+    } catch (error) {
+      return { schedule: null, error: scheduleError(error) }
+    }
+  }, [context, initialSnapshot, key, matching, retry])
 
   useEffect(() => {
-    if (!context || !key) return
+    if (!context || !key || !selectedComputation.schedule) return
     let active = true
-    const currentResult = resultRef.current?.key === key && resultRef.current.retry === retry
-      && resultRef.current.services === services ? resultRef.current : null
-    const snapshotSelected = initialSnapshot && retry === 0 && scheduleContextKey(initialSnapshot.context) === key
-      ? initialSnapshot.schedule : null
-    const existingSelected = currentResult?.schedules.find(day => day.date === context.date) ?? null
-    const selectedDay = snapshotSelected ?? existingSelected
-    const officialDay = (day: PrayerDay | undefined, date: string, locationId: string, timeZone: string): DisplaySchedule | null => {
-      if (!day) return null
-      if (!isPrayerDay(day) || day.date !== date || day.locationId !== locationId) throw new Error('dataset-shape-mismatch')
-      return { ...day, timeZone,
-        coordinates: { latitude: context.location.latitude, longitude: context.location.longitude } }
-    }
-    const setCriticalError = (error: unknown) => {
-      if (!active) return
-      setResult({ context, key, retry, services, schedules: [], error:
-        error instanceof UnsupportedCalculationProfileError
-          ? { code: 'unsupported-profile', profile: error.profile }
-          : { code: 'load-failed' },
-        contextReady: false, enrichmentError: false,
-      })
-    }
-    const enrich = async (selected: DisplaySchedule) => {
+    const selectedSchedule = selectedComputation.schedule
+
+    const enrich = async () => {
       try {
-        if (context.source === 'official') {
-          const dates = [addDays(context.date, -1), addDays(context.date, 1)].filter(date => !dateCoverage || coversOfficialDate(dateCoverage, date))
-          const days = await services.getDays(context.localityId, dates, context.datasetRevision, context.provider)
-          if (days.length !== dates.length) throw new Error('dataset-shape-mismatch')
-          const neighbors = dates.map((date, index) => officialDay(days[index], date, context.localityId, context.timeZone))
-          if (neighbors.some(day => !day)) throw new Error('dataset-neighbor-missing')
-          if (active) setResult({ context, key, retry, services,
-            schedules: [...neighbors.filter((day): day is DisplaySchedule => day !== null), selected],
-            error: null, contextReady: true, enrichmentError: false })
-          return
-        }
         // Даём браузеру показать выбранный день до вычисления соседних суток.
         await new Promise<void>(resolve => window.setTimeout(resolve, 0))
         if (!active) return
         const radius = 4
         const dates = Array.from({ length: radius * 2 + 1 }, (_, index) => addDays(context.date, index - radius))
-        const schedules = dates.map(date => date === selected.date ? selected
+        const schedules = dates.map(date => date === selectedSchedule.date ? selectedSchedule
           : calculatePrayerSchedule(context.location, date, context.timeZone, context.settings))
-        if (schedules.flatMap(buildScheduleEvents).some(event => event.status === 'resolved' && Math.abs(event.dayOffset) > 3)) {
+        if (schedules.flatMap(buildScheduleEvents).some(event => Math.abs(event.dayOffset) > 3)) {
           throw new Error('schedule-event-outside-window')
         }
-        setResult({ context, key, retry, services, schedules, error: null, contextReady: true, enrichmentError: false })
-      } catch (error) {
-        // Ошибка доступа не отменяет проверенный снимок; несовместимые данные отменяют live-контекст.
-        const storageUnavailable = error !== null && typeof error === 'object' && 'kind' in error && error.kind === 'storage'
-        if (active) setResult(current => current?.key === key && current.retry === retry
-          ? storageUnavailable && current.contextReady ? { ...current, enrichmentError: true }
-            : { ...current, schedules: [selected], contextReady: false, enrichmentError: true }
-          : current)
+        setResult({ context, key, retry, enrichmentRetry, schedules, contextReady: true, enrichmentError: false })
+      } catch {
+        setResult({ context, key, retry, enrichmentRetry, schedules: [selectedSchedule],
+          contextReady: false, enrichmentError: true })
       }
     }
-    if (selectedDay) {
-      setResult(current => current?.key === key && current.retry === retry
-        ? { ...current, enrichmentError: false }
-        : current)
-      void enrich(selectedDay)
-      return () => { active = false }
-    }
-    const load = async () => {
-      try {
-        let selected: DisplaySchedule
-        if (context.source === 'official') {
-          const days = await services.getDays(context.localityId, [context.date], context.datasetRevision, context.provider)
-          if (days.length !== 1) throw new Error('dataset-shape-mismatch')
-          const day = officialDay(days[0], context.date, context.localityId, context.timeZone)
-          if (!day) throw new Error('dataset-date-missing')
-          selected = day
-        } else {
-          selected = calculatePrayerSchedule(context.location, context.date, context.timeZone, context.settings)
-        }
-        if (!active) return
-        setResult({ context, key, retry, services, schedules: [selected], error: null, contextReady: false, enrichmentError: false })
-        void enrich(selected)
-      } catch (error: unknown) {
-        setCriticalError(error)
-      }
-    }
-    void load()
+
+    void enrich()
     return () => { active = false }
-  }, [context, dateCoverage, enrichmentRetry, initialSnapshot, key, retry, services])
-  useEffect(() => { resultRef.current = result }, [result])
+  }, [context, enrichmentRetry, key, retry, selectedComputation.schedule])
 
   // Проверка во время render закрывает промежуток до cleanup/effect нового запроса.
-  const matching = result?.key === key && result.retry === retry && result.services === services ? result : null
-  const schedules = matching?.schedules ?? []
-  const unavailable: ScheduleError | null = resolution && resolution.status !== 'ready'
-    ? resolution.kind === 'calculated'
-      ? { code: 'unsupported-profile', profile: resolution.settings.profile }
-      : resolution.status === 'not-covered' ? { code: 'source-not-covered' }
-        : resolution.status === 'invalid' ? { code: 'official-invalid' }
-          : { code: 'official-not-loaded' }
+  const currentResult = result?.key === key && result.retry === retry && result.enrichmentRetry === enrichmentRetry ? result : null
+  const schedules = currentResult?.schedules ?? (selectedComputation.schedule ? [selectedComputation.schedule] : [])
+  const unavailable: ScheduleError | null = resolution?.status === 'unsupported'
+    ? { code: 'unsupported-profile', profile: resolution.settings.profile }
     : null
   return {
     context,
@@ -195,15 +120,11 @@ export function usePrayerSchedules({
     schedule: schedules.find(({ date }) => date === selectedDate) ?? null,
     previousSchedule: schedules.find(({ date }) => date === addDays(selectedDate, -1)),
     tomorrow: schedules.find(({ date }) => date === addDays(selectedDate, 1)),
-    scheduleLoading: !matching && !unavailable,
-    scheduleError: unavailable ?? matching?.error ?? null,
-    contextReady: Boolean(matching?.contextReady),
-    officialHorizon: context?.source === 'official' ? {
-      previous: !dateCoverage || coversOfficialDate(dateCoverage, addDays(context.date, -1)),
-      next: !dateCoverage || coversOfficialDate(dateCoverage, addDays(context.date, 1)),
-    } : undefined,
-    enrichmentError: Boolean(matching?.enrichmentError),
-    retrySchedule: () => setRetry((count) => count + 1),
+    scheduleLoading: !currentResult && !selectedComputation.schedule && !selectedComputation.error && !unavailable,
+    scheduleError: unavailable ?? selectedComputation.error,
+    contextReady: Boolean(currentResult?.contextReady),
+    enrichmentError: Boolean(currentResult?.enrichmentError),
+    retrySchedule: () => setRetry(count => count + 1),
     retryEnrichment: () => setEnrichmentRetry(count => count + 1),
   }
 }

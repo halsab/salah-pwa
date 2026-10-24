@@ -3,7 +3,7 @@ import type { CityCatalogService, CitySearchResult } from '../../data/cityCatalo
 import type { City } from '../../domain/cities'
 import { compactPlaceLabel, getCountryLabel } from '../../domain/countryLabels'
 import type { Place } from '../../domain/place'
-import type { PrayerLocation } from '../../domain/types'
+import type { Locality } from '../../domain/types'
 import { BackButton, Screen } from '../../ui/Screen'
 import { ActionRow, ActionButton } from '../../ui/controls'
 import type { CityCatalogStatus } from './useCityCatalog'
@@ -70,18 +70,18 @@ export function LocationScreen({ place, activePlace, recentPlaces, onBack, onSea
 }
 
 interface SearchScreenProps {
-  locations: PrayerLocation[]
+  locations: Locality[]
   catalogStatus: CityCatalogStatus
   onLoadCities: () => void
   onSearchCities: CityCatalogService['search']
   onBack: () => void
-  onSelectOfficial: (id: string) => void
+  onSelectLocality: (id: string) => void
   onSelectCity: (city: City) => void
   notice?: ReactNode
 }
 interface SearchCompletion { query: string; data: CitySearchResult | null; failed: boolean }
 
-export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchCities, onBack, onSelectOfficial, onSelectCity, notice }: SearchScreenProps) {
+export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchCities, onBack, onSelectLocality, onSelectCity, notice }: SearchScreenProps) {
   const { locale, t } = useLocalization()
   const [text, setText] = useState('')
   const [completion, setCompletion] = useState<SearchCompletion | null>(null)
@@ -98,7 +98,7 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
     }, 200)
     return () => { active = false; clearTimeout(timer) }
   }, [query, catalogStatus, onSearchCities, retry])
-  const official = useMemo(() => query ? locations.filter(item => item.name.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru'))) : [], [locations, query])
+  const localities = useMemo(() => query ? locations.filter(item => item.name.toLocaleLowerCase('ru').includes(query.toLocaleLowerCase('ru'))) : [], [locations, query])
   const ready = completion?.query === query ? completion : null
   const pending = Boolean(query && catalogStatus === 'ready' && !ready)
   const cities = ready?.data?.cities ?? []
@@ -110,14 +110,14 @@ export function SearchScreen({ locations, catalogStatus, onLoadCities, onSearchC
           : ready?.failed ? t('citySearchFailed')
             : ready?.data?.status === 'needs-download' ? t('citySearchNeedsDownload')
               : ready?.data?.status === 'refine' ? t('citySearchRefine')
-                : query && ready && !cities.length && !official.length ? t('cityNotFound') : null
+              : query && ready && !cities.length && !localities.length ? t('cityNotFound') : null
   const canRetry = ['offline', 'error'].includes(catalogStatus) || ready?.failed || ready?.data?.status === 'needs-download'
   return <Screen label={t('searchCity')} top={<BackButton onClick={onBack} label={t('cancel')} />}>
     <input className="text-field" data-screen-focus type="search" aria-label={t('searchPlaceLabel')} placeholder={t('locationSearch')} value={text}
       onChange={event => { setText(event.target.value); if (event.target.value.trim() !== query) setCompletion(null) }} autoComplete="off" autoCorrect="off" spellCheck={false} enterKeyHint="search" />
     <ul className="city-results" aria-label={t('searchResults')} aria-busy={pending}>
-      {official.map(item => <li key={item.id}><ActionRow className="city-result" title={item.name}
-        secondary={<span className="note">{t('officialCityResult')}</span>} onClick={() => onSelectOfficial(item.id)} />
+      {localities.map(item => <li key={item.id}><ActionRow className="city-result" title={item.name}
+        secondary={<span className="note">{t('tatarstanLocalityResult')}</span>} onClick={() => onSelectLocality(item.id)} />
       </li>)}
       {cities.map(city => {
         const sameLabel = cities.some(other => other.id !== city.id && localizedCityLabel(other, false, locale, t) === localizedCityLabel(city, false, locale, t))

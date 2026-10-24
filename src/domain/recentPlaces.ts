@@ -1,8 +1,8 @@
-import { DUM_RT_TIME_ZONE, getDeviceTimeZone } from './locationTime'
+import { getDeviceTimeZone } from './locationTime'
 import { haversineDistanceKm } from './location'
-import type { Place } from './place'
+import type { Place, RestorablePlace } from './place'
 import { restorePlaceMetadata } from './place'
-import { isPlace } from './placeMigration'
+import { isPlace, isRestorablePlace } from './placeMigration'
 
 export const MAX_RECENT_PLACES = 10
 export const GPS_HISTORY_DEDUPE_METERS = 500
@@ -27,15 +27,12 @@ function uniqueIdentity(base: string, used: ReadonlySet<string>): string {
   return `${base}:recovered:${suffix}`
 }
 
-function canonicalPlace(place: Place): Place {
+function canonicalPlace(place: RestorablePlace): Place {
   const { timeZoneOverride: _legacyOverride, ...withoutLegacyOverride } = place as Place & { timeZoneOverride?: unknown }
   const restored = restorePlaceMetadata(withoutLegacyOverride)
   if (restored.selection === 'gps') {
     const timeZone = getDeviceTimeZone()
     return { ...restored, timeZone, automaticTimeZone: { id: timeZone, source: 'device' } }
-  }
-  if (restored.selection === 'official') {
-    return { ...restored, timeZone: DUM_RT_TIME_ZONE, automaticTimeZone: { id: DUM_RT_TIME_ZONE, source: 'city' } }
   }
   return restored
 }
@@ -79,7 +76,7 @@ function mergeInto(places: Place[], candidate: Place, promote: boolean): Place[]
 /** Нормализует только сохранённую историю; миграция активного места вызывается отдельно. */
 export function restoreRecentPlaces(value: unknown): Place[] {
   const source = Array.isArray(value) ? value : []
-  const valid = source.filter(isPlace).map(canonicalPlace)
+  const valid = source.filter(isRestorablePlace).map(canonicalPlace)
   const normalized: Place[] = []
   const identities = new Set<string>()
   for (const place of valid) {

@@ -23,8 +23,8 @@ export interface AutomaticCalculationRecommendation extends AutomaticCalculation
 }
 
 export const AUTOMATIC_CALCULATION_DEFAULTS: Readonly<Record<string, AutomaticCalculationDefaults>> = Object.freeze({
-  'RU-TA': { profile: 'dumRt', asrMethod: 'hanafi' },
-  RU: { profile: 'dumRf', asrMethod: 'standard' },
+  'RU-TA': { profile: 'tatarstan', asrMethod: 'hanafi' },
+  RU: { profile: 'russia', asrMethod: 'standard' },
   TR: { profile: 'turkey', asrMethod: 'standard' },
   PK: { profile: 'karachi', asrMethod: 'hanafi' },
   BD: { profile: 'karachi', asrMethod: 'hanafi' },
@@ -55,7 +55,7 @@ export function isCalculationSelection(value: unknown): value is CalculationSele
   const o = value.overrides
   if (Object.keys(o).some(key => !['asrMethod', 'highLatitudeRule', 'fajrAngle', 'isha', 'adjustments'].includes(key))) return false
   if (o.asrMethod !== undefined && o.asrMethod !== 'hanafi' && o.asrMethod !== 'standard') return false
-  if (o.highLatitudeRule !== undefined && (typeof o.highLatitudeRule !== 'string' || !['dumRt', 'seventhOfNight', 'twilightAngle', 'nearestDay'].includes(o.highLatitudeRule))) return false
+  if (o.highLatitudeRule !== undefined && (typeof o.highLatitudeRule !== 'string' || !['tatarstan', 'seventhOfNight', 'twilightAngle', 'nearestDay'].includes(o.highLatitudeRule))) return false
   if (o.fajrAngle !== undefined && !bounded(o.fajrAngle, 1, 30)) return false
   if (o.isha !== undefined) {
     if (!record(o.isha)) return false
@@ -74,8 +74,8 @@ export function isCalculationSelection(value: unknown): value is CalculationSele
 export function profileDefaults(profile: CalculationProfileId): CalculationSettings {
   return {
     profile,
-    asrMethod: profile === 'dumRt' || profile === 'dumRf' || profile === 'karachi' ? 'hanafi' : 'standard',
-    highLatitudeRule: profile === 'dumRt' ? 'dumRt' : 'twilightAngle',
+    asrMethod: profile === 'tatarstan' || profile === 'russia' || profile === 'karachi' ? 'hanafi' : 'standard',
+    highLatitudeRule: profile === 'tatarstan' ? 'tatarstan' : 'twilightAngle',
   }
 }
 export function automaticCalculationRecommendation(

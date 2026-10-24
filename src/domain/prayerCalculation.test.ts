@@ -20,11 +20,11 @@ const MINUTE = 60_000
 function withSettings(
   settings: Partial<CalculationSettings>,
 ): CalculationSettings {
-  return { profile: 'dumRt', asrMethod: 'hanafi', highLatitudeRule: 'dumRt', ...settings }
+  return { profile: 'tatarstan', asrMethod: 'hanafi', highLatitudeRule: 'tatarstan', ...settings }
 }
 
 describe('calculatePrayerSchedule', () => {
-  it('считает зимний день по профилю ДУМ РТ без северной подстановки', () => {
+  it('считает зимний день по профилю Татарстан без северной подстановки', () => {
     const schedule = calculatePrayerSchedule(
       KAZAN,
       '2026-01-15',
@@ -51,7 +51,7 @@ describe('calculatePrayerSchedule', () => {
     )
   })
 
-  it('летом применяет правило ДУМ РТ 120/90 только к Фаджру и Иша', () => {
+  it('летом применяет правило Татарстан 120/90 только к Фаджру и Иша', () => {
     const schedule = calculatePrayerSchedule(
       KAZAN,
       '2026-06-15',
@@ -69,6 +69,16 @@ describe('calculatePrayerSchedule', () => {
     expect(schedule.entries.isha.instant - schedule.entries.maghrib.instant).toBe(
       90 * MINUTE,
     )
+  })
+
+  it('применяет сохранённую поправку Зухра после базовой проверки относительно зенита', () => {
+    const agriz = { id: 'locality:agriz', selection: 'city' as const, latitude: 56.525516, longitude: 52.9971643,
+      region: { code: 'RU-TA' }, coverage: 'inside' }
+    const base = calculatePrayerSchedule(agriz, '2026-06-21', 'Europe/Moscow', withSettings({}))
+    const adjusted = calculatePrayerSchedule(agriz, '2026-06-21', 'Europe/Moscow', withSettings({ adjustments: { dhuhr: -2 } }))
+
+    expect(base.entries.dhuhr.instant).toBeGreaterThan(base.entries.zenith.instant)
+    expect(adjusted.entries.dhuhr.instant).toBe(base.entries.dhuhr.instant - 2 * MINUTE)
   })
 
   it('сохраняет астрономические времена у границы летнего правила', () => {
@@ -108,6 +118,28 @@ describe('calculatePrayerSchedule', () => {
     expect(adjusted.estimatedPrayers).toContain('fajr')
     expect(lastMorningFallback.estimatedPrayers).toEqual(['fajr'])
     expect(restored.estimatedPrayers).not.toContain('fajr')
+  })
+
+  it.each([
+    ['2026-05-04', []],
+    ['2026-05-05', ['isha']],
+    ['2026-05-06', ['fajr', 'isha']],
+    ['2026-06-21', ['fajr', 'isha']],
+    ['2026-08-07', ['fajr', 'isha']],
+    ['2026-08-08', ['fajr']],
+    ['2026-08-09', []],
+  ] as const)('keeps the actual-engine seasonal fallback transition for Kazan on %s', (date, estimatedPrayers) => {
+    const schedule = calculatePrayerSchedule(KAZAN, date, 'Europe/Moscow', withSettings({}))
+
+    expect(schedule.estimatedPrayers).toEqual(estimatedPrayers)
+    if (schedule.estimatedPrayers.includes('fajr')) {
+      const difference = schedule.entries.sunrise.instant - schedule.entries.fajr.instant
+      expect(difference).toBeGreaterThanOrEqual(120 * MINUTE)
+      expect(difference).toBeLessThanOrEqual(121 * MINUTE)
+    }
+    if (schedule.estimatedPrayers.includes('isha')) {
+      expect(schedule.entries.isha.instant - schedule.entries.maghrib.instant).toBe(90 * MINUTE)
+    }
   })
 
   it('делает стандартный Аср раньше ханафитского', () => {
@@ -246,14 +278,14 @@ describe('calculatePrayerSchedule', () => {
     expect(() => calculatePrayerSchedule(KAZAN, '2026-01-15-extra', 'Europe/Moscow')).toThrow('invalid-calculation-date')
   })
 
-  it('считает профиль ДУМ РФ по углам 16°/15°', () => {
-    const dumRf = calculatePrayerSchedule(
+  it('считает российский профиль по углам 16°/15°', () => {
+    const russia = calculatePrayerSchedule(
       KAZAN,
       '2026-01-15',
       'Europe/Moscow',
-      withSettings({ profile: 'dumRf' }),
+      withSettings({ profile: 'russia' }),
     )
-    const dumRt = calculatePrayerSchedule(
+    const tatarstan = calculatePrayerSchedule(
       KAZAN,
       '2026-01-15',
       'Europe/Moscow',
@@ -266,11 +298,11 @@ describe('calculatePrayerSchedule', () => {
       withSettings({ profile: 'northAmerica' }),
     )
 
-    expect(CALCULATION_PROFILES.map(profile => profile.id)).toContain('dumRf')
-    expect(dumRf.profile).toBe('dumRf')
-    expect(dumRf.entries.fajr.instant).toBeGreaterThan(dumRt.entries.fajr.instant)
-    expect(dumRf.entries.fajr.instant).toBeLessThan(isna.entries.fajr.instant)
-    expect(dumRf.entries.isha.instant).toBe(isna.entries.isha.instant)
+    expect(CALCULATION_PROFILES.map(profile => profile.id)).toContain('russia')
+    expect(russia.profile).toBe('russia')
+    expect(russia.entries.fajr.instant).toBeGreaterThan(tatarstan.entries.fajr.instant)
+    expect(russia.entries.fajr.instant).toBeLessThan(isna.entries.fajr.instant)
+    expect(russia.entries.isha.instant).toBe(isna.entries.isha.instant)
   })
 
   it('восстанавливает полярный день и возвращает упорядоченное расписание', () => {

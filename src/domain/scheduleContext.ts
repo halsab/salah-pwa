@@ -1,42 +1,18 @@
 import { calculationSettingsKey } from './calculationSettings'
 import type { CalculationSettings } from './prayerCalculation'
-import type { PrayerDataset, PrayerDatasetManifest, PrayerDatasetProvider } from './types'
 
-interface ScheduleContextBase {
+export interface ScheduleContext {
   mode?: 'automatic' | 'manual'
   date: string
   timeZone: string
-  location: { id: string | null; latitude: number; longitude: number }
-}
-
-export type ScheduleContext = ScheduleContextBase & (
-  | { source: 'official'; provider: string; datasetRevision: string; datasetVersion: string; coverage: string; localityId: string }
-  | { source: 'calculated'; settings: CalculationSettings }
-)
-
-type DatasetDescriptor = Pick<PrayerDataset, 'schemaVersion'> & {
-  source?: PrayerDataset['source']
-  provider?: string | PrayerDatasetProvider
-  providerInfo?: PrayerDatasetProvider
-  identity?: Pick<PrayerDatasetManifest, 'version' | 'sha256' | 'url' | 'sequence'>
-}
-
-export function getDatasetRevision(meta: DatasetDescriptor): string {
-  // Для старого офлайн-кеша без manifest остаётся идентичность опубликованного источника.
-  return JSON.stringify([
-    (typeof meta.provider === 'string' ? meta.provider : meta.provider?.id) ?? meta.providerInfo?.id ?? 'dumRt',
-    meta.providerInfo?.revision, meta.providerInfo?.timeZone, meta.providerInfo?.coverage,
-    meta.schemaVersion, meta.identity?.version, meta.identity?.sha256,
-    meta.identity?.url, meta.identity?.sequence, meta.source?.url, meta.source?.updatedAt, meta.source?.years,
-  ])
+  location: { id: string | null; latitude: number; longitude: number; localityId?: string }
+  source: 'calculated'
+  settings: CalculationSettings
 }
 
 export function scheduleContextKey(context: ScheduleContext): string {
   return JSON.stringify([
-    context.location.id, context.location.latitude, context.location.longitude,
-    context.date, context.timeZone, context.source, context.mode,
-    context.source === 'official'
-      ? [context.provider, context.datasetRevision, context.datasetVersion, context.coverage, context.localityId]
-      : calculationSettingsKey(context.settings),
+    context.location.id, context.location.latitude, context.location.longitude, context.location.localityId,
+    context.date, context.timeZone, context.mode, calculationSettingsKey(context.settings),
   ])
 }

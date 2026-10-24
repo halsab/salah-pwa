@@ -12,6 +12,7 @@ import {
 import { isCalculationSettings, type IshaMethod } from './calculationSettings'
 
 import { addDays } from './date'
+import { tatarstanDhuhrInstant, verifiedTatarstanLocalityId } from './tatarstanDhuhr'
 import {
   createLocationClock,
   zonedDateTimeToInstant,
@@ -23,8 +24,8 @@ import type {
 } from './types'
 
 export type CalculationProfileId =
-  | 'dumRt'
-  | 'dumRf'
+  | 'tatarstan'
+  | 'russia'
   | 'turkey'
   | 'muslimWorldLeague'
   | 'karachi'
@@ -39,7 +40,7 @@ export type CalculationProfileId =
 export type AsrMethod = 'hanafi' | 'standard'
 
 export type HighLatitudeMethod =
-  | 'dumRt'
+  | 'tatarstan'
   | 'seventhOfNight'
   | 'twilightAngle'
   | 'nearestDay'
@@ -74,8 +75,8 @@ export class UnsupportedCalculationProfileError extends Error {
 }
 
 export const CALCULATION_PROFILES: readonly CalculationProfileOption[] = [
-  { id: 'dumRt' },
-  { id: 'dumRf' },
+  { id: 'tatarstan' },
+  { id: 'russia' },
   { id: 'turkey' },
   { id: 'muslimWorldLeague' },
   { id: 'karachi' },
@@ -106,6 +107,13 @@ export interface CalculatedPrayerSchedule {
 interface LocationCoordinates {
   latitude: number
   longitude: number
+  id?: string | null
+  selection?: 'city' | 'gps'
+  region?: { code: string } | null
+  coverage?: string
+  localityId?: string
+  accuracy?: number | null
+  cityId?: number
 }
 
 const MINUTE = 60_000
@@ -168,11 +176,11 @@ function profileParameters(
 ): CalculationParameters {
   assertProfileSupported(profile)
 
-  if (profile === 'dumRt' || profile === 'dumRf') {
+  if (profile === 'tatarstan' || profile === 'russia') {
     const parameters = CalculationMethod.Other()
-    parameters.fajrAngle = profile === 'dumRt' ? 18 : 16
+    parameters.fajrAngle = profile === 'tatarstan' ? 18 : 16
     parameters.ishaAngle = 15
-    if (profile === 'dumRt') parameters.rounding = Rounding.None
+    if (profile === 'tatarstan') parameters.rounding = Rounding.None
     return parameters
   }
 
@@ -356,6 +364,18 @@ function roundMinute(instant: Date, rounding: 'nearest' | 'up'): Date {
   )
 }
 
+function tatarstanDhuhr(
+  location: LocationCoordinates,
+  date: string,
+  timeZone: string,
+  zenith: Date,
+): Date {
+  const verified = location.id && location.selection
+    ? verifiedTatarstanLocalityId({ ...location, id: location.id, selection: location.selection })
+    : undefined
+  return new Date(tatarstanDhuhrInstant(date, timeZone, zenith.getTime(), location.localityId ?? verified))
+}
+
 function addMinutes(instant: Date, minutes: number): Date {
   return new Date(instant.getTime() + minutes * MINUTE)
 }
@@ -394,16 +414,16 @@ export function calculatePrayerSchedule(
   applyPrayerAngles(parameters, settings)
 
   const polarResolutionApplied = hasPolarGap(coordinates, astronomicalDate)
-  if (settings.highLatitudeRule === 'dumRt') {
+  if (settings.highLatitudeRule === 'tatarstan') {
     // Не ограничиваем существующий сумрак долей ночи: подстановка 120/90 выполняется ниже.
     parameters.nightPortions = () => ({ fajr: 1, isha: 1 })
   }
   const times = new PrayerTimes(coordinates, calendarDate, parameters)
-  const dumRtNorthRule = settings.highLatitudeRule === 'dumRt'
+  const tatarstanNorthRule = settings.highLatitudeRule === 'tatarstan'
   const previousNightHasFajr = !polarResolutionApplied && angleIsAvailable(
     coordinates,
     astronomicalDate,
-    dumRtNorthRule && settings.fajrAngle === undefined ? 18 : parameters.fajrAngle,
+    tatarstanNorthRule && settings.fajrAngle === undefined ? 18 : parameters.fajrAngle,
     parameters.polarCircleResolution,
     'fajr',
   )
@@ -412,7 +432,7 @@ export function calculatePrayerSchedule(
     (!polarResolutionApplied && angleIsAvailable(
       coordinates,
       astronomicalDate,
-      dumRtNorthRule && settings.isha === undefined ? 18 : parameters.ishaAngle,
+      tatarstanNorthRule && settings.isha === undefined ? 18 : parameters.ishaAngle,
       parameters.polarCircleResolution,
       'isha',
     ))
@@ -422,7 +442,7 @@ export function calculatePrayerSchedule(
   let fajrEstimated = !previousNightHasFajr
   let ishaEstimated = !currentNightHasIsha
 
-  if (settings.highLatitudeRule === 'dumRt') {
+  if (settings.highLatitudeRule === 'tatarstan') {
     if (!previousNightHasFajr) fajr = addMinutes(times.sunrise, -120)
     if (!currentNightHasIsha) isha = addMinutes(times.sunset, 90)
   }
@@ -432,24 +452,24 @@ export function calculatePrayerSchedule(
     ishaEstimated = true
   }
 
-  if (settings.profile === 'dumRt') {
+  if (settings.profile === 'tatarstan') {
     fajr = roundMinute(fajr, 'nearest')
     isha = roundMinute(isha, 'up')
   }
 
   const sunrise =
-    settings.profile === 'dumRt' ? roundMinute(times.sunrise, 'up') : times.sunrise
+    settings.profile === 'tatarstan' ? roundMinute(times.sunrise, 'up') : times.sunrise
   const zenith =
-    settings.profile === 'dumRt' ? roundMinute(transit, 'up')
+    settings.profile === 'tatarstan' ? roundMinute(transit, 'up')
       : parameters.rounding === Rounding.None ? transit
         : roundMinute(transit, parameters.rounding === Rounding.Up ? 'up' : 'nearest')
   const dhuhr =
-    settings.profile === 'dumRt'
-      ? roundMinute(addMinutes(transit, 1), 'up')
+    settings.profile === 'tatarstan'
+      ? tatarstanDhuhr(location, date, timeZone, transit)
       : times.dhuhr
-  const asr = settings.profile === 'dumRt' ? roundMinute(times.asr, 'up') : times.asr
+  const asr = settings.profile === 'tatarstan' ? roundMinute(times.asr, 'up') : times.asr
   const maghrib =
-    settings.profile === 'dumRt' ? roundMinute(times.sunset, 'up') : times.maghrib
+    settings.profile === 'tatarstan' ? roundMinute(times.sunset, 'up') : times.maghrib
 
   if (settings.isha?.kind === 'interval') isha = addMinutes(maghrib, settings.isha.minutes)
 

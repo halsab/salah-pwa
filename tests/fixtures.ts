@@ -25,7 +25,7 @@ export async function readSavedSetting(page: import('@playwright/test').Page, ke
   }), key)
 }
 
-export async function choosePlace(page: import('@playwright/test').Page, query = 'Казань', name: string | RegExp = /Казань.*ДУМ РТ/) {
+export async function choosePlace(page: import('@playwright/test').Page, query = 'Казань', name: string | RegExp = 'Казань Татарстан') {
   const search = page.getByRole('button', { name: 'Найти город', exact: true })
   await expect(search.or(page.locator('#home-location'))).toBeVisible()
   if (!await search.isVisible()) await page.locator('#home-location').click()
@@ -33,10 +33,10 @@ export async function choosePlace(page: import('@playwright/test').Page, query =
   await page.getByRole('searchbox').fill(query)
   await page.getByRole('button', { name, exact: typeof name === 'string' }).click()
   await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
-  await expect(page.getByRole('timer')).toBeVisible()
+  await expect(page.locator('.event-countdown')).toBeVisible()
 }
 
-export async function expectSchedule(page: import('@playwright/test').Page, count = 8) {
+export async function expectSchedule(page: import('@playwright/test').Page, count = 7) {
   await expect(page.getByRole('region', { name: 'Главная', exact: true })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Расписание дня' }).getByRole('listitem')).toHaveCount(count)
 }

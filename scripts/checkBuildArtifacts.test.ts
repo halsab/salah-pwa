@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { CompactCityRecord } from '../src/domain/cities'
-import type { PrayerDataset, PrayerDay } from '../src/domain/types'
 import { buildCityPackages } from './buildCityPackages'
 import {
   checkBuildArtifacts,
@@ -13,10 +12,6 @@ import {
   validateBuildArtifacts,
   type BuildArtifact,
 } from './checkBuildArtifacts'
-import {
-  createPrayerDatasetManifest,
-  serializePrayerDataset,
-} from './prayerDatasetArtifacts'
 
 const citySource = {
   name: 'GeoNames',
@@ -31,36 +26,6 @@ const generated = buildCityPackages([
 const catalog = generated.index
 const shardPath = `data/cities/${catalog.version}/RU-0.json`
 
-function completePrayerDataset(): PrayerDataset {
-  const days: PrayerDay[] = Array.from({ length: 365 }, (_, index) => {
-    const date = new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10)
-    return {
-      locationId: 'kazan',
-      date,
-      fajrStart: '06:19' as const,
-      fajrJamaat: '07:44' as const,
-      sunrise: '08:08' as const,
-      zenith: '11:43' as const,
-      dhuhr: '12:00' as const,
-      asr: '13:17' as const,
-      maghrib: '15:25' as const,
-      isha: '16:57' as const,
-    }
-  })
-
-  return {
-    schemaVersion: 2,
-    source: {
-      name: 'ДУМ Республики Татарстан',
-      url: 'https://dumrt.ru/ru/help-info/prayertime/',
-      updatedAt: '2026-09-01T00:00:00.000Z',
-      years: [2026],
-    },
-    locations: [{ id: 'kazan', name: 'Казань', latitude: 55.7946, longitude: 49.1115 }],
-    days,
-  }
-}
-
 function requiredArtifacts(cityCatalog = catalog): BuildArtifact[] {
   return [
     { path: 'index.html', size: 250 },
@@ -70,8 +35,6 @@ function requiredArtifacts(cityCatalog = catalog): BuildArtifact[] {
     { path: 'assets/index-a1b2c3.css', size: 20 },
     { path: 'data/cities/index.json', size: 200 },
     { path: `data/cities/${cityCatalog.version}/${cityCatalog.shards[0]?.id}.json`, size: 300 },
-    { path: 'data/prayer-times-current.json', size: 400 },
-    { path: 'data/prayer-times-manifest.json', size: 50 },
   ]
 }
 
@@ -86,7 +49,7 @@ async function writeBuildArtifacts(
     manifest?: Record<string, unknown>
     shareQr?: string
   } = {},
-): Promise<{ prayerDatasetPath: string; prayerManifestPath: string }> {
+): Promise<void> {
   const cityCatalog = options.cityCatalog ?? catalog
   const cityShards = options.cityShards ?? generated.shards
   const cityShardDirectory = join(root, 'data/cities', cityCatalog.version)
@@ -95,10 +58,6 @@ async function writeBuildArtifacts(
     mkdir(cityShardDirectory, { recursive: true }),
   ])
 
-  const prayerDatasetBytes = serializePrayerDataset(completePrayerDataset())
-  const prayerManifest = createPrayerDatasetManifest(prayerDatasetBytes, 2)
-  const prayerDatasetPath = join(root, 'data/prayer-times-current.json')
-  const prayerManifestPath = join(root, 'data/prayer-times-manifest.json')
   const appManifest = options.manifest ?? {
     name: 'VaqtPro — времена намаза',
     short_name: 'VaqtPro',
@@ -124,11 +83,8 @@ async function writeBuildArtifacts(
       join(cityShardDirectory, `${id}.json`),
       JSON.stringify(shard),
     )),
-    writeFile(prayerDatasetPath, prayerDatasetBytes),
-    writeFile(prayerManifestPath, `${JSON.stringify(prayerManifest)}\n`),
   ])
 
-  return { prayerDatasetPath, prayerManifestPath }
 }
 
 async function temporaryDirectory(prefix = 'vaqtpro-build-artifacts-'): Promise<string> {
@@ -136,7 +92,7 @@ async function temporaryDirectory(prefix = 'vaqtpro-build-artifacts-'): Promise<
 }
 
 describe('production artifact validation', () => {
-  it('requires the main bundles, city catalog, prayer data, and manifest', () => {
+  it('requires the app bundles and city catalog', () => {
     expect(validateBuildArtifacts([], catalog)).toEqual(expect.arrayContaining([
       'mainJavaScript: artifact не найден',
       'mainCss: artifact не найден',
@@ -144,8 +100,6 @@ describe('production artifact validation', () => {
       'webManifest: artifact не найден',
       'shareQr: artifact не найден',
       'cityIndex: artifact не найден',
-      'prayerTimes: artifact не найден',
-      'prayerManifest: artifact не найден',
       `cities: отсутствует ${shardPath}`,
     ]))
   })
@@ -165,7 +119,7 @@ describe('production artifact validation', () => {
     ]))
   })
 
-  it('accepts arbitrarily large JavaScript, CSS, city index, shard, and prayer artifacts', () => {
+  it('accepts arbitrarily large JavaScript, CSS, city index, and shard artifacts', () => {
     const artifacts = requiredArtifacts().map((artifact) => ({
       ...artifact,
       size: 64 * 1024 * 1024,
@@ -442,41 +396,13 @@ describe('production artifact validation', () => {
     }
   })
 
-  it.each(['malformed-manifest', 'wrong-url', 'malformed-dataset', 'corrupt-dataset', 'invalid-dataset'] as const)(
-    'blocks %s prayer artifacts',
-    async (kind) => {
-      const root = await temporaryDirectory()
-      try {
-        const paths = await writeBuildArtifacts(root)
-        if (kind === 'malformed-manifest') {
-          await writeFile(paths.prayerManifestPath, '{broken')
-        } else if (kind === 'wrong-url') {
-          const manifest = JSON.parse(await readFile(paths.prayerManifestPath, 'utf8')) as { url: string }
-          manifest.url = 'other-prayer-times.json'
-          await writeFile(paths.prayerManifestPath, JSON.stringify(manifest))
-        } else if (kind === 'malformed-dataset') {
-          const bytes = Buffer.from('{broken\n')
-          const manifest = createPrayerDatasetManifest(bytes, 2)
-          await writeFile(paths.prayerDatasetPath, bytes)
-          await writeFile(paths.prayerManifestPath, JSON.stringify(manifest))
-        } else if (kind === 'corrupt-dataset') {
-          await writeFile(paths.prayerDatasetPath, '{}\n')
-        } else {
-          const invalidDataset = { ...completePrayerDataset(), days: [] }
-          const bytes = serializePrayerDataset(invalidDataset)
-          const manifest = createPrayerDatasetManifest(bytes, 2)
-          await writeFile(paths.prayerDatasetPath, bytes)
-          await writeFile(paths.prayerManifestPath, JSON.stringify(manifest))
-        }
-
-        await expect(checkBuildArtifacts(root)).rejects.toThrow(
-          kind === 'malformed-manifest' || kind === 'wrong-url' ? 'prayerManifest:' : 'prayerTimes:',
-        )
-      } finally {
-        await rm(root, { recursive: true, force: true })
-      }
-    },
-  )
+  it('rejects obsolete daily timetable assets', () => {
+    expect(validateBuildArtifacts([
+      ...requiredArtifacts(),
+      { path: 'data/prayer-times-current.json', size: 1 },
+      { path: 'data/prayer-times-manifest.json', size: 1 },
+    ], catalog)).toContain('prayerData: obsolete timetable artifacts must not be bundled')
+  })
 
   it('reports correctness failures through the CLI with a non-zero exit code', () => {
     const previousExitCode = process.exitCode

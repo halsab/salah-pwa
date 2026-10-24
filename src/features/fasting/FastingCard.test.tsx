@@ -1,12 +1,17 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildFastingScheduleEvents } from '../../domain/fasting'
-import type { PrayerDay, PrayerTime } from '../../domain/types'
+import { calculatePrayerSchedule } from '../../domain/prayerCalculation'
+import { addDays } from '../../domain/date'
+import { zonedDateTimeToInstant } from '../../domain/locationTime'
+import type { PrayerTime } from '../../domain/types'
 import { FastingCard } from './FastingCard'
 
-function day(date: string, maghrib: PrayerTime = '19:00'): PrayerDay {
-  return { locationId: 'test', date, timeZone: 'Europe/Moscow', fajrStart: '04:00', fajrJamaat: '04:30',
-    sunrise: '06:00', zenith: '12:00', dhuhr: '12:10', asr: '16:00', maghrib, isha: '21:00' }
+function day(date: string, maghrib: PrayerTime = '19:00') {
+  const schedule = calculatePrayerSchedule({ latitude: 55.75, longitude: 37.62 }, date, 'Europe/Moscow')
+  schedule.entries.fajr = { time: '04:00', instant: zonedDateTimeToInstant(date, '04:00', 'Europe/Moscow').getTime(), estimated: false }
+  schedule.entries.maghrib = { time: maghrib, instant: zonedDateTimeToInstant(addDays(date, 0), maghrib, 'Europe/Moscow').getTime(), estimated: false }
+  return schedule
 }
 
 function renderCard(initialTime: string, schedules = [day('2026-03-09'), day('2026-03-10'), day('2026-03-11')]) {
