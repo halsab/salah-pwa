@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createGpsPlace, createLocalityPlace, type Place } from '../domain/place'
+import { createGpsPlace, createLocalityPlace, withNearbyCity, type Place } from '../domain/place'
 import { success } from '../domain/result'
 import { createSettingsPersistence } from '../features/settings/settingsPersistence'
 import { clearAppData, deleteVaqtProDatabase, getLocationChoice, getSetting, setSetting, type LocationChoice, type SettingsPatch } from '../storage/database'
@@ -40,6 +40,31 @@ describe('transactional place history', () => {
     expect(await getLocationChoice()).toMatchObject({ value: { place: precise } })
   })
 
+  it('persists delayed nearby-city metadata in the same GPS snapshot without changing position or ordering', async () => {
+    const repo = createPrayerRepository()
+    await repo.saveSettings(event('selection', coarse))
+    await repo.saveSettings(event('selection', other, coarse.id))
+    const before = await history()
+    const named = withNearbyCity(other, {
+      id: 123, name: 'Стамбул', countryCode: 'TR', admin1Name: 'Istanbul', admin1Code: '34',
+      latitude: other.latitude, longitude: other.longitude, population: 100, timeZone: 'Europe/Istanbul',
+    })
+    expect(named).toMatchObject({ name: 'Стамбул' })
+    await repo.saveSettings(event('refinement', named))
+    const after = await history()
+    expect(after.map(place => place.id)).toEqual(before.map(place => place.id))
+    expect(after.slice(1)).toEqual(before.slice(1))
+    expect(after[0]).toMatchObject({ id: before[0]?.id, name: 'Стамбул', latitude: other.latitude,
+      longitude: other.longitude })
+    expect(after[0]?.nearbyCity?.name).toContain('Стамбул')
+    const restored = await loadPrayerRepositoryOptionalSettings()
+    expect(restored).toMatchObject({ ok: true, value: { recentPlaces: after } })
+    const saved = await getLocationChoice()
+    expect(saved).toMatchObject({ ok: true, value: { place: { name: 'Стамбул', latitude: other.latitude,
+      longitude: other.longitude } } })
+    const withoutPermissionOrNetwork = await createPrayerRepository().initializeStartup()
+    expect(withoutPermissionOrNetwork).toMatchObject({ ok: true, value: { recentPlaces: after } })
+  })
   it('ignores an asynchronous refinement after a newer place selection', async () => {
     const repo = createPrayerRepository()
     await repo.saveSettings(event('selection', coarse))
