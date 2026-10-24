@@ -123,10 +123,12 @@ describe('экраны локации', () => {
     const gpsFix = { latitude: 55.7231, longitude: 49.1742, accuracy: 20, timestamp: 200 }
     const namedGps = withNearbyCity(createGpsPlace(gpsFix, 'Europe/Moscow', null, 'gps:history:named'),
       { ...city, id: 10, name: 'Казань', admin1Code: '73', latitude: 55.79, longitude: 49.12 })
+    // A stale legacy Place.name must not override the validated saved nearby-city label.
+    const gpsWithLegacyName = { ...namedGps, name: 'Рядом: устаревшая подпись' }
     const unnamedGps = createGpsPlace({ ...gpsFix, latitude: 56.1231 }, 'Europe/Moscow', null, 'gps:history:unnamed')
     const onSelectRecent = vi.fn()
     render(<LocationScreen place={createLocalityPlace({ ...location, id: 'ufa', name: 'Уфа' }, 0)}
-      recentPlaces={[kazan, namedGps, unnamedGps]} onSelectRecent={onSelectRecent}
+      recentPlaces={[kazan, gpsWithLegacyName, unnamedGps]} onSelectRecent={onSelectRecent}
       onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     const recent = screen.getByRole('region', { name: 'Недавние места' })
     const manual = screen.getByRole('button', { name: 'Казань' })
@@ -142,7 +144,7 @@ describe('экраны локации', () => {
     expect(recent).not.toHaveTextContent('Сохранённая точка')
     expect(recent).not.toHaveTextContent('Рядом с')
     await userEvent.click(named)
-    expect(onSelectRecent).toHaveBeenCalledWith(namedGps)
+    expect(onSelectRecent).toHaveBeenCalledWith(gpsWithLegacyName)
     expect(namedGps.latitude).toBe(55.7231)
     expect(namedGps.longitude).toBe(49.1742)
   })
