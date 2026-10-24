@@ -175,7 +175,7 @@ jobs:
 
   cleanup_obsolete_pr22_action_history:
     name: Очистить старые записи PR #22
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'chore: purge obsolete PR22 workflow history')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
