@@ -90,7 +90,7 @@ describe('экраны локации', () => {
     const recent = createCityPlace({ ...city, id: 2, name: 'Киров', admin1Name: 'Кировская область' }, 0)
     render(<LocationScreen place={place} recentPlaces={[recent]} onSelectRecent={vi.fn()} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
     expect(screen.getByText('Москва, Москва, РФ')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Киров, Кировская область, РФ' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Киров' })).toBeVisible()
     expect(place.name).toBe('Москва, Москва, Россия')
   })
   it('не теряет результаты при пробеле после уже найденного названия', async () => {
@@ -109,14 +109,42 @@ describe('экраны локации', () => {
     expect(onSelectRecent).toHaveBeenCalledOnce()
     expect(screen.queryByRole('button', { name: 'Выбрать' })).not.toBeInTheDocument()
   })
-  it('показывает GPS как сохранённую точку с координатами и выбирает одним нажатием', async () => {
+  it('показывает неназванную GPS-точку с локализованным названием и сохранёнными координатами', async () => {
     const saved = createGpsPlace({ latitude: 40.7128, longitude: -74.006, accuracy: 35, timestamp: 123 }, 'Europe/Moscow', null, 'gps:history:ny')
     const onSelectRecent = vi.fn()
     render(<LocationScreen place={createLocalityPlace(location, 0)} recentPlaces={[saved]} onSelectRecent={onSelectRecent} onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
-    const row = screen.getByRole('button', { name: 'Сохранённая точка, 40.7128, -74.0060' })
+    const row = screen.getByRole('button', { name: 'Точка, 40.7128, -74.0060' })
     expect(row).toBeVisible()
     await userEvent.click(row)
     expect(onSelectRecent).toHaveBeenCalledWith(saved)
+  })
+  it('shows exactly the approved three recent-place display variants with matching accessible labels', async () => {
+    const kazan = createCityPlace({ ...city, id: 10, name: 'Казань', admin1Name: 'Татарстан', admin1Code: '73' }, 100)
+    const gpsFix = { latitude: 55.7231, longitude: 49.1742, accuracy: 20, timestamp: 200 }
+    const namedGps = withNearbyCity(createGpsPlace(gpsFix, 'Europe/Moscow', null, 'gps:history:named'),
+      { ...city, id: 10, name: 'Казань', admin1Code: '73', latitude: 55.79, longitude: 49.12 })
+    const unnamedGps = createGpsPlace({ ...gpsFix, latitude: 56.1231 }, 'Europe/Moscow', null, 'gps:history:unnamed')
+    const onSelectRecent = vi.fn()
+    render(<LocationScreen place={createLocalityPlace({ ...location, id: 'ufa', name: 'Уфа' }, 0)}
+      recentPlaces={[kazan, namedGps, unnamedGps]} onSelectRecent={onSelectRecent}
+      onBack={vi.fn()} onSearch={vi.fn()} onLocate={vi.fn()} />)
+    const recent = screen.getByRole('region', { name: 'Недавние места' })
+    const manual = screen.getByRole('button', { name: 'Казань' })
+    const named = screen.getByRole('button', { name: 'Казань · GPS, 55.7231, 49.1742' })
+    const point = screen.getByRole('button', { name: 'Точка, 56.1231, 49.1742' })
+    expect(manual).toHaveTextContent('Казань')
+    expect(manual).not.toHaveTextContent('GPS')
+    expect(manual).not.toHaveTextContent('55.7231')
+    expect(named).toHaveTextContent('Казань · GPS')
+    expect(named).toHaveTextContent('55.7231, 49.1742')
+    expect(point).toHaveTextContent('Точка')
+    expect(point).toHaveTextContent('56.1231, 49.1742')
+    expect(recent).not.toHaveTextContent('Сохранённая точка')
+    expect(recent).not.toHaveTextContent('Рядом с')
+    await userEvent.click(named)
+    expect(onSelectRecent).toHaveBeenCalledWith(namedGps)
+    expect(namedGps.latitude).toBe(55.7231)
+    expect(namedGps.longitude).toBe(49.1742)
   })
   it('не показывает текущую GPS history row дважды и не ограничивает список тремя строками', () => {
     const current = createGpsPlace({ latitude: 40, longitude: -73, accuracy: 20, timestamp: 100 }, 'Europe/Moscow', null, 'gps:runtime')
