@@ -47,6 +47,13 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
+      - name: Разрешить Git работать с каталогом проекта в контейнере
+        # actions/checkout uses a temporary HOME, so its safe.directory setting
+        # is not necessarily available to later shell commands in the container.
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git -C "$GITHUB_WORKSPACE" tag --list > /dev/null
+
       - name: Подготовить Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
