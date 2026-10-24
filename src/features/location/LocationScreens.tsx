@@ -64,7 +64,7 @@ export function LocationScreen({ place, activePlace, recentPlaces, onBack, onSea
         if (item.selection === 'gps') {
           // Название nearby city — только подпись снимка, координаты остаются исходными GPS.
           const cityName = item.nearbyCity && item.nearbyCity.distanceKm <= 25
-            ? (item.name.trim() || item.nearbyCity.name.trim()).split(',')[0]?.trim()
+            ? item.nearbyCity.name.split(',')[0]?.trim()
             : ''
           const title = cityName ? t('recentGpsCity', { name: cityName }) : t('recentPoint')
           const coordinates = formatCoordinates(item.latitude, item.longitude)
