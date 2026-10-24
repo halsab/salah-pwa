@@ -29,11 +29,9 @@ jobs:
   verify:
     name: Проверки и production-сборка
     runs-on: ubuntu-latest
-    # Release gate uses a version-matched Playwright image with browsers and
-    # system dependencies already installed. Avoid apt on ubuntu-latest, which
-    # intermittently stalls for 10+ minutes before a release.
-    # Ordinary push/PR/scheduled checks continue on the native runner.
-    container: ${{ inputs.full_quality_gate && 'mcr.microsoft.com/playwright:v1.62.1-noble' || '' }}
+    # Keep browser binaries and OS dependencies pinned to the Playwright
+    # version in package-lock.json. Avoid repeated apt installs on runners.
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
     env:
       VITE_APP_VERSION: ${{ inputs.app_version }}
     steps:
@@ -155,10 +153,6 @@ jobs:
       - name: Проверить лицензии зависимостей
         if: steps.changes.outputs.dependencies == 'true'
         run: npm run license:check
-
-      - name: Установить Chromium для smoke-тестов
-        if: github.event_name == 'push' || github.event_name == 'pull_request'
-        run: npx playwright install --with-deps chromium
 
       - name: Проверить запуск production-сайта
         if: github.event_name == 'push' || github.event_name == 'pull_request'
