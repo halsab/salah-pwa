@@ -179,7 +179,7 @@ jobs:
 
   one_time_audit_lock_repair:
     name: Обновить уязвимые транзитивные зависимости
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'ci: repair outdated security lockfile'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'repair-security-lockfile'
     runs-on: ubuntu-latest
     permissions:
       contents: write
