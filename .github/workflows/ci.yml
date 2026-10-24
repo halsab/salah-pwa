@@ -176,35 +176,3 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
-
-  one_time_audit_lock_repair:
-    name: Обновить уязвимые транзитивные зависимости
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'repair-security-lockfile'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: main
-          persist-credentials: true
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - name: Resolve audit findings without major upgrades
-        run: |
-          npm ci
-          npm audit fix --package-lock-only --audit-level=high
-          npm ci
-          npm run security:audit
-          test -z "$(git diff --name-only -- package.json)"
-          git diff --check
-          test -n "$(git diff --name-only -- package-lock.json)"
-      - name: Commit repaired lockfile
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json
-          git commit -m 'chore: resolve current high-severity audit findings'
-          git push origin HEAD:main
