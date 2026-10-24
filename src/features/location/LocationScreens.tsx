@@ -60,10 +60,21 @@ export function LocationScreen({ place, activePlace, recentPlaces, onBack, onSea
       {error ? <p className="note" role="alert">{error}</p> : null}
     </div>
     {recent.length ? <section className="screen-space" aria-label={t('recentPlaces')}><p className="screen-heading">{t('recent')}</p><div className="screen-stack screen-space">
-      {recent.map(item => item.selection === 'gps'
-        ? <ActionRow key={item.id} title={t('savedPoint')} secondary={<span className="note">{formatCoordinates(item.latitude, item.longitude)}</span>}
-            aria-label={`${t('savedPoint')}, ${formatCoordinates(item.latitude, item.longitude)}`} onClick={() => onSelectRecent(item)} />
-        : <ActionRow key={item.id} title={compactPlaceLabel(item.name, locale)} onClick={() => onSelectRecent(item)} />)}
+      {recent.map(item => {
+        if (item.selection === 'gps') {
+          // Название nearby city — только подпись снимка, координаты остаются исходными GPS.
+          const cityName = item.nearbyCity && item.nearbyCity.distanceKm <= 25
+            ? (item.name.trim() || item.nearbyCity.name.trim()).split(',')[0]?.trim()
+            : ''
+          const title = cityName ? t('recentGpsCity', { name: cityName }) : t('recentPoint')
+          const coordinates = formatCoordinates(item.latitude, item.longitude)
+          return <ActionRow key={item.id} title={title} secondary={<span className="note">{coordinates}</span>}
+            aria-label={`${title}, ${coordinates}`} onClick={() => onSelectRecent(item)} />
+        }
+        const title = item.id.startsWith('geonames:') ? item.name.split(',')[0]?.trim() || item.name
+          : compactPlaceLabel(item.name, locale)
+        return <ActionRow key={item.id} title={title} onClick={() => onSelectRecent(item)} />
+      })}
     </div></section> : null}
     {notice}
   </Screen>
