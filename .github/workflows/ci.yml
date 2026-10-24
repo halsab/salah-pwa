@@ -172,3 +172,26 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
+
+  cleanup_obsolete_pr22_action_history:
+    name: Очистить старые записи PR #22
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, 'chore: purge obsolete PR22 workflow history')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Удалить только 11 записей от устаревших workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for run_id in \
+            40029441136 40029078481 40028190813 40027388618 \
+            40027341703 40025841635 40025184626 40024927293 \
+            40024811160 40027388721 40027340062; do
+            gh api --method DELETE --silent "/repos/${GH_REPO}/actions/runs/${run_id}"
+            echo "Removed obsolete workflow run ${run_id}"
+          done
