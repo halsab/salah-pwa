@@ -55,7 +55,8 @@ describe('transactional place history', () => {
     expect(after.map(place => place.id)).toEqual(before.map(place => place.id))
     expect(after.slice(1)).toEqual(before.slice(1))
     expect(after[0]).toMatchObject({ id: before[0]?.id, name: 'Стамбул', latitude: other.latitude,
-      longitude: other.longitude, nearbyCity: { name: expect.stringContaining('Стамбул') } })
+      longitude: other.longitude })
+    expect(after[0]?.nearbyCity?.name).toContain('Стамбул')
     const restored = await loadPrayerRepositoryOptionalSettings()
     expect(restored).toMatchObject({ ok: true, value: { recentPlaces: after } })
     const saved = await getLocationChoice()
