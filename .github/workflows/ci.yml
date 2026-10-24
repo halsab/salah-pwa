@@ -77,7 +77,16 @@ jobs:
                 base='${{ github.event.before }}'
               fi
               if [ -z "$base" ] || [ "$base" = '0000000000000000000000000000000000000000' ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-                base='HEAD~1'
+                # Containerized checkouts may have no previous commit available.
+                # Fail closed by executing every conditional check, not by
+                # attempting HEAD~1 when the history is missing.
+                if git rev-parse --verify 'HEAD^' >/dev/null 2>&1; then
+                  base='HEAD^'
+                else
+                  echo 'dependencies=true' >> "$GITHUB_OUTPUT"
+                  echo 'workflows=true' >> "$GITHUB_OUTPUT"
+                  exit 0
+                fi
               fi
               if [ "${{ github.event_name }}" = 'pull_request' ]; then
                 base="$(git merge-base "$base" HEAD)"
