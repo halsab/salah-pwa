@@ -83,7 +83,7 @@ export function refineGpsPlace(place: Place, fix: Fix, deviceZone: string, geome
 }
 
 export function withNearbyCity(place: Place, city: City | null): Place {
-  if (!city) return place
+  if (!city || !city.name.trim()) return place
   const distanceKm = haversineDistanceKm(place.latitude, place.longitude, city.latitude, city.longitude)
   if (distanceKm > 25) return place
   const countryCode = /^[A-Z]{2}$/.test(city.countryCode)
